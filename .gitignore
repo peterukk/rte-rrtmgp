@@ -1,0 +1,14 @@
+# Module files
+*.mod
+
+# Libraries
+*.a
+
+# Object files
+*.o
+
+# Intel vectorization reports
+*.optrpt
+
+examples/rfmip-clear-sky/outp_lw_RFMIP_1f1_NN.nc 
+examples/rfmip-clear-sky/outp_lw_CAMS_1f1_NN.nc

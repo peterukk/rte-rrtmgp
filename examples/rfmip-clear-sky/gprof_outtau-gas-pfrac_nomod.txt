@@ -1,0 +1,349 @@
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  ms/call  ms/call  name    
+ 25.43      3.53     3.53                             reorder_123x321_kernel
+ 20.61      6.39     2.86                             __mo_gas_optics_kernels_MOD_interpolate3d_byflav
+ 12.54      8.13     1.74                             __mo_gas_optics_kernels_MOD_interpolate2d_byflav
+  7.71      9.20     1.07                             lw_source_noscat
+  7.13     10.19     0.99                             compute_Planck_source
+  6.77     11.13     0.94                             gas_optical_depths_minor
+  5.84     11.94     0.81        3   270.00   270.00  __mo_rfmip_io_MOD_unblock_and_write_3d
+  3.60     12.44     0.50                             sum_broadband
+  2.02     12.72     0.28                             __mo_gas_optics_rrtmgp_MOD_source
+  1.95     12.99     0.27                             interpolation
+  1.30     13.17     0.18                             lw_solver_noscat_GaussQuad
+  1.22     13.34     0.17                             lw_solver_noscat
+  1.08     13.49     0.15                             __mo_gas_optics_rrtmgp_MOD_compute_gas_taus
+  0.86     13.61     0.12                             gas_optical_depths_major
+  0.79     13.72     0.11                             lw_transport_noscat
+  0.72     13.82     0.10                             zero_array_3D
+  0.29     13.86     0.04                             __mo_gas_optics_rrtmgp_MOD_gas_optics_int
+  0.07     13.87     0.01                             __mo_gas_optics_kernels_MOD_interpolate1d
+  0.07     13.88     0.01                             __mo_gas_optics_rrtmgp_MOD_load_int
+  0.00     13.88     0.00       22     0.00     0.00  __mo_simple_netcdf_MOD_read_1d_field
+  0.00     13.88     0.00       22     0.00     0.00  stop_on_err_
+  0.00     13.88     0.00       20     0.00     0.00  __mo_simple_netcdf_MOD_get_dim_size
+  0.00     13.88     0.00       18     0.00     0.00  __mo_rfmip_io_MOD_read_scaling
+  0.00     13.88     0.00        8     0.00     0.00  __mo_simple_netcdf_MOD_read_3d_field
+  0.00     13.88     0.00        7     0.00     0.00  __mo_simple_netcdf_MOD_read_2d_field
+  0.00     13.88     0.00        7     0.00     0.00  __mo_simple_netcdf_MOD_read_char_vec
+  0.00     13.88     0.00        4     0.00     0.00  __mo_simple_netcdf_MOD_read_logical_vec
+  0.00     13.88     0.00        3     0.00     0.00  __mo_simple_netcdf_MOD_read_scalar
+  0.00     13.88     0.00        3     0.00     0.00  __mo_simple_netcdf_MOD_write_4d_field
+  0.00     13.88     0.00        2     0.00     0.00  __mo_rfmip_io_MOD_unblock_and_write
+  0.00     13.88     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_read_4d_field
+  0.00     13.88     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_var_exists
+  0.00     13.88     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_write_3d_field
+  0.00     13.88     0.00        1     0.00     0.00  __mo_load_coefficients_MOD_load_and_init
+  0.00     13.88     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_determine_gas_names
+  0.00     13.88     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_gases_ty
+  0.00     13.88     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_lw_bc
+  0.00     13.88     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_pt
+  0.00     13.88     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_kdist_gas_names
+  0.00     13.88     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_size
+
+ %         the percentage of the total running time of the
+time       program used by this function.
+
+cumulative a running sum of the number of seconds accounted
+ seconds   for by this function and those listed above it.
+
+ self      the number of seconds accounted for by this
+seconds    function alone.  This is the major sort for this
+           listing.
+
+calls      the number of times this function was invoked, if
+           this function is profiled, else blank.
+
+ self      the average number of milliseconds spent in this
+ms/call    function per call, if this function is profiled,
+	   else blank.
+
+ total     the average number of milliseconds spent in this
+ms/call    function and its descendents per call, if this
+	   function is profiled, else blank.
+
+name       the name of the function.  This is the minor sort
+           for this listing. The index shows the location of
+	   the function in the gprof listing. If the index is
+	   in parenthesis it shows where it would appear in
+	   the gprof listing if it were to be printed.
+
+Copyright (C) 2012-2018 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+		     Call graph (explanation follows)
+
+
+granularity: each sample hit covers 2 byte(s) for 0.07% of 13.88 seconds
+
+index % time    self  children    called     name
+                                                 <spontaneous>
+[1]     25.4    3.53    0.00                 reorder_123x321_kernel [1]
+-----------------------------------------------
+                                                 <spontaneous>
+[2]     20.6    2.86    0.00                 __mo_gas_optics_kernels_MOD_interpolate3d_byflav [2]
+-----------------------------------------------
+                                                 <spontaneous>
+[3]     12.5    1.74    0.00                 __mo_gas_optics_kernels_MOD_interpolate2d_byflav [3]
+-----------------------------------------------
+                                                 <spontaneous>
+[4]      7.7    1.07    0.00                 lw_source_noscat [4]
+-----------------------------------------------
+                                                 <spontaneous>
+[5]      7.1    0.99    0.00                 compute_Planck_source [5]
+-----------------------------------------------
+                                                 <spontaneous>
+[6]      6.8    0.94    0.00                 gas_optical_depths_minor [6]
+-----------------------------------------------
+                                                 <spontaneous>
+[7]      5.8    0.00    0.81                 MAIN__ [7]
+                0.81    0.00       3/3           __mo_rfmip_io_MOD_unblock_and_write_3d [8]
+                0.00    0.00      22/22          stop_on_err_ [21]
+                0.00    0.00       2/2           __mo_rfmip_io_MOD_unblock_and_write [83]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_size [93]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_determine_gas_names [88]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_and_block_pt [91]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_and_block_gases_ty [89]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_and_block_lw_bc [90]
+                0.00    0.00       1/1           __mo_load_coefficients_MOD_load_and_init [87]
+-----------------------------------------------
+                0.81    0.00       3/3           MAIN__ [7]
+[8]      5.8    0.81    0.00       3         __mo_rfmip_io_MOD_unblock_and_write_3d [8]
+                0.00    0.00       3/3           __mo_simple_netcdf_MOD_write_4d_field [82]
+-----------------------------------------------
+                                                 <spontaneous>
+[9]      3.6    0.50    0.00                 sum_broadband [9]
+-----------------------------------------------
+                                                 <spontaneous>
+[10]     2.0    0.28    0.00                 __mo_gas_optics_rrtmgp_MOD_source [10]
+-----------------------------------------------
+                                                 <spontaneous>
+[11]     1.9    0.27    0.00                 interpolation [11]
+-----------------------------------------------
+                                                 <spontaneous>
+[12]     1.3    0.18    0.00                 lw_solver_noscat_GaussQuad [12]
+-----------------------------------------------
+                                                 <spontaneous>
+[13]     1.2    0.17    0.00                 lw_solver_noscat [13]
+-----------------------------------------------
+                                                 <spontaneous>
+[14]     1.1    0.15    0.00                 __mo_gas_optics_rrtmgp_MOD_compute_gas_taus [14]
+-----------------------------------------------
+                                                 <spontaneous>
+[15]     0.9    0.12    0.00                 gas_optical_depths_major [15]
+-----------------------------------------------
+                                                 <spontaneous>
+[16]     0.8    0.11    0.00                 lw_transport_noscat [16]
+-----------------------------------------------
+                                                 <spontaneous>
+[17]     0.7    0.10    0.00                 zero_array_3D [17]
+-----------------------------------------------
+                                                 <spontaneous>
+[18]     0.3    0.04    0.00                 __mo_gas_optics_rrtmgp_MOD_gas_optics_int [18]
+-----------------------------------------------
+                                                 <spontaneous>
+[19]     0.1    0.01    0.00                 __mo_gas_optics_kernels_MOD_interpolate1d [19]
+-----------------------------------------------
+                                                 <spontaneous>
+[20]     0.1    0.01    0.00                 __mo_gas_optics_rrtmgp_MOD_load_int [20]
+-----------------------------------------------
+                0.00    0.00      22/22          MAIN__ [7]
+[21]     0.0    0.00    0.00      22         stop_on_err_ [21]
+-----------------------------------------------
+                0.00    0.00       2/22          __mo_rfmip_io_MOD_read_and_block_lw_bc [90]
+                0.00    0.00       4/22          __mo_load_coefficients_MOD_load_and_init [87]
+                0.00    0.00      16/22          __mo_rfmip_io_MOD_read_and_block_gases_ty [89]
+[74]     0.0    0.00    0.00      22         __mo_simple_netcdf_MOD_read_1d_field [74]
+-----------------------------------------------
+                0.00    0.00       1/20          __mo_rfmip_io_MOD_read_kdist_gas_names [92]
+                0.00    0.00       4/20          __mo_rfmip_io_MOD_read_size [93]
+                0.00    0.00      15/20          __mo_load_coefficients_MOD_load_and_init [87]
+[75]     0.0    0.00    0.00      20         __mo_simple_netcdf_MOD_get_dim_size [75]
+-----------------------------------------------
+                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_and_block_gases_ty [89]
+[76]     0.0    0.00    0.00      18         __mo_rfmip_io_MOD_read_scaling [76]
+-----------------------------------------------
+                0.00    0.00       2/8           __mo_rfmip_io_MOD_read_and_block_gases_ty [89]
+                0.00    0.00       2/8           __mo_rfmip_io_MOD_read_and_block_pt [91]
+                0.00    0.00       4/8           __mo_load_coefficients_MOD_load_and_init [87]
+[77]     0.0    0.00    0.00       8         __mo_simple_netcdf_MOD_read_3d_field [77]
+-----------------------------------------------
+                0.00    0.00       2/7           __mo_rfmip_io_MOD_read_and_block_pt [91]
+                0.00    0.00       5/7           __mo_load_coefficients_MOD_load_and_init [87]
+[78]     0.0    0.00    0.00       7         __mo_simple_netcdf_MOD_read_2d_field [78]
+-----------------------------------------------
+                0.00    0.00       7/7           __mo_load_coefficients_MOD_load_and_init [87]
+[79]     0.0    0.00    0.00       7         __mo_simple_netcdf_MOD_read_char_vec [79]
+-----------------------------------------------
+                0.00    0.00       4/4           __mo_load_coefficients_MOD_load_and_init [87]
+[80]     0.0    0.00    0.00       4         __mo_simple_netcdf_MOD_read_logical_vec [80]
+-----------------------------------------------
+                0.00    0.00       3/3           __mo_load_coefficients_MOD_load_and_init [87]
+[81]     0.0    0.00    0.00       3         __mo_simple_netcdf_MOD_read_scalar [81]
+-----------------------------------------------
+                0.00    0.00       3/3           __mo_rfmip_io_MOD_unblock_and_write_3d [8]
+[82]     0.0    0.00    0.00       3         __mo_simple_netcdf_MOD_write_4d_field [82]
+-----------------------------------------------
+                0.00    0.00       2/2           MAIN__ [7]
+[83]     0.0    0.00    0.00       2         __mo_rfmip_io_MOD_unblock_and_write [83]
+                0.00    0.00       2/2           __mo_simple_netcdf_MOD_write_3d_field [86]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_load_coefficients_MOD_load_and_init [87]
+[84]     0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_read_4d_field [84]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_load_coefficients_MOD_load_and_init [87]
+[85]     0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_var_exists [85]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_rfmip_io_MOD_unblock_and_write [83]
+[86]     0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_write_3d_field [86]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [7]
+[87]     0.0    0.00    0.00       1         __mo_load_coefficients_MOD_load_and_init [87]
+                0.00    0.00      15/20          __mo_simple_netcdf_MOD_get_dim_size [75]
+                0.00    0.00       7/7           __mo_simple_netcdf_MOD_read_char_vec [79]
+                0.00    0.00       5/7           __mo_simple_netcdf_MOD_read_2d_field [78]
+                0.00    0.00       4/8           __mo_simple_netcdf_MOD_read_3d_field [77]
+                0.00    0.00       4/22          __mo_simple_netcdf_MOD_read_1d_field [74]
+                0.00    0.00       4/4           __mo_simple_netcdf_MOD_read_logical_vec [80]
+                0.00    0.00       3/3           __mo_simple_netcdf_MOD_read_scalar [81]
+                0.00    0.00       2/2           __mo_simple_netcdf_MOD_read_4d_field [84]
+                0.00    0.00       2/2           __mo_simple_netcdf_MOD_var_exists [85]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [7]
+[88]     0.0    0.00    0.00       1         __mo_rfmip_io_MOD_determine_gas_names [88]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_kdist_gas_names [92]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [7]
+[89]     0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_gases_ty [89]
+                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_scaling [76]
+                0.00    0.00      16/22          __mo_simple_netcdf_MOD_read_1d_field [74]
+                0.00    0.00       2/8           __mo_simple_netcdf_MOD_read_3d_field [77]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [7]
+[90]     0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_lw_bc [90]
+                0.00    0.00       2/22          __mo_simple_netcdf_MOD_read_1d_field [74]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [7]
+[91]     0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_pt [91]
+                0.00    0.00       2/7           __mo_simple_netcdf_MOD_read_2d_field [78]
+                0.00    0.00       2/8           __mo_simple_netcdf_MOD_read_3d_field [77]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_determine_gas_names [88]
+[92]     0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_kdist_gas_names [92]
+                0.00    0.00       1/20          __mo_simple_netcdf_MOD_get_dim_size [75]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [7]
+[93]     0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_size [93]
+                0.00    0.00       4/20          __mo_simple_netcdf_MOD_get_dim_size [75]
+-----------------------------------------------
+
+ This table describes the call tree of the program, and was sorted by
+ the total amount of time spent in each function and its children.
+
+ Each entry in this table consists of several lines.  The line with the
+ index number at the left hand margin lists the current function.
+ The lines above it list the functions that called this function,
+ and the lines below it list the functions this one called.
+ This line lists:
+     index	A unique number given to each element of the table.
+		Index numbers are sorted numerically.
+		The index number is printed next to every function name so
+		it is easier to look up where the function is in the table.
+
+     % time	This is the percentage of the `total' time that was spent
+		in this function and its children.  Note that due to
+		different viewpoints, functions excluded by options, etc,
+		these numbers will NOT add up to 100%.
+
+     self	This is the total amount of time spent in this function.
+
+     children	This is the total amount of time propagated into this
+		function by its children.
+
+     called	This is the number of times the function was called.
+		If the function called itself recursively, the number
+		only includes non-recursive calls, and is followed by
+		a `+' and the number of recursive calls.
+
+     name	The name of the current function.  The index number is
+		printed after it.  If the function is a member of a
+		cycle, the cycle number is printed between the
+		function's name and the index number.
+
+
+ For the function's parents, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the function into this parent.
+
+     children	This is the amount of time that was propagated from
+		the function's children into this parent.
+
+     called	This is the number of times this parent called the
+		function `/' the total number of times the function
+		was called.  Recursive calls to the function are not
+		included in the number after the `/'.
+
+     name	This is the name of the parent.  The parent's index
+		number is printed after it.  If the parent is a
+		member of a cycle, the cycle number is printed between
+		the name and the index number.
+
+ If the parents of the function cannot be determined, the word
+ `<spontaneous>' is printed in the `name' field, and all the other
+ fields are blank.
+
+ For the function's children, the fields have the following meanings:
+
+     self	This is the amount of time that was propagated directly
+		from the child into the function.
+
+     children	This is the amount of time that was propagated from the
+		child's children to the function.
+
+     called	This is the number of times the function called
+		this child `/' the total number of times the child
+		was called.  Recursive calls by the child are not
+		listed in the number after the `/'.
+
+     name	This is the name of the child.  The child's index
+		number is printed after it.  If the child is a
+		member of a cycle, the cycle number is printed
+		between the name and the index number.
+
+ If there are any cycles (circles) in the call graph, there is an
+ entry for the cycle-as-a-whole.  This entry shows who called the
+ cycle (as parents) and the members of the cycle (as children.)
+ The `+' recursive calls entry shows the number of function calls that
+ were internal to the cycle, and the calls entry for each member shows,
+ for that member, how many times it was called from other members of
+ the cycle.
+
+Copyright (C) 2012-2018 Free Software Foundation, Inc.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.
+
+Index by function name
+
+  [19] __mo_gas_optics_kernels_MOD_interpolate1d [93] __mo_rfmip_io_MOD_read_size [5] compute_Planck_source
+   [3] __mo_gas_optics_kernels_MOD_interpolate2d_byflav [83] __mo_rfmip_io_MOD_unblock_and_write [15] gas_optical_depths_major
+   [2] __mo_gas_optics_kernels_MOD_interpolate3d_byflav [8] __mo_rfmip_io_MOD_unblock_and_write_3d [6] gas_optical_depths_minor
+  [14] __mo_gas_optics_rrtmgp_MOD_compute_gas_taus (mo_gas_optics_rrtmgp.F90) [75] __mo_simple_netcdf_MOD_get_dim_size [11] interpolation
+  [18] __mo_gas_optics_rrtmgp_MOD_gas_optics_int [74] __mo_simple_netcdf_MOD_read_1d_field [13] lw_solver_noscat
+  [20] __mo_gas_optics_rrtmgp_MOD_load_int [78] __mo_simple_netcdf_MOD_read_2d_field [12] lw_solver_noscat_GaussQuad
+  [10] __mo_gas_optics_rrtmgp_MOD_source (mo_gas_optics_rrtmgp.F90) [77] __mo_simple_netcdf_MOD_read_3d_field [4] lw_source_noscat
+  [87] __mo_load_coefficients_MOD_load_and_init [84] __mo_simple_netcdf_MOD_read_4d_field [16] lw_transport_noscat
+  [88] __mo_rfmip_io_MOD_determine_gas_names [79] __mo_simple_netcdf_MOD_read_char_vec [1] reorder_123x321_kernel
+  [89] __mo_rfmip_io_MOD_read_and_block_gases_ty [80] __mo_simple_netcdf_MOD_read_logical_vec [21] stop_on_err_
+  [90] __mo_rfmip_io_MOD_read_and_block_lw_bc [81] __mo_simple_netcdf_MOD_read_scalar [9] sum_broadband
+  [91] __mo_rfmip_io_MOD_read_and_block_pt [85] __mo_simple_netcdf_MOD_var_exists [17] zero_array_3D
+  [92] __mo_rfmip_io_MOD_read_kdist_gas_names [86] __mo_simple_netcdf_MOD_write_3d_field
+  [76] __mo_rfmip_io_MOD_read_scaling (mo_rfmip_io.F90) [82] __mo_simple_netcdf_MOD_write_4d_field

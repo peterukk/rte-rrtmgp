@@ -1,0 +1,8 @@
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rrtmgp/mo_util_string.F90
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rte/mo_rte_kind.F90
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rrtmgp/mo_rrtmgp_constants.F90
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rrtmgp/kernels/mo_reorder_kernels.F90
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rrtmgp/mo_util_reorder.F90
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rrtmgp/mo_gas_concentrations.F90
+gfortran -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan  -c ../rrtmgp/kernels/mo_gas_optics_kernels.F90
+Makefile.rules:8: recipe for target 'mo_gas_optics_kernels.o' failed

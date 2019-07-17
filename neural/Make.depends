@@ -1,0 +1,26 @@
+NEURAL_SRC = \
+  mo_rte_kind.o \
+  mod_activation.o \
+  mod_io.o \
+  mod_layer.o \
+  mod_network.o \
+  mod_random.o
+
+##################################
+# RTE - Radiative transfer for energetics
+##################################
+#
+#
+
+mod_activation.o: mod_activation.F90 mo_rte_kind.o
+
+mod_io.o: mo_rte_kind.o mod_io.F90
+
+#mo_rte_kind.o: mo_rte_kind.F90
+ 
+mod_layer.o: mod_activation.o mo_rte_kind.o mod_random.o mod_layer.F90
+
+mod_random.o: mo_rte_kind.o mod_random.F90
+
+mod_network.o: mo_rte_kind.o mod_layer.o mod_network.F90
+
