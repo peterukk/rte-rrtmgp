@@ -301,7 +301,7 @@ function gas_optics_int(this,                             &
   function gas_optics_int_nn(this,                             &
                           play, plev, tlay, tsfc, gas_desc, &
                           optical_props, sources, nn_inputs, scaler_pfrac, &
-                          modelfile_tau, modelfile_source, &
+                          modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
                           col_dry, tlev) result(error_msg)
 
   
@@ -318,7 +318,7 @@ function gas_optics_int(this,                             &
     !    real(wp),    dimension(size(play,dim=1),size(play,dim=2),0:size(this%gas_names)), intent(  out) :: col_gas
     
     real(wp), dimension(:,:), intent(in)         :: scaler_pfrac       ! for post-processing the NN-predicted planck fractions 
-    character (len = 60), intent(in)             :: modelfile_tau, modelfile_source
+    character (len = 60), intent(in)             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
 
     class(ty_optical_props_arry),  &
                               intent(inout) :: optical_props ! Optical properties
@@ -333,15 +333,15 @@ function gas_optics_int(this,                             &
     ! ----------------------------------------------------------
     ! Local variables
     ! Interpolation coefficients for use in source function
-    integer,     dimension(size(play,dim=1), size(play,dim=2)) :: jtemp, jpress
-    logical(wl), dimension(size(play,dim=1), size(play,dim=2)) :: tropo
-    real(wp),    dimension(2,2,2,get_nflav(this),size(play,dim=1), size(play,dim=2)) :: fmajor
-    integer,     dimension(2,    get_nflav(this),size(play,dim=1), size(play,dim=2)) :: jeta
+    integer,     dimension(size(play,dim=1), size(play,dim=2))                        :: jtemp, jpress
+    logical(wl), dimension(size(play,dim=1), size(play,dim=2))                        :: tropo
+    real(wp),    dimension(2,2,2,get_nflav(this),size(play,dim=1), size(play,dim=2))  :: fmajor
+    integer,     dimension(2,    get_nflav(this),size(play,dim=1), size(play,dim=2))  :: jeta
+    integer,     dimension(size(play,dim=1),2)                                        :: itropo, istrato
 
-    real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))             :: pfrac ! Planck fractions predicted by NN
-
+    real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: pfrac ! Planck fractions predicted by NN
     integer :: ncol, nlay, ngpt, nband, ngas, nflav
-    logical :: original_source
+    logical :: original_source, top_at_1
 
     original_source = .true.
     ! ----------------------------------------------------------
@@ -387,20 +387,42 @@ function gas_optics_int(this,                             &
     if (original_source) then ! use original kernels to get source functions
     ! In this case the interpolation coefficients computed in compute_gas_taus are needed
     ! Temporary solution...doing all the computations just to get the interpolation coefficients is redundant
-    error_msg = compute_gas_taus(this,                       &
-                                 ncol, nlay, ngpt, nband,    &
-                                 play, plev, tlay, gas_desc, &
-                                 optical_props,              &
-                                 jtemp, jpress, jeta, tropo, fmajor, &
-                                 col_dry)
+      error_msg = compute_interp_coeffs(this,                  &
+                                  ncol, nlay, ngpt, nband,    &
+                                  play, plev, tlay, gas_desc, &
+                                  jtemp, jpress, jeta, tropo, fmajor, &
+                                  col_dry)
+    else
+      tropo     = log(play) > this%press_ref_trop_log
     end if
+
+    print *, this%press_ref_trop_log
+
+    ! Find the level (for each column) separating stratosphere and troposphere
+
+    top_at_1  = play(1,1) < play(1, nlay)
+
+    ! itropo_x(:,1) is the first index of the troposphere, (:,2) is the last index; same for istrato
+    if(top_at_1) then
+      itropo(:, 1) = minloc(play, dim=2, mask=tropo)  
+      itropo(:, 2) = nlay
+      istrato(:, 1) = 1
+      istrato(:, 2) = maxloc(play, dim=2, mask=(.not. tropo))
+    else
+      itropo(:, 1) = 1
+      itropo(:, 2) = minloc(play, dim=2, mask= tropo)
+      istrato(:, 1) = maxloc(play, dim=2, mask=(.not. tropo))
+      istrato(:, 2) = nlay
+    end if
+
     ! Predict g-point taus and planck fractions using neural networks
     error_msg = compute_taus_pfracs_nnlw(this,              &
                                  ncol, nlay, ngpt, nband,   &
+                                 itropo, istrato,           &
                                  play, plev, tlay, gas_desc,&
                                  optical_props, pfrac,      &
                                  scaler_pfrac,              &
-                                 modelfile_tau, modelfile_source, &
+                                 modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
                                  nn_inputs, col_dry) 
                            
 
@@ -712,30 +734,198 @@ function gas_optics_int(this,                             &
     !!!$acc exit data delete(this%kminor_lower, this%kminor_upper)
 end function compute_gas_taus
 
+ !------------------------------------------------------------------------------------------
+  !
+  ! Returns interpolation coefficients only
+  !
+function compute_interp_coeffs(this,                       &
+  ncol, nlay, ngpt, nband,    &
+  play, plev, tlay, gas_desc, &
+  jtemp, jpress, jeta, tropo, fmajor, &
+  col_dry) result(error_msg)
+
+class(ty_gas_optics_rrtmgp), &
+            intent(in   ) :: this
+integer,                          intent(in   ) :: ncol, nlay, ngpt, nband
+real(wp), dimension(:,:),         intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                             plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
+                             tlay      ! layer temperatures [K]; (ncol,nlay)
+type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
+! Interpolation coefficients for use in internal source function
+integer,     dimension(                       ncol, nlay), intent(  out) :: jtemp, jpress
+integer,     dimension(2,    get_nflav(this),ncol, nlay), intent(  out) :: jeta
+logical(wl), dimension(                       ncol, nlay), intent(  out) :: tropo
+real(wp),    dimension(2,2,2,get_nflav(this),ncol, nlay), intent(  out) :: fmajor
+character(len=128)                                         :: error_msg
+
+! Optional inputs
+real(wp), dimension(:,:), intent(in   ), &
+ optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
+! ----------------------------------------------------------
+integer :: igas, idx_h2o ! index of some gases
+! Number of molecules per cm^2
+real(wp), dimension(ncol,nlay), target  :: col_dry_arr
+real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
+!
+! Interpolation variables used in major gas but not elsewhere, so don't need exporting
+!
+real(wp), dimension(ncol,nlay,  this%get_ngas()) :: vmr     ! volume mixing ratios
+real(wp), dimension(ncol,nlay,0:this%get_ngas()) :: col_gas ! column amounts for each gas, plus col_dry
+real(wp), dimension(2,    get_nflav(this),ncol,nlay) :: col_mix ! combination of major species's column amounts
+                               ! index(1) : reference temperature level
+                               ! index(2) : flavor
+                               ! index(3) : layer
+real(wp), dimension(2,2,  get_nflav(this),ncol,nlay) :: fminor ! interpolation fractions for minor species
+                                ! index(1) : reference eta level (temperature dependent)
+                                ! index(2) : reference temperature level
+                                ! index(3) : flavor
+                                ! index(4) : layer
+integer :: ngas, nflav, neta, npres, ntemp
+integer :: nminorlower, nminorklower,nminorupper, nminorkupper
+logical :: use_rayl
+! ----------------------------------------------------------
+!
+! Error checking
+!
+use_rayl = allocated(this%krayl)
+error_msg = ''
+! Check for initialization
+if (.not. this%is_initialized()) then
+error_msg = 'ERROR: spectral configuration not loaded'
+return
+end if
+!
+! Check for presence of key species in ty_gas_concs; return error if any key species are not present
+!
+error_msg = this%check_key_species_present(gas_desc)
+if (error_msg /= '') return
+
+!
+! Check input data sizes and values
+!
+error_msg = check_extent(play, ncol, nlay,   'play')
+if(error_msg  /= '') return
+error_msg = check_extent(plev, ncol, nlay+1, 'plev')
+if(error_msg  /= '') return
+error_msg = check_extent(tlay, ncol, nlay,   'tlay')
+if(error_msg  /= '') return
+error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
+if(error_msg  /= '') return
+error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
+if(error_msg  /= '') return
+error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
+if(error_msg  /= '') return
+if(present(col_dry)) then
+error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
+if(error_msg  /= '') return
+error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
+if(error_msg  /= '') return
+end if
+
+! ----------------------------------------------------------
+ngas  = this%get_ngas()
+nflav = get_nflav(this)
+neta  = this%get_neta()
+npres = this%get_npres()
+ntemp = this%get_ntemp()
+! number of minor contributors, total num absorption coeffs
+nminorlower  = size(this%minor_scales_with_density_lower)
+nminorklower = size(this%kminor_lower, 1)
+nminorupper  = size(this%minor_scales_with_density_upper)
+nminorkupper = size(this%kminor_upper, 1)
+!
+! Fill out the array of volume mixing ratios
+!
+do igas = 1, ngas
+!
+! Get vmr if  gas is provided in ty_gas_concs
+!
+if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
+error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
+if (error_msg /= '') return
+endif
+end do
+
+!
+! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
+!
+idx_h2o = string_loc_in_array('h2o', this%gas_names)
+if (present(col_dry)) then
+col_dry_wk => col_dry
+else
+col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
+col_dry_wk => col_dry_arr
+end if
+!
+! compute column gas amounts [molec/cm^2]
+!
+col_gas(1:ncol,1:nlay,0) = col_dry_wk(1:ncol,1:nlay)
+do igas = 1, ngas
+col_gas(1:ncol,1:nlay,igas) = vmr(1:ncol,1:nlay,igas) * col_dry_wk(1:ncol,1:nlay)
+end do
+
+!
+! ---- calculate gas optical depths ----
+!
+!$acc enter data create(jtemp, jpress, jeta, tropo, fmajor)
+!$acc enter data copyin(play, tlay, col_gas)
+!$acc enter data create(col_mix, fminor)
+!$acc enter data copyin(this)
+!$acc enter data copyin(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
+!$acc enter data copyin(this%temp_ref)  ! this one causes problems
+!$acc enter data copyin(this%kminor_lower, this%kminor_upper)
+call interpolation(               &
+ncol,nlay,                &        ! problem dimensions
+ngas, nflav, neta, npres, ntemp, & ! interpolation dimensions
+this%flavor,              &
+this%press_ref_log,       &
+this%temp_ref,            &
+this%press_ref_log_delta, &
+this%temp_ref_min,        &
+this%temp_ref_delta,      &
+this%press_ref_trop_log,  &
+this%vmr_ref, &
+play,         &
+tlay,         &
+col_gas,      &
+jtemp,        & ! outputs
+fmajor,fminor,&
+col_mix,      &
+tropo,        &
+jeta,jpress)
+!$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
+!$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
+!$acc exit data delete(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
+!!!$acc exit data delete(this%temp_ref)  ! this one causes problems
+!!!$acc exit data delete(this%kminor_lower, this%kminor_upper)
+end function compute_interp_coeffs
+
 
 function compute_taus_pfracs_nnlw(this,                       &
     ncol, nlay, ngpt, nband,    &
+    itropo, istrato,            &
     play, plev, tlay, gas_desc, &
     optical_props, pfrac, scaler_pfrac, &
-    modelfile_tau, modelfile_source, &
+    modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
     nn_inputs, col_dry) result(error_msg)
 
 class(ty_gas_optics_rrtmgp),      intent(in   ) ::  this
 integer,                          intent(in   ) ::  ncol, nlay, ngpt, nband
+integer,     dimension(ncol,2),   intent(in   ) ::  itropo, istrato
+
 real(wp), dimension(:,:),         intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
                                                     plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
                                                     tlay      ! layer temperatures [K]; (ncol,nlay)
+
 type(ty_gas_concs),               intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
 class(ty_optical_props_arry),     intent(inout) ::  optical_props !inout because components are allocated
 real(wp), dimension(ngpt,nlay,ncol), intent(out) :: pfrac ! Planck fractions predicted by NN
 
 real(wp), dimension(ngpt,2), intent(in)         :: scaler_pfrac       ! for post-processing the NN-predicted planck fractions 
-character (len = 60), intent(in)                :: modelfile_tau, modelfile_source  ! text files with model weights
+character (len = 60), intent(in)                :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source  ! text files with model weights
 
 
 real(wp), dimension(get_ngas(this)+3,nlay,ncol), intent(out) :: nn_inputs
-
-
 
 character(len=128)                               :: error_msg
 
@@ -744,7 +934,7 @@ real(wp), dimension(:,:), intent(in   ), &
    optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
 ! ----------------------------------------------------------
 ! Local variables
-type(network_type)                 :: net_tau, net_pfrac
+type(network_type)                 :: net_tau_tropo, net_tau_strato, net_pfrac
 real(wp), dimension(ngpt,nlay,ncol) :: tau, tau_rayleigh  ! absorption, Rayleigh scattering optical depths
 integer :: igas, ilay, idx_h2o ! index of some gases
 ! Number of molecules per cm^2
@@ -754,10 +944,9 @@ real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
 ! Interpolation variables used in major gas but not elsewhere, so don't need exporting
 !
 
-real(wp), dimension(ncol,nlay,  this%get_ngas()) :: vmr     ! volume mixing ratios
-real(wp), dimension(ncol,nlay,0:this%get_ngas()) :: col_gas ! column amounts for each gas, plus col_dry
-
-integer :: ngas, npres, ntemp,  count_rate, iTime1, iTime2
+real(wp), dimension(ncol,nlay,  this%get_ngas())  :: vmr     ! volume mixing ratios
+real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts for each gas, plus col_dry
+integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2
 ! ----------------------------------------------------------
 ! Neural network input scaling coefficients .. should probably be loaded from a file
 real(wp), dimension(21) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, &
@@ -876,29 +1065,28 @@ end do
 
 ! print *, "max of input19 is", maxval(nn_inputs(19,:,:))
 
-! modelfile_tau = "../../neural/data/taumodel_i21_n32.txt"
-! modelfile_pfrac = "../../neural/data/taumodel_i21_n32.txt"
-
-
     ! load trained network from keras
-print *, 'loading tau model from ', modelfile_tau
-call net_tau % load(modelfile_tau)
+print *, 'loading tau tropo model from ', modelfile_tau_tropo
+call net_tau_tropo % load(modelfile_tau_tropo)
 print *, 'loaded model'
+
+call net_tau_strato % load(modelfile_tau_strato)
+
 
     ! load trained network from keras
 print *, 'loading source model from ', modelfile_source
-call net_tau % load(modelfile_source)
+call net_pfrac % load(modelfile_source)
 print *, 'loaded model'
 
 ! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
 
-
 call zero_array(ngpt, nlay, ncol, tau)
 
 call compute_nnlw_kernel(                     &
-ncol,nlay,ngpt, ngas,    &  ! dimensions
-nn_inputs, scaler_pfrac, &  ! data inputs
-net_tau, net_pfrac,      &  ! model inputs
+ncol,nlay,ngpt, ngas,     &  ! dimensions
+itropo, istrato,          &  ! data inputs
+nn_inputs, scaler_pfrac,  &  ! data inputs
+net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
 tau, pfrac)                 ! outputs
 
 if (error_msg /= '') return

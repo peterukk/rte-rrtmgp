@@ -124,7 +124,7 @@ program rrtmgp_rfmip_lw
   real(wp), dimension(:),             allocatable :: means,stdevs ,new_array   
 
   real(wp), dimension(:,:),            allocatable :: scaler_pfrac
-  character (len = 60)                             :: modelfile_tau, modelfile_source
+  character (len = 60)                             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
 
   !
   ! Classes used by rte+rrtmgp
@@ -149,11 +149,12 @@ program rrtmgp_rfmip_lw
 
   ! Where neural network model weights are located
   ! 
-  ! modelfile_tau = "../../neural/data/taumodel_i21_n32.txt"
-  ! modelfile_source = "../../neural/data/taumodel_i21_n32.txt"
-  modelfile_tau     = "../../neural/data/taumodel_n40_CAMS2.txt"
-  modelfile_source  = "../../neural/data/taumodel_n40_CAMS2.txt"
-  
+  !modelfile_tau = "../../neural/data/taumodel_i21_n32.txt"
+  !modelfile_tau     = "../../neural/data/taumodel_n40_CAMS2.txt"
+  !modelfile_tau     = "../../neural/data/taumodel_n40_CAMS_weighttrain.txt"
+  modelfile_tau_tropo   = "../../neural/data/taumodel_CAMS_weighttrain_trop_n50.txt"
+  modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_weighttrain_strat_n30.txt"
+  modelfile_source  = modelfile_tau_tropo
   ! Model predictions are standard-scaled. Load data for post-processing the outputs
   ! The coefficients for scaling the INPUTS a re currently still hard-coded in mo_gas_optics_rrtmgp.F90
   allocate(scaler_pfrac(2,256))
@@ -205,7 +206,7 @@ program rrtmgp_rfmip_lw
   !              trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc' 
 
   !flx_file = 'rlud_CAMS_NN40-tau.nc'
-  flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_NN40-tau.nc'
+  flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
 
   output_file = 'outp_lw_CAMS_' // &
                 trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_NN.nc' 
@@ -333,27 +334,28 @@ program rrtmgp_rfmip_lw
     ret =  gptlstart('gas_optics (LW)')
 #endif
     ! Using NEURAL NETWORK for predicting optical depths
-    ! call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
-    !                                    p_lev(:,:,b),        &
-    !                                    t_lay(:,:,b),        &
-    !                                    sfc_t(:  ,b),        &
-    !                                    gas_conc_array(b),   &
-    !                                    optical_props,       &
-    !                                    source,              &
-    !                                    nn_inputs(:,:,:,b),  &
-    !                                    scaler_pfrac,        &
-    !                                    modelfile_tau,       &
-    !                                    modelfile_source,    &
-    !                                    tlev = t_lev(:,:,b)))
-    ! Using original code (interpolation routine) for predicting optical depths
-    call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
-                                       p_lev(:,:,b),       &
-                                       t_lay(:,:,b),       &
-                                       sfc_t(:  ,b),       &
-                                       gas_conc_array(b),  &
-                                       optical_props,      &
-                                       source,             &
+    call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
+                                       p_lev(:,:,b),        &
+                                       t_lay(:,:,b),        &
+                                       sfc_t(:  ,b),        &
+                                       gas_conc_array(b),   &
+                                       optical_props,       &
+                                       source,              &
+                                       nn_inputs(:,:,:,b),  &
+                                       scaler_pfrac,        &
+                                       modelfile_tau_tropo, &
+                                       modelfile_tau_strato,&
+                                       modelfile_source,    &
                                        tlev = t_lev(:,:,b)))
+    ! Using original code (interpolation routine) for predicting optical depths
+    ! call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
+    !                                    p_lev(:,:,b),       &
+    !                                    t_lay(:,:,b),       &
+    !                                    sfc_t(:  ,b),       &
+    !                                    gas_conc_array(b),  &
+    !                                    optical_props,      &
+    !                                    source,             &
+    !                                    tlev = t_lev(:,:,b)))
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
 #endif
@@ -400,18 +402,23 @@ program rrtmgp_rfmip_lw
   print *, "max of tau is", maxval(new_array)
   print *, "min of tau is", minval(new_array)
 
-  print *, "max of source is", maxval(planck_frac)
-  
+  !print *, "max of source is", maxval(source%lay_source)
+  print *, "tau(1):",  tau_lw(1,1,1,1)
+  print *, "lay_source (1):", source%lay_source(1,1,1)
+  print *, "lev_source_inc (1):", source%lev_source_inc(1,1,1)
   ! call unblock_and_write_3D(trim(output_file), 'tau_lw',tau_lw)
   ! call unblock_and_write_3D(trim(output_file), 'planck_frac',planck_frac)
 
-  ! call unblock_and_write(trim(flx_file), 'rlu', flux_up)
-  ! call unblock_and_write(trim(flx_file), 'rld', flux_dn)
+  call unblock_and_write(trim(flx_file), 'rlu', flux_up)
+  call unblock_and_write(trim(flx_file), 'rld', flux_dn)
 
   ! call unblock_and_write(trim(flxup_file), 'rlu', flux_up)
   ! call unblock_and_write(trim(flxdn_file), 'rld', flux_dn)
 
-  ! print *, "flux_up (1):", flux_up(1,1,1)
+  print *, "flux_up (1):", flux_up(1,1,1)
+
+  print *, "play(1,1,1)", p_lay(1,1,1)
+  print *, "play(1,50,1)", p_lay(1,50,1)
 
       ! Get the count rate
   ! call system_clock(count_rate=count_rate)

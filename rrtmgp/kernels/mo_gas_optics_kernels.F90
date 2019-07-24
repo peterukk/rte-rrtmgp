@@ -770,24 +770,26 @@ contains
    ! ----------------------------------------------------------
   subroutine compute_nnlw_kernel(                &
                     ncol, nlay, ngpt, ngas,      & 
+                    itropo, istrato,             &
                     nn_inputs, scaler_pfrac,     &
-                    net_tau, net_pfrac,          &
+                    net_tau_tropo, net_tau_strato, net_pfrac,          &
                     tau_gas, pfrac)
 
                     !   net_tau, net_pfrac,          &
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
+    integer,  dimension(ncol,2),              intent(in) :: itropo, istrato
     real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
     real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
     ! The models should also be inputs
-    type(network_type),                       intent(in) :: net_tau, net_pfrac
+    type(network_type),                       intent(in) :: net_tau_tropo, net_tau_strato, net_pfrac
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: pfrac, tau_gas
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
 
     ! -----------------
     ! local
-    integer  :: ilay, icol, num_layers, neurons_tau
+    integer  :: ilay, icol, num_layers_tropo, num_layers_strato, neurons_tau_tropo, neurons_tau_strato
     real(wp) :: eps_neural = 0.005_wp
     ! real(wp) :: pfrac          (ngpt,nlay,  ncol)
 
@@ -806,29 +808,68 @@ contains
     ! planck fractions, and calculate the sources as (ncol,nlay,ngpt) for RTE?
     ! In this way the reordering needs to be done only once and not three times (for lay_source, lev_source_inc, lev_source_dec)
 
-    num_layers=size(net_tau % dims)
-    neurons_tau =  net_tau %dims(num_layers-1)
+    ! num_layers=size(net_tau % dims)
+    ! neurons_tau =  net_tau %dims(num_layers-1)
+
+    ! do icol = 1, ncol
+    !   do ilay = 1, nlay
+    !     ! Calculation of fraction of band's Planck irradiance associated with each g-point
+    !     pfrac(:,ilay,icol) = 1.0_wp
+
+    !     ! pfrac(:,ilay,icol) = model_pfrac_predict ( nn_inputs(:,ilay,icol) )
+    !     ! Post-processing (training was done on standard-scaled targets)
+    !     ! pfrac(:,ilay,icol) = pfrac(:,ilay,icol) * scaler_pfrac(:,2) ! multiply by standard deviation of raw data 
+    !     ! pfrac(:,ilay,icol) = pfrac(:,ilay,icol) + scaler_pfrac(:,1) ! add the mean of raw data
+
+    !     ! PREDICT OPTICAL DEPTHS
+    !     !tau_gas(:,ilay,icol) = 1.0
+    !     call net_tau % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau, tau_gas(:,ilay,icol))
+
+    !     ! Post-processing (training was done on log of targets)
+    !     !tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
+    !     call fastexp(tau_gas(:,ilay,icol))
+    !     tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
+    !     tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
+    !     !tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
+    !   end do   ! layer
+    ! end do     ! column
+
+    ! nlay_strat is the lowest level of the stratosphere
+
+    num_layers_tropo    =  size(net_tau_tropo % dims)
+    neurons_tau_tropo   =  net_tau_tropo %dims(num_layers_tropo-1)
+
+    num_layers_strato   =  size(net_tau_strato % dims)
+    neurons_tau_strato  =  net_tau_strato %dims(num_layers_strato-1)
 
     do icol = 1, ncol
-      do ilay = 1, nlay
+      
+      do ilay = istrato(icol, 1), istrato(icol, 2)
         ! Calculation of fraction of band's Planck irradiance associated with each g-point
         pfrac(:,ilay,icol) = 1.0_wp
 
-        ! pfrac(:,ilay,icol) = model_pfrac_predict ( nn_inputs(:,ilay,icol) )
-        ! Post-processing (training was done on standard-scaled targets)
-        pfrac(:,ilay,icol) = pfrac(:,ilay,icol) * scaler_pfrac(:,2) ! multiply by standard deviation of raw data 
-        pfrac(:,ilay,icol) = pfrac(:,ilay,icol) + scaler_pfrac(:,1) ! add the mean of raw data
-
         ! PREDICT OPTICAL DEPTHS
-        !tau_gas(:,ilay,icol) = 1.0
-        call net_tau % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau, tau_gas(:,ilay,icol))
-
+        call net_tau_strato % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau_strato, tau_gas(:,ilay,icol))
         ! Post-processing (training was done on log of targets)
         !tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
         call fastexp(tau_gas(:,ilay,icol))
+        tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
         tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
-        !tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
       end do   ! layer
+
+      do ilay = itropo(icol, 1), itropo(icol, 2)
+        ! Calculation of fraction of band's Planck irradiance associated with each g-point
+        pfrac(:,ilay,icol) = 1.0_wp
+
+        ! PREDICT OPTICAL DEPTHS
+        call net_tau_tropo % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau_tropo, tau_gas(:,ilay,icol))
+        ! Post-processing (training was done on log of targets)
+        !tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
+        call fastexp(tau_gas(:,ilay,icol))
+        tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
+        tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
+      end do   ! layer
+
     end do     ! column
 
   

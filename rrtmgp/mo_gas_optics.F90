@@ -74,7 +74,7 @@ module mo_gas_optics
                                      play, plev, tlay, tsfc, gas_desc,    &
                                      optical_props, sources, nn_inputs,   &
                                      scaler_pfrac,                        &
-                                     modelfile_tau, modelfile_source,     &                           
+                                     modelfile_tau_tropo, modelfile_tau_strato, modelfile_source,     &                           
                                      col_dry, tlev) result(error_msg)
       import ty_gas_optics, wp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw
       class(ty_gas_optics),     intent(in   ) :: this
@@ -89,8 +89,8 @@ module mo_gas_optics
                                 intent(inout) :: sources       ! Planck sources
 
       real(wp), dimension(:,:,:), intent(inout) :: nn_inputs
-      real(wp), dimension(:,:), intent(in)         :: scaler_pfrac 
-      character (len = 60), intent(in)             :: modelfile_tau, modelfile_source
+      real(wp), dimension(:,:), intent(in)      :: scaler_pfrac 
+      character (len = 60),     intent(in)      :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
 
 
       character(len=128)                      :: error_msg
