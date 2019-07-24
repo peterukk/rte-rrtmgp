@@ -152,8 +152,8 @@ program rrtmgp_rfmip_lw
   !modelfile_tau = "../../neural/data/taumodel_i21_n32.txt"
   !modelfile_tau     = "../../neural/data/taumodel_n40_CAMS2.txt"
   !modelfile_tau     = "../../neural/data/taumodel_n40_CAMS_weighttrain.txt"
-  modelfile_tau_tropo   = "../../neural/data/taumodel_CAMS_weighttrain_trop_n50.txt"
-  modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_weighttrain_strat_n30.txt"
+  modelfile_tau_tropo   = "../../neural/data/taumodel_CAMS_weighttrain_trop_n50_2.txt"
+  modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_weighttrain_strat_n40.txt"
   modelfile_source  = modelfile_tau_tropo
   ! Model predictions are standard-scaled. Load data for post-processing the outputs
   ! The coefficients for scaling the INPUTS a re currently still hard-coded in mo_gas_optics_rrtmgp.F90
