@@ -1,3 +1,9 @@
+# This fork uses neural networks to accelerate the gas optics computational kernels
+# STATUS 24.7.2019 #
+Currently only longwave implemented!!
+Speed: The optical depth kernel is up to five times faster than original on ifort+MKL when using single precision and a model with two hidden layers, 30 neurons. On old gfortran compilers and double precision, barely faster at all.
+Accuracy: Downwelling long-wave fluxes have maximum column errors up to 5 W/m2 for independent RFMIP sites. Upwelling fluxes are much better, less than 1 W/m2. 
+
 # RTE+RRTMGP
 
 This is the repository for RTE+RRTMGP, a set of codes for computing radiative fluxes in planetary atmospheres. RTE+RRTMGP is described in a [manuscript submitted Jan 17, 2019](https://owncloud.gwdg.de/index.php/s/JQo9AeRu6uIwVyR) to [Journal of Advances in Modeling Earth Systems](http://james.agu.org). 
