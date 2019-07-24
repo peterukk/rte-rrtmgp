@@ -4,7 +4,7 @@ Currently only longwave implemented!!
 
 Speed: The optical depth kernel is up to five times faster than original on ifort+MKL when using single precision and a model with two hidden layers, 30 neurons. On old gfortran compilers and double precision, barely faster at all.
 
-Accuracy: Downwelling long-wave fluxes have maximum column errors up to 5 W/m2 for independent RFMIP sites. Upwelling fluxes are much better, less than 1 W/m2. 
+Accuracy: Downwelling long-wave fluxes have maximum column errors up to 5 W/m2 for independent RFMIP sites. Upwelling fluxes errors are less than 1 W/m2. 
 
 # RTE+RRTMGP
 
