@@ -20,9 +20,14 @@ module mo_gas_optics_kernels
   use mod_network,      only: network_type
   implicit none
 
+  ! type kernel_pointer
+  !   procedure(kernel_procedure), pointer, pass :: kernelpointer
+  ! end type
+
   interface zero_array
     module procedure zero_array_3D, zero_array_4D
   end interface
+
 contains
   ! --------------------------------------------------------------------------------------
   ! Compute interpolation coefficients
@@ -594,6 +599,94 @@ contains
 
   end subroutine compute_Planck_source
 
+  ! ----------------------------------------------------------
+  subroutine compute_Planck_source_nn0(                    &
+                    ncol, nlay, nbnd, ngpt,               &
+                    ntemp, nPlanckTemp,                   &
+                    tlay, tlev, tsfc, sfc_lay,            &
+                    band_lims_gpt,                        &
+                    temp_ref_min, totplnk_delta, totplnk, &
+                    pfrac,                                &
+                    sfc_src, lay_src, lev_src_inc, lev_src_dec) bind(C, name="compute_Planck_source_nn0")
+    integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
+    integer,                                    intent(in) :: ntemp, nPlanckTemp
+    real(wp),    dimension(ncol,nlay  ),        intent(in) :: tlay
+    real(wp),    dimension(ncol,nlay+1),        intent(in) :: tlev
+    real(wp),    dimension(ncol       ),        intent(in) :: tsfc
+    integer,                                    intent(in) :: sfc_lay
+
+    integer, dimension(2, nbnd),                  intent(in) :: band_lims_gpt ! start and end g-point for each band
+    real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
+    real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
+    real(wp), dimension(ngpt,nlay,ncol),          intent(in) :: pfrac
+
+    real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_src
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lay_src
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lev_src_inc, lev_src_dec
+    ! -----------------
+    ! local
+    integer  :: ilay, icol, igpt, ibnd
+    integer  :: gptS, gptE
+    real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
+    real(wp) :: planck_function(nbnd,nlay+1,ncol)
+
+
+    !
+    ! Planck function by band for the surface
+    ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
+    !
+    do icol = 1, ncol
+      planck_function(1:nbnd,1,icol) = interpolate1D(tsfc(icol), temp_ref_min, totplnk_delta, totplnk)
+      !
+      ! Map to g-points
+      !
+      do ibnd = 1, nbnd
+        gptS = band_lims_gpt(1, ibnd)
+        gptE = band_lims_gpt(2, ibnd)
+        do igpt = gptS, gptE
+          sfc_src(igpt, icol) = pfrac(igpt,sfc_lay,icol) * planck_function(ibnd, 1, icol)
+        end do
+      end do
+    end do ! icol
+
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        ! Compute layer source irradiance for g-point, equals band irradiance x fraction for g-point
+        planck_function(1:nbnd,ilay,icol) = interpolate1D(tlay(icol,ilay), temp_ref_min, totplnk_delta, totplnk)
+        !
+        ! Map to g-points
+        !
+        do ibnd = 1, nbnd
+          gptS = band_lims_gpt(1, ibnd)
+          gptE = band_lims_gpt(2, ibnd)
+          do igpt = gptS, gptE
+            lay_src(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function(ibnd,ilay,icol)
+          end do
+        end do
+      end do ! ilay
+    end do ! icol
+
+    ! compute level source irradiances for each g-point, one each for upward and downward paths
+    do icol = 1, ncol
+      planck_function(1:nbnd,       1,icol) = interpolate1D(tlev(icol,     1), temp_ref_min, totplnk_delta, totplnk)
+      do ilay = 1, nlay
+        planck_function(1:nbnd,ilay+1,icol) = interpolate1D(tlev(icol,ilay+1), temp_ref_min, totplnk_delta, totplnk)
+        !
+        ! Map to g-points
+        !
+        do ibnd = 1, nbnd
+          gptS = band_lims_gpt(1, ibnd)
+          gptE = band_lims_gpt(2, ibnd)
+          do igpt = gptS, gptE
+            lev_src_inc(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function(ibnd,ilay+1,icol)
+            lev_src_dec(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function(ibnd,ilay,  icol)
+          end do
+        end do
+      end do ! ilay
+    end do ! icol
+
+    end subroutine compute_Planck_source_nn0
+
     ! ----------------------------------------------------------
   subroutine compute_Planck_source_nn(                    &
                     ncol, nlay, nbnd, ngpt,               &
@@ -681,204 +774,155 @@ contains
 
   end subroutine compute_Planck_source_nn
 
-    ! ----------------------------------------------------------
-  subroutine compute_Planck_source_nn2(                    &
-                    ncol, nlay, nbnd, ngpt,               &
-                    ntemp, nPlanckTemp,                   &
-                    tlay, tlev, tsfc, sfc_lay,            &
-                    band_lims_gpt,                        &
-                    temp_ref_min, totplnk_delta, totplnk, &
-                    pfrac,                                &
-                    sfc_src, lay_src, lev_src_inc, lev_src_dec) bind(C, name="compute_Planck_source_nn2")
-    integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
-    integer,                                    intent(in) :: ntemp, nPlanckTemp
-    real(wp),    dimension(ncol,nlay  ),        intent(in) :: tlay
-    real(wp),    dimension(ncol,nlay+1),        intent(in) :: tlev
-    real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-    integer,                                    intent(in) :: sfc_lay
+   ! ---------------------------------------------------------
 
-    integer, dimension(2, nbnd),                  intent(in) :: band_lims_gpt ! start and end g-point for each band
-    real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
-    real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
-    real(wp), dimension(ncol,nlay,ngpt),          intent(in) :: pfrac
-
-    real(wp), dimension(ncol,     ngpt), intent(inout) :: sfc_src
-    real(wp), dimension(ncol,nlay,ngpt), intent(inout) :: lay_src
-    real(wp), dimension(ncol,nlay,ngpt), intent(inout) :: lev_src_inc, lev_src_dec
-    ! -----------------
-    ! local
-    integer  :: ilay, icol, igpt, ibnd
-    integer  :: gptS, gptE
-    real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
-    real(wp), dimension(ncol,nlay,nbnd) :: planck_function_lay
-    real(wp), dimension(ncol,nlay+1,nbnd) :: planck_function_lev
-    real(wp), dimension(ncol,nbnd)      :: planck_function_sfc
-
-
-    ! Planck functions by band for the surface and lowest level
-    do icol = 1, ncol
-      ! Planck function by band for the surface
-      planck_function_sfc(icol,1:nbnd) = interpolate1D(tsfc(icol), temp_ref_min, totplnk_delta, totplnk)
-      ! Planck function by band for the lowest level
-      planck_function_lev(icol,1,1:nbnd) = interpolate1D(tlev(icol,1), temp_ref_min, totplnk_delta, totplnk)
-    end do
-
-    ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
-    do ibnd = 1, nbnd
-      gptS = band_lims_gpt(1, ibnd)
-      gptE = band_lims_gpt(2, ibnd)
-      do igpt = gptS, gptE
-        do icol = 1, ncol
-            sfc_src(icol,igpt) = pfrac(icol,sfc_lay,igpt) * planck_function_sfc(icol,ibnd)
-        end do
-      end do
-    end do
-
-    ! Planck functions by band for the layers and remaining levels
-    do ilay = 1, nlay
-      do icol = 1, ncol
-        planck_function_lev(icol,ilay+1,1:nbnd) = interpolate1D(tlev(icol,ilay+1), temp_ref_min, totplnk_delta, totplnk)
-        planck_function_lay(icol,ilay,1:nbnd)   = interpolate1D(tlay(icol,ilay),   temp_ref_min, totplnk_delta, totplnk)
-      end do
-    end do
-
-    ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
-    do ibnd = 1, nbnd
-      gptS = band_lims_gpt(1, ibnd)
-      gptE = band_lims_gpt(2, ibnd)
-      do igpt = gptS, gptE
-        do ilay = 1, nlay
-          do icol = 1, ncol
-            lay_src(icol,ilay,igpt)     = pfrac(icol,ilay,igpt) * planck_function_lay(icol,ilay,ibnd)
-            lev_src_inc(icol,ilay,igpt) = pfrac(icol,ilay,igpt) * planck_function_lev(icol,ilay+1,ibnd)
-            lev_src_dec(icol,ilay,igpt) = pfrac(icol,ilay,igpt) * planck_function_lev(icol,ilay,ibnd)
-          end do
-        end do
-      end do
-    end do
-
-
-    !!!
-    ! Maybe better to broadcast planck function to pfracs dimensions? (icol,ilay,igpt)
-
-    ! planck_function = spread(planck_function_lay)
-    ! !   (icol,ilay,igpt)
-    ! lay_src = pfrac * planck_function
-
-
-  end subroutine compute_Planck_source_nn2
-   ! ----------------------------------------------------------
-  subroutine compute_nnlw_kernel(                &
-                    ncol, nlay, ngpt, ngas,      & 
-                    itropo, istrato,             &
-                    nn_inputs, scaler_pfrac,     &
+  subroutine predict_nn_lw(                 &
+                    ncol, nlay, ngpt, ngas,       & 
+                    itropo, istrato,              &
+                    nn_inputs, scaler_pfrac,      &
                     net_tau_tropo, net_tau_strato, net_pfrac,          &
                     tau_gas, pfrac)
-
-                    !   net_tau, net_pfrac,          &
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
     integer,  dimension(ncol,2),              intent(in) :: itropo, istrato
     real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
     real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
     ! The models should also be inputs
-    type(network_type),                       intent(in) :: net_tau_tropo, net_tau_strato, net_pfrac
+    type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
 
-    ! -----------------
     ! local
-    integer  :: ilay, icol, num_layers_tropo, num_layers_strato, neurons_tau_tropo, neurons_tau_strato
-    real(wp) :: eps_neural = 0.005_wp
-    ! real(wp) :: pfrac          (ngpt,nlay,  ncol)
+    real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
+    integer                             :: ilay, icol
 
-    ! -----------------
+    real(wp) :: eps_neural = 0.005_wp 
 
+    do icol = 1, ncol
+      do ilay = 1, nlay
+      ! do ilay = istrato(icol, 1), istrato(icol, 2)
+        ! PREDICT PLANCK FRACTIONS
+        call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+        ! Scaling
+        pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
 
-    ! !!!!!!!!!!!!!!!    ON LOOP ORDERS  !!!!!!!!!!!
-    ! after the call to this functions, the output arrays (lay_source,lev_source_inc,lev_source_dec)
-    ! are actually reordered again to (ncol,nlay,ngpt)) because the radiative transfer calculations are done in this order
-    ! (columns vary the fastest, g-points the slowest)
-    ! for this purpose it might be beneficial to predict the gas optics directly as var(ncol,nlay,ngpt)
-    ! however, the problem is that all the g-points are predicted simultaenously. For the gas optics it's simply better
-    ! to have g-points as innermost dimension
+        ! PREDICT OPTICAL DEPTHS
+        call net_tau_strato % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
+        ! Scaling
+        tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural 
+        tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
+      end do   ! layer
+    end do
 
-    ! Best implementation for now...store planck fractions and taus as (ngpt,nlay,ncol), but after the function call, reorder the 
-    ! planck fractions, and calculate the sources as (ncol,nlay,ngpt) for RTE?
-    ! In this way the reordering needs to be done only once and not three times (for lay_source, lev_source_inc, lev_source_dec)
-
-    ! num_layers=size(net_tau % dims)
-    ! neurons_tau =  net_tau %dims(num_layers-1)
-
-    ! do icol = 1, ncol
-    !   do ilay = 1, nlay
-    !     ! Calculation of fraction of band's Planck irradiance associated with each g-point
-    !     pfrac(:,ilay,icol) = 1.0_wp
-
-    !     ! pfrac(:,ilay,icol) = model_pfrac_predict ( nn_inputs(:,ilay,icol) )
-    !     ! Post-processing (training was done on standard-scaled targets)
-    !     ! pfrac(:,ilay,icol) = pfrac(:,ilay,icol) * scaler_pfrac(:,2) ! multiply by standard deviation of raw data 
-    !     ! pfrac(:,ilay,icol) = pfrac(:,ilay,icol) + scaler_pfrac(:,1) ! add the mean of raw data
+    !   do ilay = itropo(icol, 1), itropo(icol, 2)
+    !     ! PREDICT PLANCK FRACTIONS
+    !     call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+    !     ! Scaling
+    !     pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
 
     !     ! PREDICT OPTICAL DEPTHS
-    !     !tau_gas(:,ilay,icol) = 1.0
-    !     call net_tau % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau, tau_gas(:,ilay,icol))
-
-    !     ! Post-processing (training was done on log of targets)
-    !     !tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
-    !     call fastexp(tau_gas(:,ilay,icol))
-    !     tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
+    !     call net_tau_tropo % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
+    !     ! Scaling
+    !     tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural 
     !     tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
-    !     !tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
     !   end do   ! layer
     ! end do     ! column
 
-    ! nlay_strat is the lowest level of the stratosphere
+  end subroutine predict_nn_lw
 
-    num_layers_tropo    =  size(net_tau_tropo % dims)
-    neurons_tau_tropo   =  net_tau_tropo %dims(num_layers_tropo-1)
+  subroutine predict_nn_lw_matmul(                &
+                    ncol, nlay, ngpt, ngas,       & 
+                    nn_inputs, scaler_pfrac,      &
+                    net_tau_tropo, net_tau_strato, net_pfrac,          &
+                    tau_gas, pfrac)
+    ! inputs
+    integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
+    real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
+    real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
+    ! The models should also be inputs
+    type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
 
-    num_layers_strato   =  size(net_tau_strato % dims)
-    neurons_tau_strato  =  net_tau_strato %dims(num_layers_strato-1)
+    ! outputs
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
+
+    ! local
+    real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
+    integer                             :: ilay, icol
+
+    real(wp) :: eps_neural = 0.005_wp 
+
+    ! Process all the data in a single neural network call (big matrix-matrix multiplication done by SGEMM)
+    ! This assumes the same neural network model can be used for the stratosphere and troposphere
+
+    ! PREDICT PLANCK FRACTIONS
+    call net_pfrac % output_sgemm(reshape(nn_inputs,(/ngas+3,nlay*ncol/)), tmp_output)
+    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
+
+    ! Scaling
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
+      end do
+    end do
+
+    ! PREDICT OPTICAL DEPTHS
+    call net_tau_tropo % output_sgemm(reshape(nn_inputs,(/ngas+3,nlay*ncol/)), tmp_output )
+    ! Scaling
+    tau_gas = reshape(tmp_output,(/ngpt,nlay,ncol/))       
+    tau_gas = exp(tau_gas) - eps_neural 
+    tau_gas = max(0.0_wp, tau_gas)
+
+    end subroutine predict_nn_lw_matmul
+
+  subroutine predict_nn_lw_flattenlevs(    &
+                    ncol, nlay, ngpt, ngas,      & 
+                    itropo, istrato,             &
+                    nn_inputs, scaler_pfrac,     &
+                    net_tau_tropo, net_tau_strato, net_pfrac,          &
+                    tau_gas, pfrac)
+    ! inputs
+    integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
+    integer,  dimension(ncol,2),              intent(in) :: itropo, istrato
+    real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
+    real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
+    ! The models should also be inputs
+    type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
+    ! outputs
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
+    ! local
+    integer  :: ilay, icol, istart, iend
+    real(wp) :: eps_neural = 0.005_wp 
 
     do icol = 1, ncol
-      
-      do ilay = istrato(icol, 1), istrato(icol, 2)
-        ! Calculation of fraction of band's Planck irradiance associated with each g-point
-        pfrac(:,ilay,icol) = 1.0_wp
+      call net_pfrac % output_sgemm(nn_inputs(:,:,icol), pfrac(:,:,icol))
 
-        ! PREDICT OPTICAL DEPTHS
-        call net_tau_strato % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau_strato, tau_gas(:,ilay,icol))
-        ! Post-processing (training was done on log of targets)
-        !tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
-        call fastexp(tau_gas(:,ilay,icol))
-        tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
-        tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
-      end do   ! layer
+      do ilay = 1, nlay
+        pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
+      end do
 
-      do ilay = itropo(icol, 1), itropo(icol, 2)
-        ! Calculation of fraction of band's Planck irradiance associated with each g-point
-        pfrac(:,ilay,icol) = 1.0_wp
+      istart  = istrato(icol, 1)
+      iend    = istrato(icol, 2)
+      call net_tau_strato  % output_sgemm(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
 
-        ! PREDICT OPTICAL DEPTHS
-        call net_tau_tropo % output_flatmodel_sgemv (nn_inputs(:,ilay,icol), neurons_tau_tropo, tau_gas(:,ilay,icol))
-        ! Post-processing (training was done on log of targets)
-        !tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
-        call fastexp(tau_gas(:,ilay,icol))
-        tau_gas(:,ilay,icol) = tau_gas(:,ilay,icol) - eps_neural
-        tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
-      end do   ! layer
+      tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
+      tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
+
+
+      istart  = itropo(icol, 1)
+      iend    = itropo(icol, 2)
+      call net_tau_tropo   % output_sgemm(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
+
+      tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
+      tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
 
     end do     ! column
-
   
-  end subroutine compute_nnlw_kernel
+  end subroutine predict_nn_lw_flattenlevs
 
   elemental subroutine fastexp(x)
     real(wp), intent(inout) :: x
-    x = 1.0_wp + x / 256;
-    x = x**256
+    x = (1.0_wp + x / 256_wp)**256_wp;
   end subroutine fastexp
 
   ! ----------------------------------------------------------

@@ -2,57 +2,91 @@ Flat profile:
 
 Each sample counts as 0.01 seconds.
   %   cumulative   self              self     total           
- time   seconds   seconds    calls  Ts/call  Ts/call  name    
- 22.99    117.31   117.31                             __mo_gas_optics_kernels_MOD_interpolate3d_byflav
- 21.78    228.42   111.11                             reorder_123x321_kernel
- 15.40    307.00    78.59                             __mo_gas_optics_kernels_MOD_interpolate2d_byflav
-  8.67    351.25    44.25                             gas_optical_depths_minor
-  8.09    392.53    41.28                             compute_Planck_source
-  7.29    429.71    37.18                             lw_source_noscat
-  3.19    446.01    16.30                             sum_broadband
-  2.46    458.56    12.55                             interpolation
-  1.67    467.06     8.50                             __mo_gas_optics_rrtmgp_MOD_source
-  1.62    475.30     8.24                             lw_transport_noscat
-  1.50    482.96     7.66                             __mo_gas_optics_rrtmgp_MOD_compute_gas_taus
-  1.45    490.34     7.38                             gas_optical_depths_major
-  1.22    496.57     6.23                             lw_solver_noscat_GaussQuad
-  1.13    502.36     5.79                             lw_solver_noscat
-  0.68    505.82     3.46                             zero_array_3D
-  0.27    507.21     1.39                             __mo_gas_optics_rrtmgp_MOD_gas_optics_int
-  0.24    508.41     1.20                             __mo_gas_optics_kernels_MOD_interpolate1d
-  0.20    509.41     1.00                             any_vals_less_than
-  0.05    509.64     0.23                             __mo_gas_concentrations_MOD_get_vmr_2d
-  0.03    509.81     0.17                             __mo_rte_lw_MOD_expand_and_transpose
-  0.03    509.97     0.16                             apply_BC_0
-  0.01    510.04     0.07                             __mo_gas_optics_kernels_MOD_interpolate3d
-  0.01    510.08     0.04                             __mo_gas_optics_rrtmgp_MOD_get_col_dry
-  0.01    510.11     0.04                             combine_and_reorder_2str
-  0.01    510.14     0.03                             __mo_gas_optics_rrtmgp_MOD_check_range_2d
-  0.00    510.15     0.01                             __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs
-  0.00    510.16     0.01                             __mo_util_reorder_MOD_reorder123x321
-  0.00    510.17     0.01                             __mo_util_string_MOD_lower_case
-  0.00    510.18     0.01                             apply_BC_gpt
-  0.00    510.19     0.01                             compute_tau_absorption
-  0.00    510.19     0.00      642     0.00     0.00  stop_on_err_
-  0.00    510.19     0.00       22     0.00     0.00  __mo_simple_netcdf_MOD_read_1d_field
-  0.00    510.19     0.00       20     0.00     0.00  __mo_simple_netcdf_MOD_get_dim_size
-  0.00    510.19     0.00       18     0.00     0.00  __mo_rfmip_io_MOD_read_scaling
-  0.00    510.19     0.00        8     0.00     0.00  __mo_simple_netcdf_MOD_read_3d_field
-  0.00    510.19     0.00        7     0.00     0.00  __mo_simple_netcdf_MOD_read_2d_field
-  0.00    510.19     0.00        7     0.00     0.00  __mo_simple_netcdf_MOD_read_char_vec
-  0.00    510.19     0.00        4     0.00     0.00  __mo_simple_netcdf_MOD_read_logical_vec
-  0.00    510.19     0.00        3     0.00     0.00  __mo_simple_netcdf_MOD_read_scalar
-  0.00    510.19     0.00        2     0.00     0.00  __mo_rfmip_io_MOD_unblock_and_write
-  0.00    510.19     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_read_4d_field
-  0.00    510.19     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_var_exists
-  0.00    510.19     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_write_3d_field
-  0.00    510.19     0.00        1     0.00     0.00  __mo_load_coefficients_MOD_load_and_init
-  0.00    510.19     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_determine_gas_names
-  0.00    510.19     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_gases_ty
-  0.00    510.19     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_lw_bc
-  0.00    510.19     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_pt
-  0.00    510.19     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_kdist_gas_names
-  0.00    510.19     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_size
+ time   seconds   seconds    calls   s/call   s/call  name    
+ 67.11      2.53     2.53        5     0.51     0.51  reorder_123x321_kernel
+ 10.34      2.92     0.39        1     0.39     0.39  compute_Planck_source
+  4.24      3.08     0.16        1     0.16     0.31  lw_solver_noscat
+  3.98      3.23     0.15      256     0.00     0.00  lw_transport_noscat
+  3.18      3.35     0.12        1     0.12     0.27  __mo_gas_optics_kernels_MOD_compute_nnlw_kernel
+  2.65      3.45     0.10        1     0.10     0.10  interpolation
+  2.39      3.54     0.09   216000     0.00     0.00  __mod_network_MOD_output
+  1.06      3.58     0.04   216000     0.00     0.00  __mod_activation_MOD_linear
+  1.06      3.62     0.04        1     0.04     3.21  __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn
+  0.80      3.65     0.03        2     0.02     0.02  sum_broadband
+  0.80      3.68     0.03                             MAIN__
+  0.53      3.70     0.02   432000     0.00     0.00  __mod_activation_MOD_sigmoid
+  0.53      3.72     0.02       36     0.00     0.00  __mo_gas_concentrations_MOD_get_vmr_2d
+  0.53      3.74     0.02        1     0.02     0.02  any_vals_less_than
+  0.27      3.75     0.01        1     0.01     1.20  __mo_gas_optics_rrtmgp_MOD_gas_optics_ext
+  0.27      3.76     0.01        1     0.01     0.16  __mo_gas_optics_rrtmgp_MOD_load_int
+  0.27      3.77     0.01        1     0.01     0.01  __mo_rfmip_io_MOD_read_and_block_gases_ty
+  0.00      3.77     0.00     1657     0.00     0.00  __mo_util_string_MOD_lower_case
+  0.00      3.77     0.00      444     0.00     0.00  __mo_util_string_MOD_string_loc_in_array
+  0.00      3.77     0.00      161     0.00     0.00  __mo_util_string_MOD_string_in_array
+  0.00      3.77     0.00       54     0.00     0.00  __mo_gas_concentrations_MOD_find_gas
+  0.00      3.77     0.00       28     0.00     0.00  __mo_optical_props_MOD_is_initialized_base
+  0.00      3.77     0.00       22     0.00     0.00  __mo_simple_netcdf_MOD_read_1d_field
+  0.00      3.77     0.00       20     0.00     0.00  __mo_simple_netcdf_MOD_get_dim_size
+  0.00      3.77     0.00       19     0.00     0.15  __mo_gas_optics_rrtmgp_MOD_check_key_species_present
+  0.00      3.77     0.00       18     0.00     0.00  __mo_gas_concentrations_MOD_increase_list_size
+  0.00      3.77     0.00       18     0.00     0.00  __mo_gas_concentrations_MOD_set_vmr_2d
+  0.00      3.77     0.00       18     0.00     0.00  __mo_rfmip_io_MOD_read_scaling
+  0.00      3.77     0.00       12     0.00     0.00  __mod_layer_MOD_constructor
+  0.00      3.77     0.00       12     0.00     0.00  __mod_layer_MOD_set_activation
+  0.00      3.77     0.00       12     0.00     0.00  __mod_random_MOD_randn1d
+  0.00      3.77     0.00        9     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_ngas
+  0.00      3.77     0.00        9     0.00     0.00  __mo_optical_props_MOD_get_ngpt
+  0.00      3.77     0.00        8     0.00     0.00  __mo_simple_netcdf_MOD_read_3d_field
+  0.00      3.77     0.00        7     0.00     0.00  __mo_simple_netcdf_MOD_read_2d_field
+  0.00      3.77     0.00        7     0.00     0.00  __mo_simple_netcdf_MOD_read_char_vec
+  0.00      3.77     0.00        5     0.00     0.00  __mo_optical_props_MOD_get_nband
+  0.00      3.77     0.00        4     0.00     0.00  __mo_optical_props_MOD_get_band_lims_gpoint
+  0.00      3.77     0.00        4     0.00     0.00  __mo_simple_netcdf_MOD_read_logical_vec
+  0.00      3.77     0.00        4     0.00     0.00  __mo_source_functions_MOD_is_allocated_lw
+  0.00      3.77     0.00        4     0.00     0.63  __mo_util_reorder_MOD_reorder123x321
+  0.00      3.77     0.00        3     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_npres
+  0.00      3.77     0.00        3     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_ntemp
+  0.00      3.77     0.00        3     0.00     0.00  __mo_optical_props_MOD_init_base
+  0.00      3.77     0.00        3     0.00     0.00  __mo_simple_netcdf_MOD_read_scalar
+  0.00      3.77     0.00        3     0.00     0.00  __mod_network_MOD_init
+  0.00      3.77     0.00        3     0.00     0.00  __mod_network_MOD_load
+  0.00      3.77     0.00        2     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_col_dry
+  0.00      3.77     0.00        2     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_neta
+  0.00      3.77     0.00        2     0.00     0.00  __mo_optical_props_MOD_get_band_lims_wavenumber
+  0.00      3.77     0.00        2     0.00     0.00  __mo_optical_props_MOD_get_gpoint_bands
+  0.00      3.77     0.00        2     0.00     0.00  __mo_rfmip_io_MOD_unblock_and_write
+  0.00      3.77     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_read_4d_field
+  0.00      3.77     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_var_exists
+  0.00      3.77     0.00        2     0.00     0.00  __mo_simple_netcdf_MOD_write_3d_field
+  0.00      3.77     0.00        2     0.00     0.00  __mo_source_functions_MOD_get_ncol_lw
+  0.00      3.77     0.00        2     0.00     0.00  __mo_source_functions_MOD_get_nlay_lw
+  0.00      3.77     0.00        1     0.00     0.00  __mo_fluxes_MOD_are_desired_broadband
+  0.00      3.77     0.00        1     0.00     0.03  __mo_fluxes_MOD_reduce_broadband
+  0.00      3.77     0.00        1     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_nplancktemp
+  0.00      3.77     0.00        1     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_get_press_min
+  0.00      3.77     0.00        1     0.00     0.00  __mo_gas_optics_rrtmgp_MOD_source_is_internal
+  0.00      3.77     0.00        1     0.00     0.16  __mo_load_coefficients_MOD_load_and_init
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_alloc_only_1scl
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_copy_and_alloc_1scl
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_finalize_base
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_get_name
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_get_ncol
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_get_nlay
+  0.00      3.77     0.00        1     0.00     0.00  __mo_optical_props_MOD_init_base_from_copy
+  0.00      3.77     0.00        1     0.00     0.02  __mo_optical_props_MOD_validate_1scalar
+  0.00      3.77     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_determine_gas_names
+  0.00      3.77     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_lw_bc
+  0.00      3.77     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_and_block_pt
+  0.00      3.77     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_kdist_gas_names
+  0.00      3.77     0.00        1     0.00     0.00  __mo_rfmip_io_MOD_read_size
+  0.00      3.77     0.00        1     0.00     0.36  __mo_rte_lw_MOD_rte_lw
+  0.00      3.77     0.00        1     0.00     0.00  __mo_source_functions_MOD_alloc_lw
+  0.00      3.77     0.00        1     0.00     0.00  __mo_source_functions_MOD_copy_and_alloc_lw
+  0.00      3.77     0.00        1     0.00     0.00  __mo_source_functions_MOD_finalize_lw
+  0.00      3.77     0.00        1     0.00     0.00  _init
+  0.00      3.77     0.00        1     0.00     0.00  apply_BC_0
+  0.00      3.77     0.00        1     0.00     0.31  lw_solver_noscat_GaussQuad
+  0.00      3.77     0.00        1     0.00     0.00  zero_array_3D
 
  %         the percentage of the total running time of the
 time       program used by this function.
@@ -81,7 +115,7 @@ name       the name of the function.  This is the minor sort
 	   in parenthesis it shows where it would appear in
 	   the gprof listing if it were to be printed.
 
-Copyright (C) 2012-2015 Free Software Foundation, Inc.
+Copyright (C) 2012-2018 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright
@@ -90,184 +124,451 @@ notice and this notice are preserved.
 		     Call graph (explanation follows)
 
 
-granularity: each sample hit covers 2 byte(s) for 0.00% of 510.19 seconds
+granularity: each sample hit covers 2 byte(s) for 0.27% of 3.77 seconds
 
 index % time    self  children    called     name
                                                  <spontaneous>
-[1]     23.0  117.31    0.00                 __mo_gas_optics_kernels_MOD_interpolate3d_byflav [1]
+[1]    100.0    0.03    3.74                 MAIN__ [1]
+                0.04    3.17       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.36       1/1           __mo_rte_lw_MOD_rte_lw [8]
+                0.00    0.16       1/1           __mo_load_coefficients_MOD_load_and_init [13]
+                0.01    0.00       1/1           __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+                0.00    0.00       2/2           __mo_rfmip_io_MOD_unblock_and_write [117]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_size [138]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_determine_gas_names [134]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_and_block_pt [136]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_and_block_lw_bc [135]
+                0.00    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_source_is_internal [126]
+                0.00    0.00       1/9           __mo_optical_props_MOD_get_ngpt [99]
+                0.00    0.00       1/5           __mo_optical_props_MOD_get_nband [103]
+                0.00    0.00       1/9           __mo_gas_optics_rrtmgp_MOD_get_ngas [98]
+                0.00    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_get_press_min [125]
+                0.00    0.00       1/1           __mo_source_functions_MOD_copy_and_alloc_lw [140]
+                0.00    0.00       1/1           __mo_optical_props_MOD_copy_and_alloc_1scl [128]
 -----------------------------------------------
-                                                 <spontaneous>
-[2]     21.8  111.11    0.00                 reorder_123x321_kernel [2]
+                0.04    3.17       1/1           MAIN__ [1]
+[2]     85.0    0.04    3.17       1         __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    1.69      11/19          __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.01    1.19       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.12    0.15       1/1           __mo_gas_optics_kernels_MOD_compute_nnlw_kernel [11]
+                0.01    0.00      18/36          __mo_gas_concentrations_MOD_get_vmr_2d [22]
+                0.00    0.00      18/1657        __mo_util_string_MOD_lower_case [85]
+                0.00    0.00       4/9           __mo_gas_optics_rrtmgp_MOD_get_ngas [98]
+                0.00    0.00       3/9           __mo_optical_props_MOD_get_ngpt [99]
+                0.00    0.00       3/3           __mod_network_MOD_load [112]
+                0.00    0.00       1/5           __mo_optical_props_MOD_get_nband [103]
+                0.00    0.00       1/2           __mo_source_functions_MOD_get_ncol_lw [121]
+                0.00    0.00       1/2           __mo_source_functions_MOD_get_nlay_lw [122]
+                0.00    0.00       1/28          __mo_optical_props_MOD_is_initialized_base [89]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_get_npres [107]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_get_ntemp [108]
+                0.00    0.00       1/444         __mo_util_string_MOD_string_loc_in_array [86]
+                0.00    0.00       1/1           zero_array_3D [26]
+                0.00    0.00       1/1           _init [142]
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_get_col_dry [113]
 -----------------------------------------------
-                                                 <spontaneous>
-[3]     15.4   78.59    0.00                 __mo_gas_optics_kernels_MOD_interpolate2d_byflav [3]
+                                   6             __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.15       1/19          __mo_gas_optics_rrtmgp_MOD_load_int [12]
+                0.00    1.08       7/19          __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    1.69      11/19          __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[3]     77.5    0.00    2.92      19+6       __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    2.53       4/4           __mo_util_reorder_MOD_reorder123x321 [5]
+                0.39    0.00       1/1           compute_Planck_source [7]
+                0.00    0.00     434/444         __mo_util_string_MOD_string_loc_in_array [86]
+                0.00    0.00     123/161         __mo_util_string_MOD_string_in_array [87]
+                0.00    0.00       2/2           __mo_optical_props_MOD_get_gpoint_bands [116]
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_get_neta [114]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_get_npres [107]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_get_ntemp [108]
+                0.00    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_get_nplancktemp [124]
+                0.00    0.00       1/4           __mo_optical_props_MOD_get_band_lims_gpoint [104]
+                0.00    0.00       1/3           __mo_optical_props_MOD_init_base [109]
+                0.00    0.00       1/9           __mo_gas_optics_rrtmgp_MOD_get_ngas [98]
+                                   6             __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
 -----------------------------------------------
-                                                 <spontaneous>
-[4]      8.7   44.25    0.00                 gas_optical_depths_minor [4]
+                2.53    0.00       5/5           __mo_util_reorder_MOD_reorder123x321 [5]
+[4]     67.1    2.53    0.00       5         reorder_123x321_kernel [4]
 -----------------------------------------------
-                                                 <spontaneous>
-[5]      8.1   41.28    0.00                 compute_Planck_source [5]
+                0.00    2.53       4/4           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+[5]     67.1    0.00    2.53       4         __mo_util_reorder_MOD_reorder123x321 [5]
+                2.53    0.00       5/5           reorder_123x321_kernel [4]
 -----------------------------------------------
-                                                 <spontaneous>
-[6]      7.3   37.18    0.00                 lw_source_noscat [6]
+                0.01    1.19       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[6]     31.7    0.01    1.19       1         __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    1.08       7/19          __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.10    0.00       1/1           interpolation [16]
+                0.01    0.00      18/36          __mo_gas_concentrations_MOD_get_vmr_2d [22]
+                0.00    0.00      18/1657        __mo_util_string_MOD_lower_case [85]
+                0.00    0.00       3/9           __mo_gas_optics_rrtmgp_MOD_get_ngas [98]
+                0.00    0.00       1/28          __mo_optical_props_MOD_is_initialized_base [89]
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_get_neta [114]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_get_npres [107]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_get_ntemp [108]
+                0.00    0.00       1/444         __mo_util_string_MOD_string_loc_in_array [86]
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_get_col_dry [113]
 -----------------------------------------------
-                                                 <spontaneous>
-[7]      3.2   16.30    0.00                 sum_broadband [7]
+                0.39    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+[7]     10.3    0.39    0.00       1         compute_Planck_source [7]
 -----------------------------------------------
-                                                 <spontaneous>
-[8]      2.5   12.55    0.00                 interpolation [8]
+                0.00    0.36       1/1           MAIN__ [1]
+[8]      9.5    0.00    0.36       1         __mo_rte_lw_MOD_rte_lw [8]
+                0.00    0.31       1/1           lw_solver_noscat_GaussQuad [10]
+                0.00    0.03       1/1           __mo_fluxes_MOD_reduce_broadband [19]
+                0.00    0.02       1/1           __mo_optical_props_MOD_validate_1scalar [23]
+                0.00    0.00       3/9           __mo_optical_props_MOD_get_ngpt [99]
+                0.00    0.00       3/5           __mo_optical_props_MOD_get_nband [103]
+                0.00    0.00       1/1           __mo_optical_props_MOD_get_ncol [131]
+                0.00    0.00       1/1           __mo_optical_props_MOD_get_nlay [132]
+                0.00    0.00       1/1           __mo_fluxes_MOD_are_desired_broadband [123]
+                0.00    0.00       1/2           __mo_source_functions_MOD_get_ncol_lw [121]
+                0.00    0.00       1/2           __mo_source_functions_MOD_get_nlay_lw [122]
+                0.00    0.00       1/4           __mo_optical_props_MOD_get_band_lims_gpoint [104]
+                0.00    0.00       1/1           apply_BC_0 [25]
 -----------------------------------------------
-                                                 <spontaneous>
-[9]      1.7    8.50    0.00                 __mo_gas_optics_rrtmgp_MOD_source [9]
+                0.16    0.15       1/1           lw_solver_noscat_GaussQuad [10]
+[9]      8.2    0.16    0.15       1         lw_solver_noscat [9]
+                0.15    0.00     256/256         lw_transport_noscat [14]
 -----------------------------------------------
-                                                 <spontaneous>
-[10]     1.6    8.24    0.00                 lw_transport_noscat [10]
+                0.00    0.31       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[10]     8.2    0.00    0.31       1         lw_solver_noscat_GaussQuad [10]
+                0.16    0.15       1/1           lw_solver_noscat [9]
 -----------------------------------------------
-                                                 <spontaneous>
-[11]     1.5    7.66    0.00                 __mo_gas_optics_rrtmgp_MOD_compute_gas_taus [11]
+                0.12    0.15       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[11]     7.2    0.12    0.15       1         __mo_gas_optics_kernels_MOD_compute_nnlw_kernel [11]
+                0.09    0.06  216000/216000      __mod_network_MOD_output [15]
 -----------------------------------------------
-                                                 <spontaneous>
-[12]     1.4    7.38    0.00                 gas_optical_depths_major [12]
+                0.01    0.15       1/1           __mo_load_coefficients_MOD_load_and_init [13]
+[12]     4.3    0.01    0.15       1         __mo_gas_optics_rrtmgp_MOD_load_int [12]
+                0.00    0.15       1/19          __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
 -----------------------------------------------
-                                                 <spontaneous>
-[13]     1.2    6.23    0.00                 lw_solver_noscat_GaussQuad [13]
+                0.00    0.16       1/1           MAIN__ [1]
+[13]     4.3    0.00    0.16       1         __mo_load_coefficients_MOD_load_and_init [13]
+                0.01    0.15       1/1           __mo_gas_optics_rrtmgp_MOD_load_int [12]
+                0.00    0.00      15/20          __mo_simple_netcdf_MOD_get_dim_size [91]
+                0.00    0.00       7/7           __mo_simple_netcdf_MOD_read_char_vec [102]
+                0.00    0.00       5/7           __mo_simple_netcdf_MOD_read_2d_field [101]
+                0.00    0.00       4/8           __mo_simple_netcdf_MOD_read_3d_field [100]
+                0.00    0.00       4/22          __mo_simple_netcdf_MOD_read_1d_field [90]
+                0.00    0.00       4/4           __mo_simple_netcdf_MOD_read_logical_vec [105]
+                0.00    0.00       3/3           __mo_simple_netcdf_MOD_read_scalar [110]
+                0.00    0.00       2/2           __mo_simple_netcdf_MOD_read_4d_field [118]
+                0.00    0.00       2/2           __mo_simple_netcdf_MOD_var_exists [119]
 -----------------------------------------------
-                                                 <spontaneous>
-[14]     1.1    5.79    0.00                 lw_solver_noscat [14]
+                0.15    0.00     256/256         lw_solver_noscat [9]
+[14]     4.0    0.15    0.00     256         lw_transport_noscat [14]
 -----------------------------------------------
-                                                 <spontaneous>
-[15]     0.7    3.46    0.00                 zero_array_3D [15]
+                0.09    0.06  216000/216000      __mo_gas_optics_kernels_MOD_compute_nnlw_kernel [11]
+[15]     4.0    0.09    0.06  216000         __mod_network_MOD_output [15]
+                0.04    0.00  216000/216000      __mod_activation_MOD_linear [17]
+                0.02    0.00  432000/432000      __mod_activation_MOD_sigmoid [21]
 -----------------------------------------------
-                                                 <spontaneous>
-[16]     0.3    1.39    0.00                 __mo_gas_optics_rrtmgp_MOD_gas_optics_int [16]
+                0.10    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+[16]     2.7    0.10    0.00       1         interpolation [16]
 -----------------------------------------------
-                                                 <spontaneous>
-[17]     0.2    1.20    0.00                 __mo_gas_optics_kernels_MOD_interpolate1d [17]
+                0.04    0.00  216000/216000      __mod_network_MOD_output [15]
+[17]     1.1    0.04    0.00  216000         __mod_activation_MOD_linear [17]
 -----------------------------------------------
-                                                 <spontaneous>
-[18]     0.2    1.00    0.00                 any_vals_less_than [18]
+                0.03    0.00       2/2           __mo_fluxes_MOD_reduce_broadband [19]
+[18]     0.8    0.03    0.00       2         sum_broadband [18]
 -----------------------------------------------
-                                                 <spontaneous>
-[19]     0.0    0.23    0.00                 __mo_gas_concentrations_MOD_get_vmr_2d [19]
+                0.00    0.03       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[19]     0.8    0.00    0.03       1         __mo_fluxes_MOD_reduce_broadband [19]
+                0.03    0.00       2/2           sum_broadband [18]
 -----------------------------------------------
-                                                 <spontaneous>
-[20]     0.0    0.17    0.00                 __mo_rte_lw_MOD_expand_and_transpose [20]
+                0.02    0.00       1/1           __mo_optical_props_MOD_validate_1scalar [23]
+[20]     0.5    0.02    0.00       1         any_vals_less_than [20]
 -----------------------------------------------
-                                                 <spontaneous>
-[21]     0.0    0.16    0.00                 apply_BC_0 [21]
+                0.02    0.00  432000/432000      __mod_network_MOD_output [15]
+[21]     0.5    0.02    0.00  432000         __mod_activation_MOD_sigmoid [21]
 -----------------------------------------------
-                                                 <spontaneous>
-[22]     0.0    0.07    0.00                 __mo_gas_optics_kernels_MOD_interpolate3d [22]
+                0.01    0.00      18/36          __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.01    0.00      18/36          __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[22]     0.5    0.02    0.00      36         __mo_gas_concentrations_MOD_get_vmr_2d [22]
+                0.00    0.00      36/54          __mo_gas_concentrations_MOD_find_gas [88]
 -----------------------------------------------
-                                                 <spontaneous>
-[23]     0.0    0.04    0.00                 __mo_gas_optics_rrtmgp_MOD_get_col_dry [23]
+                0.00    0.02       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[23]     0.5    0.00    0.02       1         __mo_optical_props_MOD_validate_1scalar [23]
+                0.02    0.00       1/1           any_vals_less_than [20]
+                0.00    0.00       1/1           __mo_optical_props_MOD_get_name [130]
 -----------------------------------------------
-                                                 <spontaneous>
-[24]     0.0    0.04    0.00                 combine_and_reorder_2str [24]
+                0.01    0.00       1/1           MAIN__ [1]
+[24]     0.3    0.01    0.00       1         __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+                0.00    0.00      19/161         __mo_util_string_MOD_string_in_array [87]
+                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_scaling [94]
+                0.00    0.00      18/18          __mo_gas_concentrations_MOD_set_vmr_2d [93]
+                0.00    0.00      16/22          __mo_simple_netcdf_MOD_read_1d_field [90]
+                0.00    0.00       2/8           __mo_simple_netcdf_MOD_read_3d_field [100]
 -----------------------------------------------
-                                                 <spontaneous>
-[25]     0.0    0.03    0.00                 __mo_gas_optics_rrtmgp_MOD_check_range_2d [25]
+                0.00    0.00       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[25]     0.0    0.00    0.00       1         apply_BC_0 [25]
 -----------------------------------------------
-                                                 <spontaneous>
-[26]     0.0    0.01    0.00                 apply_BC_gpt [26]
+                0.00    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[26]     0.0    0.00    0.00       1         zero_array_3D [26]
 -----------------------------------------------
-                                                 <spontaneous>
-[27]     0.0    0.01    0.00                 compute_tau_absorption [27]
+                0.00    0.00      18/1657        __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00      18/1657        __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00      19/1657        __mo_rfmip_io_MOD_determine_gas_names [134]
+                0.00    0.00    1602/1657        __mo_gas_concentrations_MOD_find_gas [88]
+[85]     0.0    0.00    0.00    1657         __mo_util_string_MOD_lower_case [85]
 -----------------------------------------------
-                                                 <spontaneous>
-[28]     0.0    0.01    0.00                 __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs [28]
+                0.00    0.00       1/444         __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00       1/444         __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00       8/444         __mo_rfmip_io_MOD_determine_gas_names [134]
+                0.00    0.00     434/444         __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+[86]     0.0    0.00    0.00     444         __mo_util_string_MOD_string_loc_in_array [86]
 -----------------------------------------------
-                                                 <spontaneous>
-[29]     0.0    0.01    0.00                 __mo_util_reorder_MOD_reorder123x321 [29]
+                0.00    0.00      19/161         __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+                0.00    0.00      19/161         __mo_rfmip_io_MOD_determine_gas_names [134]
+                0.00    0.00     123/161         __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+[87]     0.0    0.00    0.00     161         __mo_util_string_MOD_string_in_array [87]
 -----------------------------------------------
-                                                 <spontaneous>
-[30]     0.0    0.01    0.00                 __mo_util_string_MOD_lower_case [30]
+                0.00    0.00      18/54          __mo_gas_concentrations_MOD_set_vmr_2d [93]
+                0.00    0.00      36/54          __mo_gas_concentrations_MOD_get_vmr_2d [22]
+[88]     0.0    0.00    0.00      54         __mo_gas_concentrations_MOD_find_gas [88]
+                0.00    0.00    1602/1657        __mo_util_string_MOD_lower_case [85]
 -----------------------------------------------
-                0.00    0.00     642/642         MAIN__ [79]
-[31]     0.0    0.00    0.00     642         stop_on_err_ [31]
+                0.00    0.00       1/28          __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00       1/28          __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00       1/28          __mo_optical_props_MOD_init_base_from_copy [133]
+                0.00    0.00       1/28          __mo_optical_props_MOD_alloc_only_1scl [127]
+                0.00    0.00       1/28          __mo_source_functions_MOD_copy_and_alloc_lw [140]
+                0.00    0.00       1/28          __mo_source_functions_MOD_alloc_lw [139]
+                0.00    0.00       2/28          __mo_optical_props_MOD_get_gpoint_bands [116]
+                0.00    0.00       2/28          __mo_optical_props_MOD_get_band_lims_wavenumber [115]
+                0.00    0.00       4/28          __mo_source_functions_MOD_is_allocated_lw [106]
+                0.00    0.00       5/28          __mo_optical_props_MOD_get_nband [103]
+                0.00    0.00       9/28          __mo_optical_props_MOD_get_ngpt [99]
+[89]     0.0    0.00    0.00      28         __mo_optical_props_MOD_is_initialized_base [89]
 -----------------------------------------------
-                0.00    0.00       2/22          __mo_rfmip_io_MOD_read_and_block_lw_bc [197]
-                0.00    0.00       4/22          __mo_load_coefficients_MOD_load_and_init [194]
-                0.00    0.00      16/22          __mo_rfmip_io_MOD_read_and_block_gases_ty [196]
-[182]    0.0    0.00    0.00      22         __mo_simple_netcdf_MOD_read_1d_field [182]
+                0.00    0.00       2/22          __mo_rfmip_io_MOD_read_and_block_lw_bc [135]
+                0.00    0.00       4/22          __mo_load_coefficients_MOD_load_and_init [13]
+                0.00    0.00      16/22          __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+[90]     0.0    0.00    0.00      22         __mo_simple_netcdf_MOD_read_1d_field [90]
 -----------------------------------------------
-                0.00    0.00       1/20          __mo_rfmip_io_MOD_read_kdist_gas_names [199]
-                0.00    0.00       4/20          __mo_rfmip_io_MOD_read_size [200]
-                0.00    0.00      15/20          __mo_load_coefficients_MOD_load_and_init [194]
-[183]    0.0    0.00    0.00      20         __mo_simple_netcdf_MOD_get_dim_size [183]
+                0.00    0.00       1/20          __mo_rfmip_io_MOD_read_kdist_gas_names [137]
+                0.00    0.00       4/20          __mo_rfmip_io_MOD_read_size [138]
+                0.00    0.00      15/20          __mo_load_coefficients_MOD_load_and_init [13]
+[91]     0.0    0.00    0.00      20         __mo_simple_netcdf_MOD_get_dim_size [91]
 -----------------------------------------------
-                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_and_block_gases_ty [196]
-[184]    0.0    0.00    0.00      18         __mo_rfmip_io_MOD_read_scaling [184]
+                0.00    0.00      18/18          __mo_gas_concentrations_MOD_set_vmr_2d [93]
+[92]     0.0    0.00    0.00      18         __mo_gas_concentrations_MOD_increase_list_size [92]
 -----------------------------------------------
-                0.00    0.00       2/8           __mo_rfmip_io_MOD_read_and_block_gases_ty [196]
-                0.00    0.00       2/8           __mo_rfmip_io_MOD_read_and_block_pt [198]
-                0.00    0.00       4/8           __mo_load_coefficients_MOD_load_and_init [194]
-[185]    0.0    0.00    0.00       8         __mo_simple_netcdf_MOD_read_3d_field [185]
+                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+[93]     0.0    0.00    0.00      18         __mo_gas_concentrations_MOD_set_vmr_2d [93]
+                0.00    0.00      18/54          __mo_gas_concentrations_MOD_find_gas [88]
+                0.00    0.00      18/18          __mo_gas_concentrations_MOD_increase_list_size [92]
 -----------------------------------------------
-                0.00    0.00       2/7           __mo_rfmip_io_MOD_read_and_block_pt [198]
-                0.00    0.00       5/7           __mo_load_coefficients_MOD_load_and_init [194]
-[186]    0.0    0.00    0.00       7         __mo_simple_netcdf_MOD_read_2d_field [186]
+                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+[94]     0.0    0.00    0.00      18         __mo_rfmip_io_MOD_read_scaling [94]
 -----------------------------------------------
-                0.00    0.00       7/7           __mo_load_coefficients_MOD_load_and_init [194]
-[187]    0.0    0.00    0.00       7         __mo_simple_netcdf_MOD_read_char_vec [187]
+                0.00    0.00      12/12          __mod_network_MOD_init [111]
+[95]     0.0    0.00    0.00      12         __mod_layer_MOD_constructor [95]
+                0.00    0.00      12/12          __mod_random_MOD_randn1d [97]
 -----------------------------------------------
-                0.00    0.00       4/4           __mo_load_coefficients_MOD_load_and_init [194]
-[188]    0.0    0.00    0.00       4         __mo_simple_netcdf_MOD_read_logical_vec [188]
+                0.00    0.00      12/12          __mod_network_MOD_load [112]
+[96]     0.0    0.00    0.00      12         __mod_layer_MOD_set_activation [96]
 -----------------------------------------------
-                0.00    0.00       3/3           __mo_load_coefficients_MOD_load_and_init [194]
-[189]    0.0    0.00    0.00       3         __mo_simple_netcdf_MOD_read_scalar [189]
+                0.00    0.00      12/12          __mod_layer_MOD_constructor [95]
+[97]     0.0    0.00    0.00      12         __mod_random_MOD_randn1d [97]
 -----------------------------------------------
-                0.00    0.00       2/2           MAIN__ [79]
-[190]    0.0    0.00    0.00       2         __mo_rfmip_io_MOD_unblock_and_write [190]
-                0.00    0.00       2/2           __mo_simple_netcdf_MOD_write_3d_field [193]
+                0.00    0.00       1/9           MAIN__ [1]
+                0.00    0.00       1/9           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.00       3/9           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00       4/9           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[98]     0.0    0.00    0.00       9         __mo_gas_optics_rrtmgp_MOD_get_ngas [98]
 -----------------------------------------------
-                0.00    0.00       2/2           __mo_load_coefficients_MOD_load_and_init [194]
-[191]    0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_read_4d_field [191]
+                0.00    0.00       1/9           MAIN__ [1]
+                0.00    0.00       1/9           __mo_optical_props_MOD_alloc_only_1scl [127]
+                0.00    0.00       1/9           __mo_source_functions_MOD_alloc_lw [139]
+                0.00    0.00       3/9           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00       3/9           __mo_rte_lw_MOD_rte_lw [8]
+[99]     0.0    0.00    0.00       9         __mo_optical_props_MOD_get_ngpt [99]
+                0.00    0.00       9/28          __mo_optical_props_MOD_is_initialized_base [89]
 -----------------------------------------------
-                0.00    0.00       2/2           __mo_load_coefficients_MOD_load_and_init [194]
-[192]    0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_var_exists [192]
+                0.00    0.00       2/8           __mo_rfmip_io_MOD_read_and_block_gases_ty [24]
+                0.00    0.00       2/8           __mo_rfmip_io_MOD_read_and_block_pt [136]
+                0.00    0.00       4/8           __mo_load_coefficients_MOD_load_and_init [13]
+[100]    0.0    0.00    0.00       8         __mo_simple_netcdf_MOD_read_3d_field [100]
 -----------------------------------------------
-                0.00    0.00       2/2           __mo_rfmip_io_MOD_unblock_and_write [190]
-[193]    0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_write_3d_field [193]
+                0.00    0.00       2/7           __mo_rfmip_io_MOD_read_and_block_pt [136]
+                0.00    0.00       5/7           __mo_load_coefficients_MOD_load_and_init [13]
+[101]    0.0    0.00    0.00       7         __mo_simple_netcdf_MOD_read_2d_field [101]
 -----------------------------------------------
-                0.00    0.00       1/1           MAIN__ [79]
-[194]    0.0    0.00    0.00       1         __mo_load_coefficients_MOD_load_and_init [194]
-                0.00    0.00      15/20          __mo_simple_netcdf_MOD_get_dim_size [183]
-                0.00    0.00       7/7           __mo_simple_netcdf_MOD_read_char_vec [187]
-                0.00    0.00       5/7           __mo_simple_netcdf_MOD_read_2d_field [186]
-                0.00    0.00       4/8           __mo_simple_netcdf_MOD_read_3d_field [185]
-                0.00    0.00       4/22          __mo_simple_netcdf_MOD_read_1d_field [182]
-                0.00    0.00       4/4           __mo_simple_netcdf_MOD_read_logical_vec [188]
-                0.00    0.00       3/3           __mo_simple_netcdf_MOD_read_scalar [189]
-                0.00    0.00       2/2           __mo_simple_netcdf_MOD_read_4d_field [191]
-                0.00    0.00       2/2           __mo_simple_netcdf_MOD_var_exists [192]
+                0.00    0.00       7/7           __mo_load_coefficients_MOD_load_and_init [13]
+[102]    0.0    0.00    0.00       7         __mo_simple_netcdf_MOD_read_char_vec [102]
 -----------------------------------------------
-                0.00    0.00       1/1           MAIN__ [79]
-[195]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_determine_gas_names [195]
-                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_kdist_gas_names [199]
+                0.00    0.00       1/5           MAIN__ [1]
+                0.00    0.00       1/5           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00       3/5           __mo_rte_lw_MOD_rte_lw [8]
+[103]    0.0    0.00    0.00       5         __mo_optical_props_MOD_get_nband [103]
+                0.00    0.00       5/28          __mo_optical_props_MOD_is_initialized_base [89]
 -----------------------------------------------
-                0.00    0.00       1/1           MAIN__ [79]
-[196]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_gases_ty [196]
-                0.00    0.00      18/18          __mo_rfmip_io_MOD_read_scaling [184]
-                0.00    0.00      16/22          __mo_simple_netcdf_MOD_read_1d_field [182]
-                0.00    0.00       2/8           __mo_simple_netcdf_MOD_read_3d_field [185]
+                0.00    0.00       1/4           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.00       1/4           __mo_optical_props_MOD_init_base_from_copy [133]
+                0.00    0.00       1/4           __mo_optical_props_MOD_copy_and_alloc_1scl [128]
+                0.00    0.00       1/4           __mo_rte_lw_MOD_rte_lw [8]
+[104]    0.0    0.00    0.00       4         __mo_optical_props_MOD_get_band_lims_gpoint [104]
 -----------------------------------------------
-                0.00    0.00       1/1           MAIN__ [79]
-[197]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_lw_bc [197]
-                0.00    0.00       2/22          __mo_simple_netcdf_MOD_read_1d_field [182]
+                0.00    0.00       4/4           __mo_load_coefficients_MOD_load_and_init [13]
+[105]    0.0    0.00    0.00       4         __mo_simple_netcdf_MOD_read_logical_vec [105]
 -----------------------------------------------
-                0.00    0.00       1/1           MAIN__ [79]
-[198]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_pt [198]
-                0.00    0.00       2/7           __mo_simple_netcdf_MOD_read_2d_field [186]
-                0.00    0.00       2/8           __mo_simple_netcdf_MOD_read_3d_field [185]
+                0.00    0.00       2/4           __mo_source_functions_MOD_get_nlay_lw [122]
+                0.00    0.00       2/4           __mo_source_functions_MOD_get_ncol_lw [121]
+[106]    0.0    0.00    0.00       4         __mo_source_functions_MOD_is_allocated_lw [106]
+                0.00    0.00       4/28          __mo_optical_props_MOD_is_initialized_base [89]
 -----------------------------------------------
-                0.00    0.00       1/1           __mo_rfmip_io_MOD_determine_gas_names [195]
-[199]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_kdist_gas_names [199]
-                0.00    0.00       1/20          __mo_simple_netcdf_MOD_get_dim_size [183]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[107]    0.0    0.00    0.00       3         __mo_gas_optics_rrtmgp_MOD_get_npres [107]
 -----------------------------------------------
-                0.00    0.00       1/1           MAIN__ [79]
-[200]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_size [200]
-                0.00    0.00       4/20          __mo_simple_netcdf_MOD_get_dim_size [183]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[108]    0.0    0.00    0.00       3         __mo_gas_optics_rrtmgp_MOD_get_ntemp [108]
+-----------------------------------------------
+                0.00    0.00       1/3           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.00       1/3           __mo_optical_props_MOD_init_base_from_copy [133]
+                0.00    0.00       1/3           __mo_optical_props_MOD_copy_and_alloc_1scl [128]
+[109]    0.0    0.00    0.00       3         __mo_optical_props_MOD_init_base [109]
+-----------------------------------------------
+                0.00    0.00       3/3           __mo_load_coefficients_MOD_load_and_init [13]
+[110]    0.0    0.00    0.00       3         __mo_simple_netcdf_MOD_read_scalar [110]
+-----------------------------------------------
+                0.00    0.00       3/3           __mod_network_MOD_load [112]
+[111]    0.0    0.00    0.00       3         __mod_network_MOD_init [111]
+                0.00    0.00      12/12          __mod_layer_MOD_constructor [95]
+-----------------------------------------------
+                0.00    0.00       3/3           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[112]    0.0    0.00    0.00       3         __mod_network_MOD_load [112]
+                0.00    0.00      12/12          __mod_layer_MOD_set_activation [96]
+                0.00    0.00       3/3           __mod_network_MOD_init [111]
+-----------------------------------------------
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[113]    0.0    0.00    0.00       2         __mo_gas_optics_rrtmgp_MOD_get_col_dry [113]
+-----------------------------------------------
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [6]
+[114]    0.0    0.00    0.00       2         __mo_gas_optics_rrtmgp_MOD_get_neta [114]
+-----------------------------------------------
+                0.00    0.00       1/2           __mo_optical_props_MOD_init_base_from_copy [133]
+                0.00    0.00       1/2           __mo_optical_props_MOD_copy_and_alloc_1scl [128]
+[115]    0.0    0.00    0.00       2         __mo_optical_props_MOD_get_band_lims_wavenumber [115]
+                0.00    0.00       2/28          __mo_optical_props_MOD_is_initialized_base [89]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+[116]    0.0    0.00    0.00       2         __mo_optical_props_MOD_get_gpoint_bands [116]
+                0.00    0.00       2/28          __mo_optical_props_MOD_is_initialized_base [89]
+-----------------------------------------------
+                0.00    0.00       2/2           MAIN__ [1]
+[117]    0.0    0.00    0.00       2         __mo_rfmip_io_MOD_unblock_and_write [117]
+                0.00    0.00       2/2           __mo_simple_netcdf_MOD_write_3d_field [120]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_load_coefficients_MOD_load_and_init [13]
+[118]    0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_read_4d_field [118]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_load_coefficients_MOD_load_and_init [13]
+[119]    0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_var_exists [119]
+-----------------------------------------------
+                0.00    0.00       2/2           __mo_rfmip_io_MOD_unblock_and_write [117]
+[120]    0.0    0.00    0.00       2         __mo_simple_netcdf_MOD_write_3d_field [120]
+-----------------------------------------------
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00       1/2           __mo_rte_lw_MOD_rte_lw [8]
+[121]    0.0    0.00    0.00       2         __mo_source_functions_MOD_get_ncol_lw [121]
+                0.00    0.00       2/4           __mo_source_functions_MOD_is_allocated_lw [106]
+-----------------------------------------------
+                0.00    0.00       1/2           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+                0.00    0.00       1/2           __mo_rte_lw_MOD_rte_lw [8]
+[122]    0.0    0.00    0.00       2         __mo_source_functions_MOD_get_nlay_lw [122]
+                0.00    0.00       2/4           __mo_source_functions_MOD_is_allocated_lw [106]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[123]    0.0    0.00    0.00       1         __mo_fluxes_MOD_are_desired_broadband [123]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_check_key_species_present [3]
+[124]    0.0    0.00    0.00       1         __mo_gas_optics_rrtmgp_MOD_get_nplancktemp [124]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[125]    0.0    0.00    0.00       1         __mo_gas_optics_rrtmgp_MOD_get_press_min [125]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[126]    0.0    0.00    0.00       1         __mo_gas_optics_rrtmgp_MOD_source_is_internal [126]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_optical_props_MOD_copy_and_alloc_1scl [128]
+[127]    0.0    0.00    0.00       1         __mo_optical_props_MOD_alloc_only_1scl [127]
+                0.00    0.00       1/28          __mo_optical_props_MOD_is_initialized_base [89]
+                0.00    0.00       1/9           __mo_optical_props_MOD_get_ngpt [99]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[128]    0.0    0.00    0.00       1         __mo_optical_props_MOD_copy_and_alloc_1scl [128]
+                0.00    0.00       1/2           __mo_optical_props_MOD_get_band_lims_wavenumber [115]
+                0.00    0.00       1/4           __mo_optical_props_MOD_get_band_lims_gpoint [104]
+                0.00    0.00       1/3           __mo_optical_props_MOD_init_base [109]
+                0.00    0.00       1/1           __mo_optical_props_MOD_alloc_only_1scl [127]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_source_functions_MOD_finalize_lw [141]
+[129]    0.0    0.00    0.00       1         __mo_optical_props_MOD_finalize_base [129]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_optical_props_MOD_validate_1scalar [23]
+[130]    0.0    0.00    0.00       1         __mo_optical_props_MOD_get_name [130]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[131]    0.0    0.00    0.00       1         __mo_optical_props_MOD_get_ncol [131]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_rte_lw_MOD_rte_lw [8]
+[132]    0.0    0.00    0.00       1         __mo_optical_props_MOD_get_nlay [132]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_source_functions_MOD_copy_and_alloc_lw [140]
+[133]    0.0    0.00    0.00       1         __mo_optical_props_MOD_init_base_from_copy [133]
+                0.00    0.00       1/28          __mo_optical_props_MOD_is_initialized_base [89]
+                0.00    0.00       1/2           __mo_optical_props_MOD_get_band_lims_wavenumber [115]
+                0.00    0.00       1/4           __mo_optical_props_MOD_get_band_lims_gpoint [104]
+                0.00    0.00       1/3           __mo_optical_props_MOD_init_base [109]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[134]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_determine_gas_names [134]
+                0.00    0.00      19/1657        __mo_util_string_MOD_lower_case [85]
+                0.00    0.00      19/161         __mo_util_string_MOD_string_in_array [87]
+                0.00    0.00       8/444         __mo_util_string_MOD_string_loc_in_array [86]
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_read_kdist_gas_names [137]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[135]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_lw_bc [135]
+                0.00    0.00       2/22          __mo_simple_netcdf_MOD_read_1d_field [90]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[136]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_and_block_pt [136]
+                0.00    0.00       2/7           __mo_simple_netcdf_MOD_read_2d_field [101]
+                0.00    0.00       2/8           __mo_simple_netcdf_MOD_read_3d_field [100]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_rfmip_io_MOD_determine_gas_names [134]
+[137]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_kdist_gas_names [137]
+                0.00    0.00       1/20          __mo_simple_netcdf_MOD_get_dim_size [91]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[138]    0.0    0.00    0.00       1         __mo_rfmip_io_MOD_read_size [138]
+                0.00    0.00       4/20          __mo_simple_netcdf_MOD_get_dim_size [91]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_source_functions_MOD_copy_and_alloc_lw [140]
+[139]    0.0    0.00    0.00       1         __mo_source_functions_MOD_alloc_lw [139]
+                0.00    0.00       1/28          __mo_optical_props_MOD_is_initialized_base [89]
+                0.00    0.00       1/9           __mo_optical_props_MOD_get_ngpt [99]
+-----------------------------------------------
+                0.00    0.00       1/1           MAIN__ [1]
+[140]    0.0    0.00    0.00       1         __mo_source_functions_MOD_copy_and_alloc_lw [140]
+                0.00    0.00       1/28          __mo_optical_props_MOD_is_initialized_base [89]
+                0.00    0.00       1/1           __mo_source_functions_MOD_finalize_lw [141]
+                0.00    0.00       1/1           __mo_optical_props_MOD_init_base_from_copy [133]
+                0.00    0.00       1/1           __mo_source_functions_MOD_alloc_lw [139]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_source_functions_MOD_copy_and_alloc_lw [140]
+[141]    0.0    0.00    0.00       1         __mo_source_functions_MOD_finalize_lw [141]
+                0.00    0.00       1/1           __mo_optical_props_MOD_finalize_base [129]
+-----------------------------------------------
+                0.00    0.00       1/1           __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [2]
+[142]    0.0    0.00    0.00       1         _init [142]
 -----------------------------------------------
 
  This table describes the call tree of the program, and was sorted by
@@ -352,7 +653,7 @@ index % time    self  children    called     name
  for that member, how many times it was called from other members of
  the cycle.
 
-Copyright (C) 2012-2015 Free Software Foundation, Inc.
+Copyright (C) 2012-2018 Free Software Foundation, Inc.
 
 Copying and distribution of this file, with or without modification,
 are permitted in any medium without royalty provided the copyright
@@ -360,20 +661,31 @@ notice and this notice are preserved.
 
 Index by function name
 
-  [19] __mo_gas_concentrations_MOD_get_vmr_2d [184] __mo_rfmip_io_MOD_read_scaling (mo_rfmip_io.F90) [21] apply_BC_0
-  [17] __mo_gas_optics_kernels_MOD_interpolate1d [200] __mo_rfmip_io_MOD_read_size [26] apply_BC_gpt
-   [3] __mo_gas_optics_kernels_MOD_interpolate2d_byflav [190] __mo_rfmip_io_MOD_unblock_and_write [24] combine_and_reorder_2str
-  [22] __mo_gas_optics_kernels_MOD_interpolate3d [20] __mo_rte_lw_MOD_expand_and_transpose (mo_rte_lw.F90) [5] compute_Planck_source
-   [1] __mo_gas_optics_kernels_MOD_interpolate3d_byflav [183] __mo_simple_netcdf_MOD_get_dim_size [27] compute_tau_absorption
-  [25] __mo_gas_optics_rrtmgp_MOD_check_range_2d (mo_gas_optics_rrtmgp.F90) [182] __mo_simple_netcdf_MOD_read_1d_field [12] gas_optical_depths_major
-  [11] __mo_gas_optics_rrtmgp_MOD_compute_gas_taus (mo_gas_optics_rrtmgp.F90) [186] __mo_simple_netcdf_MOD_read_2d_field [4] gas_optical_depths_minor
-  [16] __mo_gas_optics_rrtmgp_MOD_gas_optics_int [185] __mo_simple_netcdf_MOD_read_3d_field [8] interpolation
-  [23] __mo_gas_optics_rrtmgp_MOD_get_col_dry [191] __mo_simple_netcdf_MOD_read_4d_field [14] lw_solver_noscat
-  [28] __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs (mo_gas_optics_rrtmgp.F90) [187] __mo_simple_netcdf_MOD_read_char_vec [13] lw_solver_noscat_GaussQuad
-   [9] __mo_gas_optics_rrtmgp_MOD_source (mo_gas_optics_rrtmgp.F90) [188] __mo_simple_netcdf_MOD_read_logical_vec [6] lw_source_noscat
- [194] __mo_load_coefficients_MOD_load_and_init [189] __mo_simple_netcdf_MOD_read_scalar [10] lw_transport_noscat
- [195] __mo_rfmip_io_MOD_determine_gas_names [192] __mo_simple_netcdf_MOD_var_exists [2] reorder_123x321_kernel
- [196] __mo_rfmip_io_MOD_read_and_block_gases_ty [193] __mo_simple_netcdf_MOD_write_3d_field [31] stop_on_err_
- [197] __mo_rfmip_io_MOD_read_and_block_lw_bc [29] __mo_util_reorder_MOD_reorder123x321 [7] sum_broadband
- [198] __mo_rfmip_io_MOD_read_and_block_pt [30] __mo_util_string_MOD_lower_case [15] zero_array_3D
- [199] __mo_rfmip_io_MOD_read_kdist_gas_names [18] any_vals_less_than
+   [1] MAIN__                [103] __mo_optical_props_MOD_get_nband [140] __mo_source_functions_MOD_copy_and_alloc_lw
+ [123] __mo_fluxes_MOD_are_desired_broadband [131] __mo_optical_props_MOD_get_ncol [141] __mo_source_functions_MOD_finalize_lw
+  [19] __mo_fluxes_MOD_reduce_broadband [99] __mo_optical_props_MOD_get_ngpt [121] __mo_source_functions_MOD_get_ncol_lw
+  [88] __mo_gas_concentrations_MOD_find_gas [132] __mo_optical_props_MOD_get_nlay [122] __mo_source_functions_MOD_get_nlay_lw
+  [22] __mo_gas_concentrations_MOD_get_vmr_2d [109] __mo_optical_props_MOD_init_base [106] __mo_source_functions_MOD_is_allocated_lw
+  [92] __mo_gas_concentrations_MOD_increase_list_size [133] __mo_optical_props_MOD_init_base_from_copy [5] __mo_util_reorder_MOD_reorder123x321
+  [93] __mo_gas_concentrations_MOD_set_vmr_2d [89] __mo_optical_props_MOD_is_initialized_base [85] __mo_util_string_MOD_lower_case
+  [11] __mo_gas_optics_kernels_MOD_compute_nnlw_kernel [23] __mo_optical_props_MOD_validate_1scalar [87] __mo_util_string_MOD_string_in_array
+   [3] __mo_gas_optics_rrtmgp_MOD_check_key_species_present [134] __mo_rfmip_io_MOD_determine_gas_names [86] __mo_util_string_MOD_string_loc_in_array
+   [6] __mo_gas_optics_rrtmgp_MOD_gas_optics_ext [24] __mo_rfmip_io_MOD_read_and_block_gases_ty [17] __mod_activation_MOD_linear
+   [2] __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn [135] __mo_rfmip_io_MOD_read_and_block_lw_bc [21] __mod_activation_MOD_sigmoid
+ [113] __mo_gas_optics_rrtmgp_MOD_get_col_dry [136] __mo_rfmip_io_MOD_read_and_block_pt [95] __mod_layer_MOD_constructor
+ [114] __mo_gas_optics_rrtmgp_MOD_get_neta [137] __mo_rfmip_io_MOD_read_kdist_gas_names [96] __mod_layer_MOD_set_activation
+  [98] __mo_gas_optics_rrtmgp_MOD_get_ngas [94] __mo_rfmip_io_MOD_read_scaling [111] __mod_network_MOD_init
+ [124] __mo_gas_optics_rrtmgp_MOD_get_nplancktemp [138] __mo_rfmip_io_MOD_read_size [112] __mod_network_MOD_load
+ [107] __mo_gas_optics_rrtmgp_MOD_get_npres [117] __mo_rfmip_io_MOD_unblock_and_write [15] __mod_network_MOD_output
+ [108] __mo_gas_optics_rrtmgp_MOD_get_ntemp [8] __mo_rte_lw_MOD_rte_lw [97] __mod_random_MOD_randn1d
+ [125] __mo_gas_optics_rrtmgp_MOD_get_press_min [91] __mo_simple_netcdf_MOD_get_dim_size [142] _init
+  [12] __mo_gas_optics_rrtmgp_MOD_load_int [90] __mo_simple_netcdf_MOD_read_1d_field [20] any_vals_less_than
+ [126] __mo_gas_optics_rrtmgp_MOD_source_is_internal [101] __mo_simple_netcdf_MOD_read_2d_field [25] apply_BC_0
+  [13] __mo_load_coefficients_MOD_load_and_init [100] __mo_simple_netcdf_MOD_read_3d_field [7] compute_Planck_source
+ [127] __mo_optical_props_MOD_alloc_only_1scl [118] __mo_simple_netcdf_MOD_read_4d_field [16] interpolation
+ [128] __mo_optical_props_MOD_copy_and_alloc_1scl [102] __mo_simple_netcdf_MOD_read_char_vec [9] lw_solver_noscat
+ [129] __mo_optical_props_MOD_finalize_base [105] __mo_simple_netcdf_MOD_read_logical_vec [10] lw_solver_noscat_GaussQuad
+ [104] __mo_optical_props_MOD_get_band_lims_gpoint [110] __mo_simple_netcdf_MOD_read_scalar [14] lw_transport_noscat
+ [115] __mo_optical_props_MOD_get_band_lims_wavenumber [119] __mo_simple_netcdf_MOD_var_exists [4] reorder_123x321_kernel
+ [116] __mo_optical_props_MOD_get_gpoint_bands [120] __mo_simple_netcdf_MOD_write_3d_field [18] sum_broadband
+ [130] __mo_optical_props_MOD_get_name [139] __mo_source_functions_MOD_alloc_lw [26] zero_array_3D

@@ -14,7 +14,7 @@ FCINCLUDE += -I$(RRTMGP_DIR)
 
 # NEURAL LIBRARY
 #LDFLAGS   += -L$(NEURAL_DIR)
-LIBS      += -lneural -lopenblas
+LIBS      += -lneural $(LIBADD) #-lopenblas
 #FCINCLUDE += -I$(NEURAL_DIR)
 
 #
@@ -32,7 +32,7 @@ LIBS      += -lnetcdff -lnetcdf
 TIMING=no
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
 #FCFLAGS += -fpp
-FC = gfortran #-cpp -pg
+#FC = gfortran #-cpp -pg
 #FCFLAGS += -g -O3
 ifeq ($(TIMING),yes)
 	#

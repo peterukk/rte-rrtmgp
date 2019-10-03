@@ -36,10 +36,12 @@ contains
     integer, intent(in) :: this_size, next_size
     allocate(layer % a(this_size))
     allocate(layer % z(this_size))
-    layer % a = 0
-    layer % z = 0
-    layer % w = randn(this_size, next_size) / this_size
-    layer % w_transposed = transpose(layer % w)
+    layer % a = 0.0_wp
+    layer % z = 0.0_wp
+    allocate(layer % w(this_size,next_size))
+    allocate(layer % w_transposed(next_size,this_size))
+    !layer % w = randn(this_size, next_size) / this_size
+    ! layer % w_transposed = transpose(layer%w)
     layer % b = randn(this_size)
   end function constructor
 

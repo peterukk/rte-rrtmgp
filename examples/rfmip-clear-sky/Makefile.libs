@@ -6,6 +6,11 @@ export RRTMGP_DIR = ../../build
 # NetCDF C and Fortran libraries, module files
 export NCHOME = /usr/
 export NFHOME = /usr/
+export LIBADD = -lopenblas
+
+#export NCHOME = /home/pepe/netcdf/
+#export NFHOME = /home/pepe/netcdf
+
 
 # GPTL libraries and module files if desired (https://jmrosinski.github.io/GPTL/)
 # export TIME_DIR = /data/puk/soft/gptl/
