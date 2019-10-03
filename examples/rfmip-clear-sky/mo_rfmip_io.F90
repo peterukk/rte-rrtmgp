@@ -399,7 +399,7 @@ contains
 
       ! Read the values as a function of experiment
       gas_conc_temp_1d = read_field(ncid, trim(names_in_file(g)) // "_GM", nexp_l) * read_scaling(ncid, trim(names_in_file(g)) // "_GM")
-      print *, "max of gas ", g, " is", maxval(gas_conc_temp_1d)
+
       do b = 1, nblocks
         ! Does every value in this block belong to the same experiment?
         if(all(exp_num(1,b) == exp_num(2:,b))) then

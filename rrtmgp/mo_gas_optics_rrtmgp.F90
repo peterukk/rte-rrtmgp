@@ -21,21 +21,21 @@
 !
 ! -------------------------------------------------------------------------------------------------
 module mo_gas_optics_rrtmgp
-  use mo_rte_kind,           only: wp, wl
+  use mo_rte_kind,           only: wp, wl, dp
   use mo_rrtmgp_constants,   only: avogad, m_dry, m_h2o, grav
   use mo_optical_props,      only: ty_optical_props
   use mo_source_functions,   only: ty_source_func_lw
   use mo_gas_optics_kernels, only: interpolation,                                                       &
                                    compute_tau_absorption, compute_tau_rayleigh, compute_Planck_source, &
                                    combine_and_reorder_2str, combine_and_reorder_nstr, zero_array, &
-                                   compute_Planck_source_nn, compute_nnlw_kernel
+                                   compute_Planck_source_nn, predict_nn_lw, predict_nn_lw_matmul, predict_nn_lw_flattenlevs
 
   use mo_util_string,        only: lower_case, string_in_array, string_loc_in_array
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_optical_props,      only: ty_optical_props_arry, ty_optical_props_1scl, ty_optical_props_2str, ty_optical_props_nstr
   use mo_gas_optics,         only: ty_gas_optics
   use mo_util_reorder
-  use mod_network,           only: network_type
+  use mod_network!,           only: network_type
   
   implicit none
   private
@@ -245,7 +245,7 @@ function gas_optics_int(this,                             &
     real(wp),    dimension(2,2,2,get_nflav(this),size(play,dim=1), size(play,dim=2)) :: fmajor
     integer,     dimension(2,    get_nflav(this),size(play,dim=1), size(play,dim=2)) :: jeta
 
-    integer :: ncol, nlay, ngpt, nband, ngas, nflav
+    integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
     ! ----------------------------------------------------------
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -254,6 +254,9 @@ function gas_optics_int(this,                             &
     !
     ! Gas optics
     !
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
+
     !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
     error_msg = compute_gas_taus(this,                       &
                                  ncol, nlay, ngpt, nband,    &
@@ -262,6 +265,9 @@ function gas_optics_int(this,                             &
                                  jtemp, jpress, jeta, tropo, fmajor, &
                                  col_dry)
     if(error_msg  /= '') return
+
+    call system_clock(iTime2)
+    print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
     ! ----------------------------------------------------------
     !
@@ -340,10 +346,10 @@ function gas_optics_int(this,                             &
     integer,     dimension(size(play,dim=1),2)                                        :: itropo, istrato
 
     real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: pfrac ! Planck fractions predicted by NN
-    integer :: ncol, nlay, ngpt, nband, ngas, nflav
+    integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
     logical :: original_source, top_at_1
 
-    original_source = .true.
+    original_source = .false.
     ! ----------------------------------------------------------
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -382,7 +388,8 @@ function gas_optics_int(this,                             &
     ! Compute optical depths and sources with neural networks
     ! NN inputs are prepared inside the function from col_dry,tlay and play
 
-
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
 
     if (original_source) then ! use original kernels to get source functions
     ! In this case the interpolation coefficients computed in compute_gas_taus are needed
@@ -396,7 +403,8 @@ function gas_optics_int(this,                             &
       tropo     = log(play) > this%press_ref_trop_log
     end if
 
-    print *, this%press_ref_trop_log
+    call system_clock(iTime2)
+    print *,'Elapsed time on interpolation coefficients',real(iTime2-iTime1)/real(count_rate)
 
     ! Find the level (for each column) separating stratosphere and troposphere
 
@@ -415,6 +423,9 @@ function gas_optics_int(this,                             &
       istrato(:, 2) = nlay
     end if
 
+    ! call system_clock(count_rate=count_rate)
+    ! call system_clock(iTime1)
+
     ! Predict g-point taus and planck fractions using neural networks
     error_msg = compute_taus_pfracs_nnlw(this,              &
                                  ncol, nlay, ngpt, nband,   &
@@ -424,7 +435,9 @@ function gas_optics_int(this,                             &
                                  scaler_pfrac,              &
                                  modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
                                  nn_inputs, col_dry) 
-                           
+    
+    ! call system_clock(iTime2)
+    !print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
     if (original_source) then
     ! Use original source computations, including planck fractions by interpolating
@@ -566,7 +579,7 @@ function gas_optics_int(this,                             &
                                                           ! index(2) : reference temperature level
                                                           ! index(3) : flavor
                                                           ! index(4) : layer
-    integer :: ngas, nflav, neta, npres, ntemp
+    integer :: ngas, nflav, neta, npres, ntemp, count_rate, iTime1, iTime2
     integer :: nminorlower, nminorklower,nminorupper, nminorkupper
     logical :: use_rayl
     ! ----------------------------------------------------------
@@ -681,6 +694,9 @@ function gas_optics_int(this,                             &
             col_mix,      &
             tropo,        &
             jeta,jpress)
+    
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
     call compute_tau_absorption(                     &
             ncol,nlay,nband,ngpt,                    &  ! dimensions
             ngas,nflav,neta,npres,ntemp,             &
@@ -723,6 +739,9 @@ function gas_optics_int(this,                             &
       !$acc exit data detach(col_dry_wk) delete(this%krayl)
     end if
     if (error_msg /= '') return
+
+    call system_clock(iTime2)
+    print *,'Elapsed time on optical depth kernel: ',real(iTime2-iTime1)/real(count_rate)
 
     ! Combine optical depths and reorder for radiative transfer solver.
     call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
@@ -901,31 +920,32 @@ jeta,jpress)
 end function compute_interp_coeffs
 
 
-function compute_taus_pfracs_nnlw(this,                       &
-    ncol, nlay, ngpt, nband,    &
-    itropo, istrato,            &
-    play, plev, tlay, gas_desc, &
-    optical_props, pfrac, scaler_pfrac, &
-    modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
+! Function for neural-network accelerated long-wave gas optics (optical depths and planck fractions).
+! This function prepares the outputs for the neural network and then calls the kernel
+function compute_taus_pfracs_nnlw(this,                         &
+    ncol, nlay, ngpt, nband,                                    &
+    itropo, istrato,                                            &
+    play, plev, tlay, gas_desc,                                 &
+    optical_props, pfrac, scaler_pfrac,                         &
+    modelfile_tau_tropo, modelfile_tau_strato, modelfile_source,&
     nn_inputs, col_dry) result(error_msg)
 
-class(ty_gas_optics_rrtmgp),      intent(in   ) ::  this
-integer,                          intent(in   ) ::  ncol, nlay, ngpt, nband
-integer,     dimension(ncol,2),   intent(in   ) ::  itropo, istrato
+class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
+integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
+integer,  dimension(ncol,2),          intent(in   ) ::  itropo, istrato
 
-real(wp), dimension(:,:),         intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                                                    plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-                                                    tlay      ! layer temperatures [K]; (ncol,nlay)
+real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                                                        plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
+                                                        tlay      ! layer temperatures [K]; (ncol,nlay)
 
-type(ty_gas_concs),               intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
-class(ty_optical_props_arry),     intent(inout) ::  optical_props !inout because components are allocated
-real(wp), dimension(ngpt,nlay,ncol), intent(out) :: pfrac ! Planck fractions predicted by NN
+type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
+class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
+real(wp), dimension(ngpt,nlay,ncol),  intent(out)   ::  pfrac ! Planck fractions predicted by NN
 
-real(wp), dimension(ngpt,2), intent(in)         :: scaler_pfrac       ! for post-processing the NN-predicted planck fractions 
-character (len = 60), intent(in)                :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source  ! text files with model weights
+real(wp), dimension(ngpt,2), intent(in)             :: scaler_pfrac  ! for post-processing the NN-predicted planck fractions 
+character (len = 60), intent(in)                    :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source  ! text files with model weights
 
-
-real(wp), dimension(get_ngas(this)+3,nlay,ncol), intent(out) :: nn_inputs
+real(wp), dimension(get_ngas(this)+3,nlay,ncol), intent(out) :: nn_inputs 
 
 character(len=128)                               :: error_msg
 
@@ -961,9 +981,24 @@ real(wp), dimension(21) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp
 2.25094023E5_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp,           &
 6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp,           &
 2.38989050E-6_wp, 6.06216452E-5_wp, 2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp            /)
+
+real(wp) :: testparam   = 0.5001566410_wp
+real(dp) :: doubleparam = 0.5001566410_dp
+
+! ----------------------------------------------------------
+! Process all the layers and columns simultaenously, using BLAS for matrix-matrix computations? (fastest on intel compilers)
+logical :: flatten_dims
+! If levs and cols are not flattened, use BLAS anyway for matrix-vector computations? (usually slower)
+! If true, the hidden layers must have equal sizes (flat model)
+logical :: use_blas
+
+flatten_dims = .false.
+use_blas     = .false. 
+
 !
 ! Error checking
 !
+
 error_msg = ''
 ! Check for initialization
 if (.not. this%is_initialized()) then
@@ -997,6 +1032,8 @@ if(error_msg  /= '') return
 error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
 if(error_msg  /= '') return
 end if
+
+
 
 ! ----------------------------------------------------------
 ngas  = this%get_ngas()
@@ -1034,11 +1071,6 @@ do igas = 1, ngas
   col_gas(1:ncol,1:nlay,igas) = vmr(1:ncol,1:nlay,igas) * col_dry_wk(1:ncol,1:nlay)
 end do
 
-print *, 'ngas:', ngas
-  do igas = 1, ngas
-    print *, 'igas:', igas, ' :', this%gas_names(igas)
-end do
-  
 !
 ! Prepare neural network INPUTS(standard-scaled col_gas + pay + tlay)
 ! These need to be normalized using standard scaling
@@ -1046,7 +1078,6 @@ end do
 
 call system_clock(count_rate=count_rate)
 call system_clock(iTime1)
-  
 
 do ilay = 1, nlay
     do igas = 1, ngas+1
@@ -1059,45 +1090,85 @@ do ilay = 1, nlay
     nn_inputs(igas,ilay,:) = (play(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
 end do
 
-! do igas = 1, ngas+3
-!   print *, 'max of input ', igas, ':', maxval(nn_inputs(igas,:,:))
-! end do
+call system_clock(iTime2)
+print *,'Elapsed time on preparing inputs: ',real(iTime2-iTime1)/real(count_rate)
 
-! print *, "max of input19 is", maxval(nn_inputs(19,:,:))
-
-    ! load trained network from keras
-print *, 'loading tau tropo model from ', modelfile_tau_tropo
-call net_tau_tropo % load(modelfile_tau_tropo)
-print *, 'loaded model'
-
-call net_tau_strato % load(modelfile_tau_strato)
-
-
-    ! load trained network from keras
-print *, 'loading source model from ', modelfile_source
-call net_pfrac % load(modelfile_source)
-print *, 'loaded model'
-
-! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
+! print *, 'number of gases:', ngas
+! igas = 0
+! print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', "dry air"//REPEAT(' ',15), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
+!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
+! do igas = 1, ngas
+!     print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', this%gas_names(igas), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
+!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
+! end do  
 
 call zero_array(ngpt, nlay, ncol, tau)
 
-call compute_nnlw_kernel(                     &
-ncol,nlay,ngpt, ngas,     &  ! dimensions
-itropo, istrato,          &  ! data inputs
-nn_inputs, scaler_pfrac,  &  ! data inputs
-net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
-tau, pfrac)                 ! outputs
+    ! load models (Keras model weights which are saved to ASCII)
+print *, 'loading tau-tropo model from ', modelfile_tau_tropo
+call net_tau_tropo % load(modelfile_tau_tropo)
+
+print *, 'loading tau-strato model from ', modelfile_tau_strato
+call net_tau_strato % load(modelfile_tau_strato)
+
+print *, 'loading planck fraction model from ', modelfile_source
+call net_pfrac % load(modelfile_source)
+
+
+! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
+
+call system_clock(count_rate=count_rate)
+call system_clock(iTime1)    
+
+if (flatten_dims) then
+  print *, "Predicting all the data simulatenously, using SGEMM for big matmul operation"
+  call predict_nn_lw_matmul(                     &
+                        ncol,nlay,ngpt, ngas,     &  ! dimensions
+                        nn_inputs, scaler_pfrac,  &  ! data inputs
+                        net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                        tau, pfrac)    ! outputs
+else
+  print *, "Predicting one layer at a time"
+  if (use_blas) then
+    if (abs(testparam-doubleparam)>1.0d-15 ) then
+      print *, "using BLAS, single precision (SGEMV)"
+      call change_kernel(net_pfrac,     output_sgemv_flatmodel)
+      call change_kernel(net_tau_tropo, output_sgemv_flatmodel)
+      call change_kernel(net_tau_strato,output_sgemv_flatmodel)
+    else
+      print *, "using BLAS, double precision (DGEMV)"
+      ! call change_kernel(net_pfrac,     output_dgemv_flatmodel)
+      ! call change_kernel(net_tau_tropo, output_dgemv_flatmodel)
+      ! call change_kernel(net_tau_strato,output_dgemv_flatmodel)
+    end if
+  end if
+
+  call predict_nn_lw(                     &
+                      ncol,nlay,ngpt, ngas,     &  ! dimensions
+                      itropo, istrato,          &  ! data inputs
+                      nn_inputs, scaler_pfrac,  &  ! data inputs
+                      net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                      tau, pfrac)    ! outputs
+
+  ! call predict_nn_lw_flattenlevs(                     &
+    ! ncol,nlay,ngpt, ngas,     &  ! dimensions
+    ! itropo, istrato,          &  ! data inputs
+    ! nn_inputs, scaler_pfrac,  &  ! data inputs
+    ! net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+    ! tau, pfrac)                 ! outputs
+end if
+
+
+
+call system_clock(iTime2)
+print *,'Elapsed time on optical depth kernel: ',real(iTime2-iTime1)/real(count_rate)
 
 if (error_msg /= '') return
 
-call system_clock(iTime2)
-
-print *,'Elapsed time on optical depths in total: ',real(iTime2-iTime1)/real(count_rate)
-
-
 ! Combine optical depths and reorder for radiative transfer solver.
 call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
+
+
 
 end function compute_taus_pfracs_nnlw
 
@@ -1131,7 +1202,7 @@ function source(this,                               &
                                       optional, target :: tlev          ! level temperatures [K]
     character(len=128)                                 :: error_msg
     ! ----------------------------------------------------------
-    integer                                      :: icol, ilay
+    integer                                      :: icol, ilay, count_rate, iTime1, iTime2
     real(wp), dimension(ngpt,nlay,ncol)          :: lay_source_t, lev_source_inc_t, lev_source_dec_t, planck_frac_out
     real(wp), dimension(ngpt,     ncol)          :: sfc_source_t
     ! Variables for temperature at layer edges [K] (ncol, nlay+1)
@@ -1181,10 +1252,18 @@ function source(this,                               &
                 this%totplnk_delta, this%totplnk, this%gpoint_flavor,  &
                 sfc_source_t, lay_source_t, lev_source_inc_t, lev_source_dec_t, planck_frac_out)
     sources%sfc_source     = transpose(sfc_source_t)
+
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
+
     call reorder123x321(lay_source_t, sources%lay_source)
     call reorder123x321(lev_source_inc_t, sources%lev_source_inc)
     call reorder123x321(lev_source_dec_t, sources%lev_source_dec)
     call reorder123x321(planck_frac_out,  sources%planck_frac)
+
+    call system_clock(iTime2)
+    print *,'Elapsed time on reorder: ',real(iTime2-iTime1)/real(count_rate)
+
   end function source
   !------------------------------------------------------------------------------------------
   !
@@ -1260,8 +1339,13 @@ function source(this,                               &
     ! Compute internal (Planck) source functions at layers and levels,
     !  which depend on mapping from spectral space that creates k-distribution.
 
+    ! call system_clock(count_rate=count_rate)
+    ! call system_clock(iTime1)
 
     call reorder123x321(pfrac, pfrac_reverse)
+
+    ! call system_clock(iTime2)
+    ! print *,'Elapsed time on reorder: ',real(iTime2-iTime1)/real(count_rate)
 
     call compute_Planck_source_nn(ncol, nlay, nbnd, ngpt, &
             this%get_ntemp(),this%get_nPlanckTemp(), &

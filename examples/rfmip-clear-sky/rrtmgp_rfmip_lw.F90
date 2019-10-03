@@ -98,7 +98,7 @@ program rrtmgp_rfmip_lw
   !character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-1_none.nc', &
   !                      kdist_file = 'coefficients_lw.nc'
   character(len=132) :: rfmip_file,kdist_file
-  character(len=132) :: flxdn_file, flxup_file, output_file, inp_file, flx_file
+  character(len=132) :: flxdn_file, flxup_file, output_file, input_file, flx_file
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
   integer            :: b, icol, ibnd, igpt
@@ -114,14 +114,11 @@ program rrtmgp_rfmip_lw
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
   real(wp), dimension(:,:,:,:),       allocatable :: tau_lw    ! block_size, nlay, ngpt, nblocks
   real(wp), dimension(:,:,:,:),       allocatable :: nn_inputs    !  ngas, nlay, block_size, nblocks   (ngas,nlay,ncol)
-  real(wp), dimension(:,:,:,:),       allocatable :: planck_frac    ! block_size, nlay, ngpt, nblocks
-  ! real(wp), dimension(:,:,:,:),       allocatable :: lay_source    ! block_size, nlay, ngpt, nblocks
-  ! real(wp), dimension(:,:,:,:),       allocatable :: lev_source_inc    ! block_size, nlay, ngpt, nblocks
-  ! real(wp), dimension(:,:,:,:),       allocatable :: lev_source_dec    ! block_size, nlay, ngpt, nblocks
+  real(wp), dimension(:,:,:,:),       allocatable :: planck_frac, lay_source    ! block_size, nlay, ngpt, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis_spec    ! nbands, block_size (spectrally-resolved emissivity)
 
-  real(wp), dimension(:),             allocatable :: means,stdevs ,new_array   
+  real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
 
   real(wp), dimension(:,:),            allocatable :: scaler_pfrac
   character (len = 60)                             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
@@ -149,20 +146,25 @@ program rrtmgp_rfmip_lw
 
   ! Where neural network model weights are located
   ! 
-  !modelfile_tau = "../../neural/data/taumodel_i21_n32.txt"
-  !modelfile_tau     = "../../neural/data/taumodel_n40_CAMS2.txt"
-  !modelfile_tau     = "../../neural/data/taumodel_n40_CAMS_weighttrain.txt"
-  modelfile_tau_tropo   = "../../neural/data/taumodel_CAMS_weighttrain_trop_n50_2.txt"
-  modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_weighttrain_strat_n40.txt"
-  modelfile_source  = modelfile_tau_tropo
+  !modelfile_tau_tropo = "../../neural/data/taumodel_i21_n32.txt"
+  modelfile_tau_tropo     = "../../neural/data/taumodel_n40_CAMS2.txt"
+  ! modelfile_tau_tropo     = "../../neural/data/taumodel_N52_TROP_eps0005_2.txt"
+  ! modelfile_tau_tropo   = "../../neural/data/taumodel_N52_TROP_eps0005.txt"
+  ! modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_wtrain_strat_n40_exp.txt"
+  !modelfile_tau_strato = "../../neural/data/taumodel_CAMS_wtrain_strat_n40_exp.txt"
+  !modelfile_tau_strato = "../../neural/data/taumodel_CAMS_wtrain_strat_n30_eps1.txt"
+  ! modelfile_tau_tropo  = "../../neural/data/taumodel_eps0005_50-32.txt"
+  ! modelfile_tau_strato = "../../neural/data/taumodel_eps0005_mae_CAMS2.txt"
+  modelfile_tau_strato = modelfile_tau_tropo
+  modelfile_source   = "../../neural/data/pfracmodel_CAMS_wtrain_n30.txt"
   ! Model predictions are standard-scaled. Load data for post-processing the outputs
   ! The coefficients for scaling the INPUTS a re currently still hard-coded in mo_gas_optics_rrtmgp.F90
-  allocate(scaler_pfrac(2,256))
+  allocate(scaler_pfrac(256,2))
 
   open (unit=102, file='scale_pfrac_mean.csv',  status='old', action='read') 
-  read(102, *) scaler_pfrac(1,:)
+  read(102, *) scaler_pfrac(:,1)
   open (unit=103, file='scale_pfrac_stdev.csv',  status='old', action='read') 
-  read(103, *) scaler_pfrac(2,:)
+  read(103, *) scaler_pfrac(:,2)
 
   !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
@@ -206,14 +208,17 @@ program rrtmgp_rfmip_lw
   !              trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc' 
 
   !flx_file = 'rlud_CAMS_NN40-tau.nc'
-  flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
+  flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_NN.nc'
 
-  output_file = 'outp_lw_CAMS_' // &
-                trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_NN.nc' 
-  !             trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc'         
-  inp_file    = 'inp_lw_CAMS_' // &
-                trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_NN.nc'
-  !             trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc'
+  ! output_file = '/data/puk/rrtmgp/outp_lw_RFMIP_1f1_REF.nc'
+  ! output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP_1f1_REF.nc'
+  output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_CAMS2_1f1_REF.nc'
+  input_file =  'inp_lw_CAMS2_1f1_NN.nc'
+  
+  ! output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP_1f1_NN.nc'   
+  ! input_file    = 'inp_lw_CAMSNEW_' // &
+  !               trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_NN.nc'
+
                 
   !
   ! Identify the set of gases used in the calculation based on the forcing index
@@ -280,7 +285,7 @@ program rrtmgp_rfmip_lw
   allocate(nn_inputs(     ngas+3, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
 
   allocate(planck_frac(    block_size, nlay, ngpt, nblocks))
-  ! allocate(lay_source(    block_size, nlay, ngpt, nblocks))
+  allocate(lay_source(     block_size, nlay, ngpt, nblocks))
   ! allocate(lev_source_inc(    block_size, nlay, ngpt, nblocks))
   ! allocate(lev_source_dec(    block_size, nlay, ngpt, nblocks))
 
@@ -289,15 +294,7 @@ program rrtmgp_rfmip_lw
   allocate(sfc_emis_spec(nbnd, block_size))
   call stop_on_err(source%alloc            (block_size, nlay, k_dist))
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
-  !
-  ! OpenACC directives put data on the GPU where it can be reused with communication
-  ! NOTE: these are causing problems right now, most likely due to a compiler
-  ! bug related to the use of Fortran classes on the GPU.
-  !
-  !!$acc enter data copyin(sfc_emis_spec)
-  !!$acc enter data copyin(optical_props%tau)
-  !!$acc enter data copyin(source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
-  !!$acc enter data copyin(source%band2gpt, source%gpt2band, source%band_lims_wvn)
+
   ! --------------------------------------------------
 #ifdef USE_TIMING
   !
@@ -330,9 +327,14 @@ program rrtmgp_rfmip_lw
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
     !
+
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (LW)')
 #endif
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
+
+    print *, "starting computations"
     ! Using NEURAL NETWORK for predicting optical depths
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
                                        p_lev(:,:,b),        &
@@ -356,6 +358,9 @@ program rrtmgp_rfmip_lw
     !                                    optical_props,      &
     !                                    source,             &
     !                                    tlev = t_lev(:,:,b)))
+    call system_clock(iTime2)
+    print *,'Elapsed time on gas optics in total: ',real(iTime2-iTime1)/real(count_rate)
+
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
 #endif
@@ -366,6 +371,10 @@ program rrtmgp_rfmip_lw
 #ifdef USE_TIMING
     ret =  gptlstart('rte_lw')
 #endif
+
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
+
     call stop_on_err(rte_lw(optical_props,   &
                             top_at_1,        &
                             source,          &
@@ -375,10 +384,14 @@ program rrtmgp_rfmip_lw
     ret =  gptlstop('rte_lw')
 #endif
 
+    call system_clock(iTime2)
+    print *,'Elapsed time on solver: ',real(iTime2-iTime1)/real(count_rate)
+
     ! Save optical depths
     do igpt = 1, ngpt
       tau_lw(:,:,igpt,b)      = optical_props%tau(:,:,igpt)
       planck_frac(:,:,igpt,b) = source%planck_frac(:,:,igpt)
+      lay_source(:,:,igpt,b)  = source%lay_source(:,:,igpt)
     end do
 
   end do
@@ -396,41 +409,29 @@ program rrtmgp_rfmip_lw
   !!$acc exit data delete(source%band2gpt, source%gpt2band, source%band_lims_wvn)
   ! --------------------------------------------------
 
-  allocate(new_array(   block_size*nlay*ngpt*nblocks)) 
-  new_array = pack(tau_lw(:,:,:,:),.true.)
-  print *, "mean of tau is", sum(new_array, dim=1)/size(new_array, dim=1)
-  print *, "max of tau is", maxval(new_array)
-  print *, "min of tau is", minval(new_array)
+  allocate(temparray(   block_size*nlay*ngpt*nblocks)) 
+  temparray = pack(tau_lw(:,:,:,:),.true.)
+  print *, "mean of tau is", sum(temparray, dim=1)/size(temparray, dim=1)
+  print *, "max of tau is", maxval(temparray)
+  print *, "min of tau is", minval(temparray)
 
-  !print *, "max of source is", maxval(source%lay_source)
-  print *, "tau(1):",  tau_lw(1,1,1,1)
-  print *, "lay_source (1):", source%lay_source(1,1,1)
-  print *, "lev_source_inc (1):", source%lev_source_inc(1,1,1)
-  ! call unblock_and_write_3D(trim(output_file), 'tau_lw',tau_lw)
-  ! call unblock_and_write_3D(trim(output_file), 'planck_frac',planck_frac)
+  deallocate(temparray)
+  allocate(temparray(   block_size*nlay*nblocks)) 
+  temparray = pack(flux_dn(:,:,:),.true.)
+  print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)
+
+ !  mean of flux_down is:   103.2458
+
 
   call unblock_and_write(trim(flx_file), 'rlu', flux_up)
   call unblock_and_write(trim(flx_file), 'rld', flux_dn)
 
-  ! call unblock_and_write(trim(flxup_file), 'rlu', flux_up)
-  ! call unblock_and_write(trim(flxdn_file), 'rld', flux_dn)
-
-  print *, "flux_up (1):", flux_up(1,1,1)
-
-  print *, "play(1,1,1)", p_lay(1,1,1)
-  print *, "play(1,50,1)", p_lay(1,50,1)
-
-      ! Get the count rate
-  ! call system_clock(count_rate=count_rate)
-  ! call system_clock(iTime1)
-
-  ! nn_inputs = 1.0E-18*nn_inputs
-  ! call standardscaler(nn_inputs,means,stdevs)
+  ! call unblock_and_write_3D(trim(output_file), 'tau_lw',tau_lw)
+  ! call unblock_and_write_3D(trim(output_file), 'planck_frac',planck_frac)
+  ! call unblock_and_write_3D(trim(output_file), 'lay_source', lay_source)
+  print *, "success"
   
-  ! call system_clock(iTime2)
-
-
-  ! call unblock_and_write_3D_notrans(trim(inp_file), 'col_gas',nn_inputs)
+  ! call unblock_and_write_3D_notrans(trim(input_file), 'col_gas',nn_inputs)
 
 
   contains

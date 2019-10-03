@@ -5,23 +5,26 @@ module mod_network
   
   implicit none
 
-  private
-  public :: network_type
+  !private
+  public! :: network_type
 
   type :: network_type
 
     type(layer_type), allocatable :: layers(:)
     integer, allocatable :: dims(:)
+    procedure(kernel_interface), pointer :: nn_kernel
+
 
   contains
 
+    procedure, public :: change_kernel
     procedure, public, pass(self) :: init
     procedure, public, pass(self) :: load
-    procedure, public, pass(self) :: output
-    procedure, public, pass(self) :: output_flatmodel_sig_opt
-    procedure, public, pass(self) :: output_flatmodel_sig_opt2
-    procedure, public, pass(self) :: output_flatmodel_sgemv
-    procedure, public, pass(self) :: output_flatmodel_dgemv
+    procedure, public, pass(self) :: output                                 ! Vector input
+    procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input
+    procedure, public, pass(self) :: output_sgemv_flatmodel                 ! BLAS, vector input, equal-sized hidden layers
+    procedure, public, pass(self) :: output_matmul_flatmodel                ! Matrix input, equal-sized hidden layers
+    procedure, public, pass(self) :: output_sgemm, output_sgemm_flatmodel   ! BLAS, matrix input
     procedure, public, pass(self) :: save
     procedure, public, pass(self) :: set_activation
     !procedure, public, pass(self) :: sync
@@ -32,6 +35,15 @@ module mod_network
   interface network_type
     module procedure net_constructor
   endinterface network_type
+
+  abstract interface
+    subroutine kernel_interface(self, x, output)
+      import network_type, wp
+      class(network_type),    intent(in) :: self
+      real(wp), dimension(:), intent(in)  :: x
+      real(wp), dimension(:), intent(out) :: output
+    end subroutine
+  end interface
 
 contains
 
@@ -62,10 +74,17 @@ contains
       self % layers(n) = layer_type(dims(n), dims(n+1))
     end do
     self % layers(n) = layer_type(dims(n), 1)
-    self % layers(1) % b = 0
-    self % layers(size(dims)) % w = 0
-    self % layers(size(dims)) % w_transposed = 0
+    self % layers(1) % b = 0.0_wp
+    self % layers(size(dims)) % w = 0.0_wp
+    self % layers(size(dims)) % w_transposed = 0.0_wp
+    self % nn_kernel => output_opt_flatmodel
   end subroutine init
+
+  subroutine change_kernel(self, nn_kernel)
+    class(network_type), intent(inout) :: self
+    procedure(kernel_interface) :: nn_kernel
+    self % nn_kernel => nn_kernel
+  end subroutine change_kernel
 
   subroutine load(self, filename)
     ! Loads the network from file.
@@ -87,17 +106,12 @@ contains
     end do
     do n = 1, size(self % dims) - 1
       read(fileunit, fmt=*) self % layers(n) % w
-      self % layers(n) % w_transposed = transpose(self % layers(n) % w )
-      
-      !print*, shape(transpose(self % layers(n) % w ))
-       
+      self % layers(n) % w_transposed = transpose(self % layers(n) % w )       
     end do
 
     call self % layers(1) % set_activation('linear')
     do n = 1, size(self % dims) - 1
       read(fileunit, fmt=*) activation_type
-      print*, n
-      print*, activation_type
       call self % layers(n+1) % set_activation(activation_type)
     end do
 
@@ -111,57 +125,69 @@ contains
     real(wp), allocatable :: a(:)
     integer :: n
     associate(layers => self % layers)
-      !print *, "shape:", shape( transpose(layers(1) % w))
       a = self % layers(2) % activation(matmul(transpose(layers(1) % w), x) + layers(2) % b)
-      !print *, "a30:", a(30)
-
       do n = 3, size(layers)
         a = self % layers(n) % activation(matmul(transpose(layers(n-1) % w), a) + layers(n) % b)
       end do
     end associate
   end function output
 
-  subroutine output_flatmodel_sig_opt(self, x, neurons, output)
+  subroutine output_opt(self, x, output)
     ! Use forward propagation to compute the output of the network.
-    ! Output allocated outside of function, explicit-shape intermediate array,(number of neurons same in each hidden layer)
-    ! activation functions are replaced with a subroutine that modifies the arguments (sigmoid)
-    class(network_type),    intent(in) :: self
-    integer,            intent(in)  :: neurons
+    ! For computational efficiency, following changes are implemented:
+    ! 1) Outputs are allocated outside of function, 
+    ! 2) use of explicit-shape intermediate array that assumes the number of neurons are the same for all hidden layers,
+    ! 3) activation functions are replaced with a subroutine that modifies the arguments (sigmoid), activation from final layer removed (linear activation=redundant 1:1 copy)
+    ! 4) matmul replaced by custom function which is faster than matmul for matrix-vector multiplication
+    ! 5) weights have been pre-transposed in the load routine.
+    ! This procedure is much faster than the original when using gfortran -O3 -march=native or ifort -O3.
+    ! For lower optimization levels the custom function (4) may be SLOWER
+    class(network_type),    intent(in)  :: self
+    !integer, dimension(:)   intent(in)  :: neurons
     real(wp), dimension(:), intent(in)  :: x
     real(wp), dimension(:), intent(out) :: output
     ! Local variables
-    real(wp), dimension(neurons)        :: a
-    integer :: n
+    real(wp), allocatable   :: a(:)
+    integer,  dimension(2)  :: matsize
+    integer                 :: n
 
     associate(layers => self % layers)
-      a = matmul(transpose(layers(1) % w), x) + layers(2) % b
-      ! sigmoid activation: using an "inout" subroutine to avoid array copy
+      matsize = shape(layers(1) % w_transposed)
+      a = matvecmul(layers(1) % w_transposed, x, matsize(1), matsize(2)) + layers(2) % b
+      ! sigmoid activation: using an "inout" subroutine to avoid array copy 
       call sigmoid_subroutine(a)
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
-        a = matmul(transpose(layers(n-1) % w), a) + layers(n) % b
+        matsize = shape(layers(n-1) % w_transposed)
+        a = matvecmul(layers(n-1) % w_transposed, a, matsize(1), matsize(2)) + layers(n) % b
         call sigmoid_subroutine(a)
       end do
       ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
-      output = (matmul(transpose(layers(n-1) % w), a) + layers(n) % b)
+      matsize = shape(layers(n-1) % w_transposed)
+      output = (matvecmul(layers(n-1) % w_transposed, a, matsize(1), matsize(2)) + layers(n) % b)
     end associate
   end subroutine
 
-  subroutine output_flatmodel_sig_opt2(self, x, neurons, output)
+  subroutine output_opt_flatmodel(self, x, output)
     ! Use forward propagation to compute the output of the network.
-    ! Output allocated outside of function, explicit-shape intermediate array,(number of neurons same in each hidden layer)
-    ! activation functions are replaced with a subroutine that modifies the arguments (sigmoid),
-    ! matmul replaced by custom function for matrix-vector multiplication.
-    ! ONLY faster with gfortran -O3 -march=native, or ifort -O3, otherwise the custom function is slower
-    class(network_type),    intent(in) :: self
-    integer,            intent(in)  :: neurons
+    ! For computational efficiency, following changes are implemented:
+    ! 1) Outputs are allocated outside of function, 
+    ! 2) use of explicit-shape intermediate array that assumes the number of neurons are the same for all hidden layers,
+    ! 3) activation functions are replaced with a subroutine that modifies the arguments (sigmoid), activation from final layer removed (linear activation=redundant 1:1 copy)
+    ! 4) matmul replaced by custom function which is faster than matmul for matrix-vector multiplication
+    ! 5) weights have been pre-transposed in the load routine.
+    ! This procedure is much faster than the original when using gfortran -O3 -march=native or ifort -O3.
+    ! For lower optimization levels the custom function (4) may be SLOWER
+    class(network_type),    intent(in)  :: self
     real(wp), dimension(:), intent(in)  :: x
     real(wp), dimension(:), intent(out) :: output
     ! Local variables
-    real(wp), dimension(neurons)        :: a
+    ! The signal/tensor passing through the network
+    real(wp), dimension(size(self % layers(1) % w_transposed,1))        :: a 
+    integer :: n, neurons
 
-    integer :: n
-    !print *, "hiho"
+    neurons = size(self % layers(1) % w_transposed, 1)
+
     associate(layers => self % layers)
       a = matvecmul(layers(1) % w_transposed,x,neurons,size(x)) + layers(2) % b
       ! sigmoid activation: using an "inout" subroutine to avoid array copy 
@@ -176,32 +202,68 @@ contains
     end associate
   end subroutine
 
-  subroutine output_flatmodel_sgemv(self, x, neurons, output)
+  subroutine output_matmul_flatmodel(self, x, output)
     ! Use forward propagation to compute the output of the network.
-    ! Output allocated outside of function, explicit-shape intermediate array,(number of neurons same in each hidden layer)
-    ! activation functions are replaced with a subroutine that modifies the arguments (sigmoid),
-    ! matmul replaced by custom function for matrix-vector multiplication
+    ! In this version the inputs are a matrix/2D array, not 1D array (matrix-vector operations become matrix-matrix)
+    class(network_type),      intent(in) :: self
+    real(wp), dimension(:,:), intent(in)  :: x ! (features, num_sample)
+    real(wp), dimension(:,:), intent(out) :: output ! (outputs, num_sample)
+    ! Local variables
+    real(wp), dimension(size(self % layers(1) % w_transposed, 1), size(x,2))  :: a
+    integer :: n, neurons, isample, num_sample
+
+    num_sample = size(x,2)
+    neurons = size(self % layers(1) % w_transposed, 1)
+
+    associate(layers => self % layers)
+      a = matmul(layers(1) % w_transposed, x) ! + transpose(spread( layers(2) % b, 1, num_sample ))
+      do isample = 1, num_sample
+        a(:,isample) = a(:,isample ) + layers(2) % b
+      end do
+      call sigmoid_subroutine_mat(a)
+
+      do n = 3, size(layers)-1
+        a = matmul(layers(n-1) % w_transposed, a) !+ transpose(spread( layers(n) % b, 1, num_sample ))
+        do isample = 1, num_sample
+          a(:,isample) = a(:,isample ) + layers(n) % b
+        end do 
+        call sigmoid_subroutine_mat(a)
+      end do
+
+      output = matmul(layers(n-1) % w_transposed, a) ! + transpose(spread( layers(n) % b, 1, num_sample ))
+      do isample = 1, num_sample
+        output(:,isample) = output(:,isample ) + layers(n) % b
+      end do
+    end associate
+  end subroutine
+
+  subroutine output_sgemv_flatmodel(self, x, output)
+    ! Use forward propagation to compute the output of the network.
+    ! Using BLAS for the matmul operation (matrix-vector)
+    ! sgemv = single precision (wp=sp)
+    ! Explicit-shape intermediate array assuming equal number of neurons in each hidden layer
     class(network_type),    intent(in) :: self
-    integer,            intent(in)  :: neurons
     real(wp), dimension(:), intent(in)  :: x
     real(wp), dimension(:), intent(out) :: output
     ! Local variables
-    real(wp), dimension(neurons)        :: a !, c
-    integer :: n, incx, incy
+    real(wp), dimension(size(self % layers(1) % w_transposed, 1)) :: a 
+    integer :: n, neurons, incx, incy
     real(wp) :: alpha,beta
-    alpha = 1.0
-    beta = 0.0
+    alpha = 1.0_wp
+    beta = 0.0_wp
     incx = 1
     incy = 1
 
+    neurons = size(self % layers(1) % w_transposed, 1)
+
     associate(layers => self % layers)
-      call dgemv("N",neurons,size(x),alpha,layers(1) % w_transposed,neurons,x,incx,beta,a,incy)
+      call sgemv("N",neurons,size(x),alpha,layers(1) % w_transposed,neurons,x,incx,beta,a,incy)
       a = a + layers(2) % b
       call sigmoid_subroutine(a) ! sigmoid activation: using an "inout" subroutine to avoid array copy 
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
-        ! to avoid having to allocate another output array c (of size neurons), don't use sgemv here
-        ! For deep neural networks with more than 2-3 hidden layers, it's probably worth using sgemv
+        ! to avoid having to allocate another output array c (of size neurons, necessary because sgemv requires different input and output variables),
+        ! don't use sgemv here
         a = matvecmul(layers(n-1) % w_transposed, a, neurons, neurons)
         ! call sgemv("N",neurons,neurons,alpha,layers(n-1) % w_transposed,neurons,a,incx,beta,c,incy)'
         a = a + layers(n) % b
@@ -209,46 +271,108 @@ contains
         call sigmoid_subroutine(a)
       end do
       ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
-      call dgemv("N",size(output),neurons,alpha,layers(n-1) % w_transposed,size(output),a,incx,beta,output,incy)
+      call sgemv("N",size(output),neurons,alpha,layers(n-1) % w_transposed,size(output),a,incx,beta,output,incy)
       output = output + layers(n) % b
     end associate
   end subroutine
 
-  subroutine output_flatmodel_dgemv(self, x, neurons, output)
-    ! Use forward propagation to compute the output of the network.
-    ! Output allocated outside of function, explicit-shape intermediate array,(number of neurons same in each hidden layer)
-    ! activation functions are replaced with a subroutine that modifies the arguments (sigmoid),
-    ! matmul replaced by custom function for matrix-vector multiplication
-    class(network_type),    intent(in) :: self
-    integer,            intent(in)  :: neurons
-    real(wp), dimension(:), intent(in)  :: x
-    real(wp), dimension(:), intent(out) :: output
+  subroutine output_sgemm(self, x, output)
+    ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
+    ! sgemm = single-precision (wp = sp)
+    class(network_type),      intent(in)    :: self
+    real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
+    real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
     ! Local variables
-    real(wp), dimension(neurons)        :: a !, c
-    integer :: n, incx, incy
-    real(wp) :: alpha,beta
-    alpha = 1.0
-    beta = 0.0
-    incx = 1
-    incy = 1
+    real(wp), allocatable   :: a(:,:), a_next(:,:)
+    real(wp)                :: alpha, beta
+    integer,  dimension(2)  :: matsize
+    integer                 :: n, num_sample, isample
+
+    alpha = 1.0_wp
+    beta = 0.0_wp
+    output = 0.0_wp
+
+    num_sample = size(x,2)
 
     associate(layers => self % layers)
-      call dgemv("N",neurons,size(x),alpha,layers(1) % w_transposed,neurons,x,incx,beta,a,incy)
-      a = a + layers(2) % b
-      call sigmoid_subroutine(a) ! sigmoid activation: using an "inout" subroutine to avoid array copy 
+      matsize = shape(layers(1) % w_transposed)
+      allocate(a(matsize(1),num_sample))
+      call sgemm("N","N",matsize(1), num_sample, matsize(2), alpha, layers(1) % w_transposed, matsize(1), x, matsize(2), beta, a, matsize(1))
+      do isample = 1, num_sample
+        a(:,isample) = a(:,isample ) + layers(2) % b
+      end do
+      call sigmoid_subroutine_mat(a)
+
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
-        ! to avoid having to allocate another output array c (of size neurons), don't use sgemv here
-        ! For deep neural networks with more than 2-3 hidden layers, it's probably worth using sgemv
-        a = matvecmul(layers(n-1) % w_transposed, a, neurons, neurons)
-        ! call sgemv("N",neurons,neurons,alpha,layers(n-1) % w_transposed,neurons,a,incx,beta,c,incy)'
-        a = a + layers(n) % b
-        ! a = c + layers(n) % b
-        call sigmoid_subroutine(a)
+        matsize = shape(layers(n-1) % w_transposed)
+        allocate(a_next(matsize(1),num_sample))
+
+        call sgemm("N","N",matsize(1),num_sample,matsize(2),alpha,layers(n-1) % w_transposed,matsize(1),a,matsize(2),beta,a_next,matsize(1))
+        deallocate(a)
+        do isample = 1, num_sample
+          a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+        end do 
+        call sigmoid_subroutine_mat(a_next)
+        a = a_next
+        deallocate(a_next)
       end do
-      ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
-      call dgemv("N",size(output),neurons,alpha,layers(n-1) % w_transposed,size(output),a,incx,beta,output,incy)
-      output = output + layers(n) % b
+
+      matsize = shape(layers(n-1) % w_transposed)
+      call sgemm("N","N",matsize(1), num_sample, matsize(2), alpha, layers(n-1) % w_transposed, matsize(1), a, matsize(2), beta, output, matsize(1))
+      do isample = 1, num_sample
+        output(:,isample) = output(:,isample ) + layers(n) % b
+      end do
+    end associate
+  end subroutine
+
+    subroutine output_sgemm_flatmodel(self, x, output)
+    ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
+    ! sgemm = single-precision (wp = sp)
+    class(network_type),      intent(in)    :: self
+    real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
+    real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
+    ! Local variables
+    real(wp), allocatable   :: a(:,:), a_next(:,:)
+    real(wp)                :: alpha, beta
+    integer,  dimension(2)  :: matsize
+    integer                 :: n, num_sample, isample
+
+    alpha = 1.0_wp
+    beta = 0.0_wp
+    output = 0.0_wp
+
+    num_sample = size(x,2)
+
+    associate(layers => self % layers)
+      matsize = shape(layers(1) % w_transposed)
+      allocate(a(matsize(1),num_sample))
+      call sgemm("N","N",matsize(1), num_sample, matsize(2), alpha, layers(1) % w_transposed, matsize(1), x, matsize(2), beta, a, matsize(1))
+      do isample = 1, num_sample
+        a(:,isample) = a(:,isample ) + layers(2) % b
+      end do
+      call sigmoid_subroutine_mat(a)
+
+      ! INTERMEDIATE LAYERS
+      do n = 3, size(layers)-1
+        matsize = shape(layers(n-1) % w_transposed)
+        allocate(a_next(matsize(1),num_sample))
+
+        call sgemm("N","N",matsize(1),num_sample,matsize(2),alpha,layers(n-1) % w_transposed,matsize(1),a, matsize(2),beta, a_next, matsize(1))
+        deallocate(a)
+        do isample = 1, num_sample
+          a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+        end do 
+        call sigmoid_subroutine_mat(a_next)
+        a = a_next
+        deallocate(a_next)
+      end do
+
+      matsize = shape(layers(n-1) % w_transposed)
+      call sgemm("N","N",matsize(1), num_sample, matsize(2), alpha, layers(n-1) % w_transposed, matsize(1), a, matsize(2), beta, output, matsize(1))
+      do isample = 1, num_sample
+        output(:,isample) = output(:,isample ) + layers(n) % b
+      end do
     end associate
   end subroutine
 
@@ -264,7 +388,7 @@ contains
         ! loop through the different elements in vecB (length 50), multiply by the corresponding
         ! column (still 50) element in matA for that particular row (outer loop), add the 50 values together
 
-        matvecmul = 0.0
+        matvecmul = 0.0_wp
         do j=1,ncol !  50
             matvecmul = matvecmul + matA(:,j) * vecB(j) !length 256. this is for one column, and then the columns need to be added together ( b = b + ..)
         enddo
@@ -276,6 +400,13 @@ contains
     x = 1 / (1 + exp(-x))
     ! x = x / (1 + abs(x)  ! WOULD BE SLIGHTLY FASTER (10-15%)
   end subroutine
+
+  subroutine sigmoid_subroutine_mat(x)
+    real(wp), dimension(:,:), intent(inout) :: x
+    x = 1 / (1 + exp(-x))
+    ! x = x / (1 + abs(x)  ! WOULD BE SLIGHTLY FASTER (10-15%)
+  end subroutine
+
 
 
 
