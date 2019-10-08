@@ -5,25 +5,41 @@
 include Makefile.libs
 include $(RRTMGP_DIR)/Makefile.conf
 
-#
+
 # RRTMGP library, module files
 #
 LDFLAGS   += -L$(RRTMGP_DIR)
-LIBS      += -lrrtmgp -lrte
+LIBS      += -lrrtmgp -lrte 
 FCINCLUDE += -I$(RRTMGP_DIR)
 
-# NEURAL LIBRARY
-#LDFLAGS   += -L$(NEURAL_DIR)
-LIBS      += -lneural $(LIBADD) #-lopenblas
-#FCINCLUDE += -I$(NEURAL_DIR)
+# NEURAL-FORTRAN LIBRARY
+LIBS      += -lneural 
 
 #
 # netcdf library, module files
 # C and Fortran interfaces respectively
 #
 FCINCLUDE += -I$(NFHOME)/include
-LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
-LIBS      += -lnetcdff -lnetcdf
+LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib  -L/usr/local/lib 
+LIBS      += -lnetcdff -lnetcdf 
+
+# choose BLAS library: "blis", "openblas", "mkl"
+BLASLIB=mkl
+ifeq ($(BLASLIB),blis)
+	# BLIS_PREFIX = /usr/local
+	# BLIS_INCLUDE = $(BLIS_PREFIX)/include/blis
+	# BLIS_LIB    = $(BLIS_PREFIX)/lib
+	# FCINCLUDE 	+= -I$(BLIS_INCLUDE)
+	# LDFLAGS   	+= -L$(BLIS_LIB) 
+	# LIBS      	+= -lm -lpthread -lblis
+
+	# assuming the libraries are installed in standard locations
+	LIBS 		+= -lblis
+else ifeq ($(BLASLIB),openblas)
+	LIBS 		+= -lopenblas 
+else ifeq ($(BLASLIB),mkl)
+	
+endif
 
 #
 # Setting macro TIMING=yes uses routines from the General Purpose Timing Library
@@ -31,9 +47,7 @@ LIBS      += -lnetcdff -lnetcdf
 #
 TIMING=no
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
-#FCFLAGS += -fpp
-#FC = gfortran #-cpp -pg
-#FCFLAGS += -g -O3
+
 ifeq ($(TIMING),yes)
 	#
 	# Timing library

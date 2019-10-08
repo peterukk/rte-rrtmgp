@@ -785,7 +785,7 @@ contains
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
     integer,  dimension(ncol,2),              intent(in) :: itropo, istrato
-    real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
+    real(wp), dimension(ngas+1,nlay,ncol),    intent(in) :: nn_inputs 
     real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
     ! The models should also be inputs
     type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
@@ -803,9 +803,9 @@ contains
       do ilay = 1, nlay
       ! do ilay = istrato(icol, 1), istrato(icol, 2)
         ! PREDICT PLANCK FRACTIONS
-        call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
-        ! Scaling
-        pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
+        ! call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+        ! ! Scaling
+        ! pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
 
         ! PREDICT OPTICAL DEPTHS
         call net_tau_strato % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
@@ -838,7 +838,7 @@ contains
                     tau_gas, pfrac)
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
-    real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
+    real(wp), dimension(ngas+1,nlay,ncol),    intent(in) :: nn_inputs 
     real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
     ! The models should also be inputs
     type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
@@ -856,18 +856,18 @@ contains
     ! This assumes the same neural network model can be used for the stratosphere and troposphere
 
     ! PREDICT PLANCK FRACTIONS
-    call net_pfrac % output_sgemm(reshape(nn_inputs,(/ngas+3,nlay*ncol/)), tmp_output)
-    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
+    ! call net_pfrac % output_sgemm(reshape(nn_inputs,(/ngas+3,nlay*ncol/)), tmp_output)
+    ! pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
 
-    ! Scaling
-    do icol = 1, ncol
-      do ilay = 1, nlay
-        pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
-      end do
-    end do
+    ! ! Scaling
+    ! do icol = 1, ncol
+    !   do ilay = 1, nlay
+    !     pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
+    !   end do
+    ! end do
 
     ! PREDICT OPTICAL DEPTHS
-    call net_tau_tropo % output_sgemm(reshape(nn_inputs,(/ngas+3,nlay*ncol/)), tmp_output )
+    call net_tau_tropo % output_sgemm_ss(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
     ! Scaling
     tau_gas = reshape(tmp_output,(/ngpt,nlay,ncol/))       
     tau_gas = exp(tau_gas) - eps_neural 

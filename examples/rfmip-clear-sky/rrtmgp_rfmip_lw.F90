@@ -146,9 +146,9 @@ program rrtmgp_rfmip_lw
 
   ! Where neural network model weights are located
   ! 
-  !modelfile_tau_tropo = "../../neural/data/taumodel_i21_n32.txt"
-  modelfile_tau_tropo     = "../../neural/data/taumodel_n40_CAMS2.txt"
-  ! modelfile_tau_tropo     = "../../neural/data/taumodel_N52_TROP_eps0005_2.txt"
+  modelfile_tau_tropo      = "../../neural/data/taumodel_eps0005_50-50_softsign.txt"
+  !modelfile_tau_tropo     = "../../neural/data/taumodel_n40_CAMS2.txt"
+  !modelfile_tau_tropo     = "../../neural/data/taumodel_N52_TROP_eps0005_2.txt"
   ! modelfile_tau_tropo   = "../../neural/data/taumodel_N52_TROP_eps0005.txt"
   ! modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_wtrain_strat_n40_exp.txt"
   !modelfile_tau_strato = "../../neural/data/taumodel_CAMS_wtrain_strat_n40_exp.txt"
