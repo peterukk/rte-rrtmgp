@@ -349,7 +349,7 @@ function gas_optics_int(this,                             &
     integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
     logical :: original_source, top_at_1
 
-    original_source = .false.
+    original_source = .true.
     ! ----------------------------------------------------------
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -945,7 +945,7 @@ real(wp), dimension(ngpt,nlay,ncol),  intent(out)   ::  pfrac ! Planck fractions
 real(wp), dimension(ngpt,2), intent(in)             :: scaler_pfrac  ! for post-processing the NN-predicted planck fractions 
 character (len = 60), intent(in)                    :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source  ! text files with model weights
 
-real(wp), dimension(get_ngas(this)+3,nlay,ncol), intent(out) :: nn_inputs 
+real(wp), dimension(get_ngas(this)+1,nlay,ncol), intent(out) :: nn_inputs 
 
 character(len=128)                               :: error_msg
 
@@ -966,7 +966,7 @@ real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
 
 real(wp), dimension(ncol,nlay,  this%get_ngas())  :: vmr     ! volume mixing ratios
 real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts for each gas, plus col_dry
-integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2
+integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
 ! ----------------------------------------------------------
 ! Neural network input scaling coefficients .. should probably be loaded from a file
 real(wp), dimension(21) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, &
@@ -992,7 +992,7 @@ logical :: flatten_dims
 ! If true, the hidden layers must have equal sizes (flat model)
 logical :: use_blas
 
-flatten_dims = .false.
+flatten_dims = .true.
 use_blas     = .false. 
 
 !
@@ -1080,14 +1080,19 @@ call system_clock(count_rate=count_rate)
 call system_clock(iTime1)
 
 do ilay = 1, nlay
-    do igas = 1, ngas+1
+    ! do igas = 1, ngas+1
+    do igas = 1, 6
       !nn_inputs(igas,ilay,:) = col_gas(:,ilay,igas-1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
     end do
+    do igas = 9, ngas+1
+      !nn_inputs(igas,ilay,:) = col_gas(:,ilay,igas-1)
+      nn_inputs(igas-2,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
+    end do
     ! igas = ngas + 1
-    nn_inputs(igas,ilay,:) = (tlay(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
+    nn_inputs(igas-2,ilay,:) = (tlay(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
     igas = igas + 1
-    nn_inputs(igas,ilay,:) = (play(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
+    nn_inputs(igas-2,ilay,:) = (play(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
 end do
 
 call system_clock(iTime2)
@@ -1141,6 +1146,19 @@ else
       ! call change_kernel(net_tau_tropo, output_dgemv_flatmodel)
       ! call change_kernel(net_tau_strato,output_dgemv_flatmodel)
     end if
+  end if
+
+  ! If NN models have the same amount of neurons in each layer, use an optimized kernel..
+  neurons_first = size(net_tau_tropo % layers(1) % w_transposed, 1)
+  neurons_last = size(net_tau_tropo % layers(size(net_tau_tropo%layers)-1) % w_transposed, 2)
+  ! do ilay = 1, size(net_tau_tropo%layers)
+  !   print *, shape(net_tau_tropo % layers(ilay) % w_transposed)
+  ! end do
+  if (neurons_first == neurons_last) then
+    print *, "Flat model"
+    call change_kernel(net_pfrac, output_opt_flatmodel_ss)
+    call change_kernel(net_tau_tropo, output_opt_flatmodel_ss)
+    call change_kernel(net_tau_strato, output_opt_flatmodel_ss)
   end if
 
   call predict_nn_lw(                     &

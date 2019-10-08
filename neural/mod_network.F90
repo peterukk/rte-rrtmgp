@@ -22,9 +22,12 @@ module mod_network
     procedure, public, pass(self) :: load
     procedure, public, pass(self) :: output                                 ! Vector input
     procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input
-    procedure, public, pass(self) :: output_sgemv_flatmodel                 ! BLAS, vector input, equal-sized hidden layers
-    procedure, public, pass(self) :: output_matmul_flatmodel                ! Matrix input, equal-sized hidden layers
-    procedure, public, pass(self) :: output_sgemm, output_sgemm_flatmodel   ! BLAS, matrix input
+    procedure, public, pass(self) :: output_opt_flatmodel_ss
+    procedure, public, pass(self) :: output_opt_flatmodel_looper            ! Matrix input, loop through samples
+    procedure, public, pass(self) :: output_sgemv_flatmodel                 ! BLAS, vector input
+    procedure, public, pass(self) :: output_matmul_flatmodel                ! Matrix input, matrix-matrix product
+    procedure, public, pass(self) :: output_sgemm, output_sgemm_flatmodel   ! Matrix input, matrix-matrix product using BLAS
+    procedure, public, pass(self) :: output_sgemm_ss
     procedure, public, pass(self) :: save
     procedure, public, pass(self) :: set_activation
     !procedure, public, pass(self) :: sync
@@ -77,7 +80,7 @@ contains
     self % layers(1) % b = 0.0_wp
     self % layers(size(dims)) % w = 0.0_wp
     self % layers(size(dims)) % w_transposed = 0.0_wp
-    self % nn_kernel => output_opt_flatmodel
+    self % nn_kernel => output_opt
   end subroutine init
 
   subroutine change_kernel(self, nn_kernel)
@@ -189,7 +192,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
 
     associate(layers => self % layers)
-      a = matvecmul(layers(1) % w_transposed,x,neurons,size(x)) + layers(2) % b
+      a = matvecmul(layers(1) % w_transposed, x, neurons, size(x)) + layers(2) % b
       ! sigmoid activation: using an "inout" subroutine to avoid array copy 
       call sigmoid_subroutine(a)
       ! INTERMEDIATE LAYERS
@@ -199,6 +202,77 @@ contains
       end do
       ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
       output = (matvecmul(layers(n-1) % w_transposed, a, size(output), neurons) + layers(n) % b)
+    end associate
+  end subroutine
+
+  subroutine output_opt_flatmodel_ss(self, x, output)
+    ! Use forward propagation to compute the output of the network.
+    ! For computational efficiency, following changes are implemented:
+    ! 1) Outputs are allocated outside of function, 
+    ! 2) use of explicit-shape intermediate array that assumes the number of neurons are the same for all hidden layers,
+    ! 3) activation functions are replaced with a subroutine that modifies the arguments (sigmoid), activation from final layer removed (linear activation=redundant 1:1 copy)
+    ! 4) matmul replaced by custom function which is faster than matmul for matrix-vector multiplication
+    ! 5) weights have been pre-transposed in the load routine.
+    ! This procedure is much faster than the original when using gfortran -O3 -march=native or ifort -O3.
+    ! For lower optimization levels the custom function (4) may be SLOWER
+    class(network_type),    intent(in)  :: self
+    real(wp), dimension(:), intent(in)  :: x
+    real(wp), dimension(:), intent(out) :: output
+    ! Local variables
+    ! The signal/tensor passing through the network
+    real(wp), dimension(size(self % layers(1) % w_transposed,1))        :: a 
+    integer :: n, neurons
+
+    neurons = size(self % layers(1) % w_transposed, 1)
+
+    associate(layers => self % layers)
+      a = matvecmul(layers(1) % w_transposed, x, neurons, size(x)) + layers(2) % b
+      ! sigmoid activation: using an "inout" subroutine to avoid array copy 
+      call softsign_subroutine(a)
+      ! INTERMEDIATE LAYERS
+      do n = 3, size(layers)-1
+        a = matvecmul(layers(n-1) % w_transposed, a, neurons, neurons) + layers(n) % b
+        call softsign_subroutine(a)
+      end do
+      ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
+      output = (matvecmul(layers(n-1) % w_transposed, a, size(output), neurons) + layers(n) % b)
+    end associate
+  end subroutine
+
+  subroutine output_opt_flatmodel_looper(self, x, output)
+    ! Use this routine for a 2D input data array
+    class(network_type),      intent(in)    :: self
+    real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
+    real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
+    ! Local variables
+    ! The signal/tensor passing through the network
+    real(wp), dimension(size(self % layers(1) % w_transposed,1))  :: a 
+    integer,  dimension(size(self % layers), 2)                   :: weightdims
+    integer                     :: n, i, num_sample
+
+    num_sample = size(x,2)
+    
+    associate(layers => self % layers)
+
+      do n = 1, size(layers)
+        weightdims(n,:) = shape(layers(n) % w_transposed) 
+      end do
+
+      do i = 1, num_sample
+
+        a = matvecmul(layers(1) % w_transposed, x(:,i), weightdims(1,1), weightdims(1,2)) + layers(2) % b
+
+        call sigmoid_subroutine(a)
+        ! INTERMEDIATE LAYERS
+        do n = 3, size(layers)-1
+          a = matvecmul(layers(n-1) % w_transposed, a, weightdims(n-1,1), weightdims(n-1,2)) + layers(n) % b
+          call sigmoid_subroutine(a)
+        end do
+        ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
+        output(:,i) = (matvecmul(layers(n-1) % w_transposed, a, weightdims(n-1,1), weightdims(n-1,2)) + layers(n) % b)
+
+      end do
+
     end associate
   end subroutine
 
@@ -276,6 +350,7 @@ contains
     end associate
   end subroutine
 
+
   subroutine output_sgemm(self, x, output)
     ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
     ! sgemm = single-precision (wp = sp)
@@ -314,6 +389,56 @@ contains
           a_next(:,isample) = a_next(:,isample ) + layers(n) % b
         end do 
         call sigmoid_subroutine_mat(a_next)
+        a = a_next
+        deallocate(a_next)
+      end do
+
+      matsize = shape(layers(n-1) % w_transposed)
+      call sgemm("N","N",matsize(1), num_sample, matsize(2), alpha, layers(n-1) % w_transposed, matsize(1), a, matsize(2), beta, output, matsize(1))
+      do isample = 1, num_sample
+        output(:,isample) = output(:,isample ) + layers(n) % b
+      end do
+    end associate
+  end subroutine
+
+  subroutine output_sgemm_ss(self, x, output)
+    ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
+    ! sgemm = single-precision (wp = sp)
+    class(network_type),      intent(in)    :: self
+    real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
+    real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
+    ! Local variables
+    real(wp), allocatable   :: a(:,:), a_next(:,:)
+    real(wp)                :: alpha, beta
+    integer,  dimension(2)  :: matsize
+    integer                 :: n, num_sample, isample
+
+    alpha = 1.0_wp
+    beta = 0.0_wp
+    output = 0.0_wp
+
+    num_sample = size(x,2)
+
+    associate(layers => self % layers)
+      matsize = shape(layers(1) % w_transposed)
+      allocate(a(matsize(1),num_sample))
+      call sgemm("N","N",matsize(1), num_sample, matsize(2), alpha, layers(1) % w_transposed, matsize(1), x, matsize(2), beta, a, matsize(1))
+      do isample = 1, num_sample
+        a(:,isample) = a(:,isample ) + layers(2) % b
+      end do
+      call softsign_subroutine_mat(a)
+
+      ! INTERMEDIATE LAYERS
+      do n = 3, size(layers)-1
+        matsize = shape(layers(n-1) % w_transposed)
+        allocate(a_next(matsize(1),num_sample))
+
+        call sgemm("N","N",matsize(1),num_sample,matsize(2),alpha,layers(n-1) % w_transposed,matsize(1),a,matsize(2),beta,a_next,matsize(1))
+        deallocate(a)
+        do isample = 1, num_sample
+          a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+        end do 
+        call softsign_subroutine_mat(a_next)
         a = a_next
         deallocate(a_next)
       end do
@@ -407,7 +532,17 @@ contains
     ! x = x / (1 + abs(x)  ! WOULD BE SLIGHTLY FASTER (10-15%)
   end subroutine
 
+  subroutine softsign_subroutine(x)
+    real(wp), dimension(:), intent(inout) :: x
+    x = x / (abs(x) + 1)
+    ! x = x / (1 + abs(x)  ! WOULD BE SLIGHTLY FASTER (10-15%)
+  end subroutine
 
+  subroutine softsign_subroutine_mat(x)
+    real(wp), dimension(:,:), intent(inout) :: x
+    ! x = x / (abs(x) + 1)
+    ! x = x / (1 + abs(x)  ! WOULD BE SLIGHTLY FASTER (10-15%)
+  end subroutine
 
 
   subroutine save(self, filename)
