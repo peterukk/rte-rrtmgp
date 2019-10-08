@@ -146,15 +146,10 @@ program rrtmgp_rfmip_lw
 
   ! Where neural network model weights are located
   ! 
-  modelfile_tau_tropo      = "../../neural/data/taumodel_eps0005_50-50_softsign.txt"
-  !modelfile_tau_tropo     = "../../neural/data/taumodel_n40_CAMS2.txt"
+  !modelfile_tau_tropo      = "../../neural/data/taumodel_eps0005_50-50_softsign.txt"
+  modelfile_tau_tropo     = "../../neural/data/eps0005_50-50_relu.txt"
   !modelfile_tau_tropo     = "../../neural/data/taumodel_N52_TROP_eps0005_2.txt"
-  ! modelfile_tau_tropo   = "../../neural/data/taumodel_N52_TROP_eps0005.txt"
-  ! modelfile_tau_strato  = "../../neural/data/taumodel_CAMS_wtrain_strat_n40_exp.txt"
-  !modelfile_tau_strato = "../../neural/data/taumodel_CAMS_wtrain_strat_n40_exp.txt"
-  !modelfile_tau_strato = "../../neural/data/taumodel_CAMS_wtrain_strat_n30_eps1.txt"
-  ! modelfile_tau_tropo  = "../../neural/data/taumodel_eps0005_50-32.txt"
-  ! modelfile_tau_strato = "../../neural/data/taumodel_eps0005_mae_CAMS2.txt"
+
   modelfile_tau_strato = modelfile_tau_tropo
   modelfile_source   = "../../neural/data/pfracmodel_CAMS_wtrain_n30.txt"
   ! Model predictions are standard-scaled. Load data for post-processing the outputs

@@ -1,131 +1,86 @@
 module mod_activation
 
-  ! A collection of activation functions and their derivatives.
+  ! A collection of activation subroutines and their derivatives.
 
   use mo_rte_kind, only: wp
 
   implicit none
 
-  private
+  public
 
-  public :: activation_function
-  public :: gaussian, gaussian_prime
-  public :: relu, relu_prime
-  public :: sigmoid, sigmoid_prime
-  public :: step, step_prime
-  public :: tanhf, tanh_prime
-  public :: linear, linear_prime
-
-  interface
-    pure function activation_function(x)
+  abstract interface
+    pure subroutine activation_vec(x)
       import :: wp
-      real(wp), intent(in) :: x(:)
-      real(wp) :: activation_function(size(x))
-    end function activation_function
+      real(wp), intent(inout) :: x(:)
+    end subroutine activation_vec
+
+    pure subroutine activation_mat(x)
+      import :: wp
+      real(wp), intent(inout) :: x(:,:)
+    end subroutine activation_mat
   end interface
 
 contains
 
-  pure function gaussian(x) result(res)
-    ! Gaussian activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = exp(-x**2)
-  end function gaussian
+  pure subroutine gaussian(x) 
+    ! Gaussian activation subroutine.
+    real(wp), intent(inout) :: x(:)
+    x = exp(-x**2)
+  end subroutine gaussian
 
-  pure function gaussian_prime(x) result(res)
-    ! First derivative of the Gaussian activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = -2 * x * gaussian(x)
-  end function gaussian_prime
+  pure subroutine gaussian_m(x) 
+    real(wp), intent(inout) :: x(:,:)
+    x = exp(-x**2)
+  end subroutine gaussian_m
 
-  pure function relu(x) result(res)
-    !! REctified Linear Unit (RELU) activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = max(0.0_wp, x)
-  end function relu
 
-  pure function relu_prime(x) result(res)
-    ! First derivative of the REctified Linear Unit (RELU) activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    where (x > 0.0_wp)
-      res = 1
-    elsewhere
-      res = 0.0_wp
-    end where
-  end function relu_prime
+  pure subroutine relu(x) 
+    !! REctified Linear Unit (RELU) activation subroutine.
+    real(wp), intent(inout) :: x(:)
+    x = max(0.0_wp, x)
+  end subroutine relu
 
-  pure function linear(x) result(res)
-    !! Linear activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = x
-  end function linear
+  pure subroutine relu_m(x) 
+    real(wp), intent(inout) :: x(:,:)
+    x = max(0.0_wp, x)
+  end subroutine relu_m
 
-  pure function linear_prime(x) result(res)
-    !! Linear activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = x
-  end function linear_prime
 
-  pure function sigmoid(x) result(res)
-    ! Sigmoid activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = 1 / (1 + exp(-x))
-  end function sigmoid
+  pure subroutine sigmoid(x) 
+    ! Sigmoid activation subroutine.
+    real(wp), intent(inout) :: x(:)
+    x = 1 / (1 + exp(-x))
+  end subroutine sigmoid
 
-  ! real(wp) elemental function sigmoid(x) result(res)
-  ! ! Sigmoid activation function.
-  ! real(wp), intent(in) :: x
+  pure subroutine sigmoid_m(x) 
+    real(wp), intent(inout) :: x(:,:)
+    x = 1 / (1 + exp(-x))
+  end subroutine sigmoid_m
 
-  ! res = 1 / (1 + exp(-x))
-  ! end function sigmoid
 
-  pure function sigmoid_prime(x) result(res)
-    ! First derivative of the sigmoid activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = sigmoid(x) * (1 - sigmoid(x))
-  end function sigmoid_prime
-
-  pure function step(x) result(res)
-    ! Step activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    where (x > 0.0_wp)
-      res = 1
-    elsewhere
-      res = 0.0_wp
-    end where
-  end function step
-
-  pure function step_prime(x) result(res)
-    ! First derivative of the step activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = 0.0_wp
-  end function step_prime
-
-  pure function tanhf(x) result(res)
-    ! Tangent hyperbolic activation function.
+  pure subroutine tanhf(x) 
+    ! Tangent hyperbolic activation subroutine.
     ! Same as the intrinsic tanh, but must be
     ! defined here so that we can use procedure
     ! pointer with it.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = tanh(x)
-  end function tanhf
+    real(wp), intent(inout) :: x(:)
+    x = tanh(x)
+  end subroutine tanhf
 
-  pure function tanh_prime(x) result(res)
-    ! First derivative of the tanh activation function.
-    real(wp), intent(in) :: x(:)
-    real(wp) :: res(size(x))
-    res = 1 - tanh(x)**2
-  end function tanh_prime
+  pure subroutine tanhf_m(x) 
+    real(wp), intent(inout) :: x(:,:)
+    x = tanh(x)
+  end subroutine tanhf_m
+
+
+  pure subroutine softsign(x)
+    real(wp), intent(inout) :: x(:)
+    x = x / (abs(x) + 1)
+  end subroutine
+
+  pure subroutine softsign_m(x)
+    real(wp), intent(inout) :: x(:,:)
+    x = x / (abs(x) + 1)
+  end subroutine
 
 end module mod_activation
