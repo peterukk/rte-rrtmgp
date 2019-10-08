@@ -24,7 +24,7 @@ LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib  -L/usr/local/lib
 LIBS      += -lnetcdff -lnetcdf 
 
 # choose BLAS library: "blis", "openblas", "mkl"
-BLASLIB=mkl
+BLASLIB=blis
 ifeq ($(BLASLIB),blis)
 	# BLIS_PREFIX = /usr/local
 	# BLIS_INCLUDE = $(BLIS_PREFIX)/include/blis

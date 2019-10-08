@@ -867,10 +867,11 @@ contains
     ! end do
 
     ! PREDICT OPTICAL DEPTHS
-    call net_tau_tropo % output_sgemm_ss(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
+    call net_tau_tropo % output_sgemm(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
     ! Scaling
     tau_gas = reshape(tmp_output,(/ngpt,nlay,ncol/))       
     tau_gas = exp(tau_gas) - eps_neural 
+    ! call fastexp(tau_gas,eps_neural)
     tau_gas = max(0.0_wp, tau_gas)
 
     end subroutine predict_nn_lw_matmul
@@ -920,9 +921,10 @@ contains
   
   end subroutine predict_nn_lw_flattenlevs
 
-  elemental subroutine fastexp(x)
+  elemental subroutine fastexp(x,eps)
     real(wp), intent(inout) :: x
-    x = (1.0_wp + x / 256_wp)**256_wp;
+    real(wp), intent(in)    :: eps
+    x = (1.0_wp + x / 256_wp)**256_wp - eps;
   end subroutine fastexp
 
   ! ----------------------------------------------------------

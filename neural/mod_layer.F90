@@ -17,8 +17,8 @@ module mod_layer
     real(wp), allocatable :: w(:,:) ! weights
     real(wp), allocatable :: w_transposed(:,:) ! weights
     real(wp), allocatable :: z(:) ! arg. to activation function
-    procedure(activation_function), pointer, nopass :: activation => null()
-    procedure(activation_function), pointer, nopass :: activation_prime => null()
+    procedure(activation_vec),    pointer, nopass :: activation !=> null()
+    procedure(activation_mat),    pointer, nopass :: activation_m
   contains
     procedure, public, pass(self) :: set_activation
   end type layer_type
@@ -54,25 +54,22 @@ contains
     select case(trim(activation))
       case('gaussian')
         self % activation => gaussian
-        self % activation_prime => gaussian_prime
+        self % activation_m => gaussian_m
       case('relu')
         self % activation => relu
-        self % activation_prime => relu_prime
+        self % activation_m => relu_m
       case('sigmoid')
         self % activation => sigmoid
-        self % activation_prime => sigmoid_prime
-      case('step')
-        self % activation => step
-        self % activation_prime => step_prime
+        self % activation_m => sigmoid_m
+      case('softsign')
+        self % activation => softsign
+        self % activation_m => softsign_m
       case('tanh')
         self % activation => tanhf
-        self % activation_prime => tanh_prime
-      case('linear')
-        self % activation => linear
-        self % activation_prime => linear_prime
+        self % activation_m => tanhf_m
       case default
         self % activation => sigmoid
-        self % activation_prime => sigmoid_prime
+        self % activation_m => sigmoid_m
     end select
   end subroutine set_activation
 

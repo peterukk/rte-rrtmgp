@@ -992,7 +992,7 @@ logical :: flatten_dims
 ! If true, the hidden layers must have equal sizes (flat model)
 logical :: use_blas
 
-flatten_dims = .true.
+flatten_dims = .false.
 use_blas     = .false. 
 
 !
@@ -1156,9 +1156,9 @@ else
   ! end do
   if (neurons_first == neurons_last) then
     print *, "Flat model"
-    call change_kernel(net_pfrac, output_opt_flatmodel_ss)
-    call change_kernel(net_tau_tropo, output_opt_flatmodel_ss)
-    call change_kernel(net_tau_strato, output_opt_flatmodel_ss)
+    call change_kernel(net_pfrac, output_opt_flatmodel)
+    call change_kernel(net_tau_tropo, output_opt_flatmodel)
+    call change_kernel(net_tau_strato, output_opt_flatmodel)
   end if
 
   call predict_nn_lw(                     &
