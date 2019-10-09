@@ -10,10 +10,11 @@ Currently only longwave implemented!!
 
 **to-do**
 - "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)?
+- related to this, offer user choice regarding speed/accuracy (more accurate models are computationally slower)
 - implement for shortwave
 - GPU kernels
 - post-processing (scaling) coefficients should maybe be integrated into neural-fortran and loaded from the same files as the model weights
-- offer user choice regarding speed/accuracy (more accurate models are computationally slower)
+
 
 # RTE+RRTMGP
 
