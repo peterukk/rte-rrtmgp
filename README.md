@@ -4,7 +4,7 @@ Currently only longwave implemented!!
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle gas overlaps, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations. The model takes as input a single layer and so is agnostic to vertical discretization.  
 
-**Speed**: The optical depth kernel is up to 3-4 times faster than the original on ifort+MKL (depending on platform) when using single precision and a fairly complex neural network model which takes as input scaled temperature, pressure and all RRTMGP gases (21 inputs in total). On some older gfortran compilers and double precision, it is barely faster at all.
+**Speed**: The optical depth kernel is up to 3-4 times faster than the original on ifort+MKL (depending on platform) when using single precision and a fairly complex neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). The fastest implementation (on ifort) uses BLAS/SGEMM to predict multiple levels (and optionally columns) a time using matrix-matrix dot products.
 
 **Accuracy**: The column mean RMS errors are around 0.3, 0.5 W/m2 for up- and downwelling fluxes respectively, but the downwelling long-wave fluxes have relatively large errors up to 5 W/m2 in the upper layers at some RFMIP test sites with high water vapour concentrations (more training data needed).  
 
