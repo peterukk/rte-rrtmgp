@@ -8,6 +8,8 @@ Currently only longwave implemented!!
 
 **Accuracy**: The column mean RMS errors are around 0.3, 0.5 W/m2 for up- and downwelling fluxes respectively, but the downwelling long-wave fluxes have relatively large errors up to 5 W/m2 in the upper layers at some RFMIP test sites with high water vapour concentrations (more training data needed).  The mean absolute heating rate errors (for all sites) are below 0.1 K/day except for the top levels in the stratosphere. 
 
+**how to use** 
+
 **to-do**
 - "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)?
 - related to this, offer user choice regarding speed/accuracy (more accurate models are computationally slower)
