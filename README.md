@@ -11,7 +11,7 @@ Currently only longwave implemented!!
 **to-do**
 - implement for shortwave
 - GPU kernels
-- post-processing (scaling) coefficients should be integrated into neural-fortran and be loaded from the same files as the model weights
+- post-processing (scaling) coefficients should maybe be integrated into neural-fortran and loaded from the same files as the model weights
 - offer user choice regarding speed/accuracy (more accurate models are computationally slower)
 
 # RTE+RRTMGP
