@@ -44,6 +44,7 @@ program rrtmgp_rfmip_lw
   !
   ! Modules for working with rte and rrtmgp
   !
+  use omp_lib
   ! Working precision for real variables
   !
   use mo_rte_kind,           only: wp
@@ -83,6 +84,9 @@ program rrtmgp_rfmip_lw
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt,read_and_block_pt2, read_and_block_gases_ty, unblock_and_write, &
                                    unblock_and_write_3D, unblock_and_write_3D_notrans, read_and_block_lw_bc, determine_gas_names
+  use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
+  use netcdf
+  use mod_network
 #ifdef USE_TIMING
   !
   ! Timing library
@@ -98,7 +102,7 @@ program rrtmgp_rfmip_lw
   !character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-1_none.nc', &
   !                      kdist_file = 'coefficients_lw.nc'
   character(len=132) :: rfmip_file,kdist_file
-  character(len=132) :: flxdn_file, flxup_file, output_file, input_file, flx_file
+  character(len=132) :: flxdn_file, flxup_file, output_file, input_file, flx_file, flx_file_ref
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
   integer            :: b, icol, ibnd, igpt
@@ -106,12 +110,13 @@ program rrtmgp_rfmip_lw
 
   integer, dimension(:,:),            allocatable :: gpt_lims
 
-  integer           :: count_rate, iTime1, iTime2
+  integer           :: count_rate, iTime1, iTime2, ncid
 
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_games
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
+  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn
   real(wp), dimension(:,:,:,:),       allocatable :: tau_lw    ! block_size, nlay, ngpt, nblocks
   real(wp), dimension(:,:,:,:),       allocatable :: nn_inputs    !  ngas, nlay, block_size, nblocks   (ngas,nlay,ncol)
   real(wp), dimension(:,:,:,:),       allocatable :: planck_frac, lay_source    ! block_size, nlay, ngpt, nblocks
@@ -120,8 +125,10 @@ program rrtmgp_rfmip_lw
 
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
 
-  real(wp), dimension(:,:),            allocatable :: scaler_pfrac
-  character (len = 60)                             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
+  character (len = 60)                            :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
+  type(network_type)                              :: net_tau_tropo, net_tau_strato, net_pfrac
+
+  logical :: use_nn, save_output, save_input
 
   !
   ! Classes used by rte+rrtmgp
@@ -142,24 +149,51 @@ program rrtmgp_rfmip_lw
   ! -------------------------------------------------------------------------------------------------
   !
   ! Code starts
-  !   all arguments are optional
+! call mkl_set_num_threads( 4 )
 
-  ! Where neural network model weights are located
+  !  ------------ I/O and settings -----------------
+  ! Use neural networks for gas optics? 
+  use_nn      = .false.
+  ! Save outputs (tau, planck fracs) and inputs (scaled gases)
+  save_output = .false.
+  save_input  = .false.
+
+  ! Where neural network model weights are located (required!)
   ! 
-  !modelfile_tau_tropo      = "../../neural/data/taumodel_eps0005_50-50_softsign.txt"
-  modelfile_tau_tropo     = "../../neural/data/eps0005_50-50_relu.txt"
-  !modelfile_tau_tropo     = "../../neural/data/taumodel_N52_TROP_eps0005_2.txt"
-
+  !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-pow8-50-50-hyb-06.txt"
+  !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-big-cams-30-60.txt"
+  modelfile_tau_tropo     = "../../neural/data/tau-rfmip-big-cams-40-60-rmseT.txt"
   modelfile_tau_strato = modelfile_tau_tropo
-  modelfile_source   = "../../neural/data/pfracmodel_CAMS_wtrain_n30.txt"
-  ! Model predictions are standard-scaled. Load data for post-processing the outputs
-  ! The coefficients for scaling the INPUTS a re currently still hard-coded in mo_gas_optics_rrtmgp.F90
-  allocate(scaler_pfrac(256,2))
+  modelfile_source   = "../../neural/data/pfrac-rfmip-big-30-30.txt"
 
-  open (unit=102, file='scale_pfrac_mean.csv',  status='old', action='read') 
-  read(102, *) scaler_pfrac(:,1)
-  open (unit=103, file='scale_pfrac_stdev.csv',  status='old', action='read') 
-  read(103, *) scaler_pfrac(:,2)
+  ! Save upwelling and downwelling fluxes in the same file
+  flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_NN.nc'
+  !flx_file = 'rlud_RFMIP-BIG.nc'
+
+  ! FOR DEVELOPMENT (not required) 
+  ! Where to save g-point optical depths and planck fractions
+  !output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP-BIG_1f1_REF.nc'
+  !output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_CAMS2_1f1_REF.nc'
+
+  ! Where to save neural network inputs (scaled gases)
+  !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_CAMS2_1f1_NN.nc'
+  !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_RFMIP-BIG_1f1_NN.nc '
+  ! input_file = 'inp.nc'
+
+  ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
+
+  if (use_nn) then
+
+  print *, 'loading tau-tropo model from ', modelfile_tau_tropo
+  call net_tau_tropo % load(modelfile_tau_tropo)
+
+  print *, 'loading tau-strato model from ', modelfile_tau_strato
+  call net_tau_strato % load(modelfile_tau_strato)
+
+  print *, 'loading planck fraction model from ', modelfile_source
+  call net_pfrac % load(modelfile_source)
+
+  end if  
 
   !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
@@ -182,7 +216,6 @@ program rrtmgp_rfmip_lw
   print *, "ncol:", ncol
   print *, "nexp:", nexp
   print *, "nlay:", nlay
-  print *, "nexp:", nexp
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
@@ -196,24 +229,6 @@ program rrtmgp_rfmip_lw
   if(physics_index < 1 .or. physics_index > 2) &
     stop "Physics index is invalid (must be 1 or 2)"
   if(physics_index == 2) n_quad_angles = 3
-
-  ! flxdn_file = 'rld_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p' //  &
-  !              trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc'
-  ! flxup_file = 'rlu_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p' // &
-  !              trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc' 
-
-  !flx_file = 'rlud_CAMS_NN40-tau.nc'
-  flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_NN.nc'
-
-  ! output_file = '/data/puk/rrtmgp/outp_lw_RFMIP_1f1_REF.nc'
-  ! output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP_1f1_REF.nc'
-  output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_CAMS2_1f1_REF.nc'
-  input_file =  'inp_lw_CAMS2_1f1_NN.nc'
-  
-  ! output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP_1f1_NN.nc'   
-  ! input_file    = 'inp_lw_CAMSNEW_' // &
-  !               trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_NN.nc'
-
                 
   !
   ! Identify the set of gases used in the calculation based on the forcing index
@@ -277,7 +292,7 @@ program rrtmgp_rfmip_lw
   
   allocate(tau_lw(    block_size, nlay, ngpt, nblocks))
 
-  allocate(nn_inputs(     ngas+3, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
+  allocate(nn_inputs(     ngas+1, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
 
   allocate(planck_frac(    block_size, nlay, ngpt, nblocks))
   allocate(lay_source(     block_size, nlay, ngpt, nblocks))
@@ -299,13 +314,22 @@ program rrtmgp_rfmip_lw
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
   ret = gptlinitialize()
 #endif
+
+print *, "OpenMP processes available:", omp_get_num_procs()
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
   !
   ! Loop over blocks
   !
 #ifdef USE_TIMING
 !  do i = 1, 32
 #endif
+
+!$OMP PARALLEL DO
   do b = 1, nblocks
+
+    PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
+
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
     !
@@ -326,35 +350,35 @@ program rrtmgp_rfmip_lw
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (LW)')
 #endif
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
 
     print *, "starting computations"
+
+    if (use_nn) then
+
     ! Using NEURAL NETWORK for predicting optical depths
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
-                                       p_lev(:,:,b),        &
-                                       t_lay(:,:,b),        &
-                                       sfc_t(:  ,b),        &
-                                       gas_conc_array(b),   &
-                                       optical_props,       &
-                                       source,              &
-                                       nn_inputs(:,:,:,b),  &
-                                       scaler_pfrac,        &
-                                       modelfile_tau_tropo, &
-                                       modelfile_tau_strato,&
-                                       modelfile_source,    &
-                                       tlev = t_lev(:,:,b)))
+                                        p_lev(:,:,b),       &
+                                        t_lay(:,:,b),       &
+                                        sfc_t(:  ,b),       &
+                                        gas_conc_array(b),  &
+                                        optical_props,      &
+                                        source,             &
+                                        nn_inputs(:,:,:,b), &
+                                        net_tau_tropo,      &
+                                        net_tau_strato,     &
+                                        net_pfrac,          &
+                                        tlev = t_lev(:,:,b)))
+    else 
     ! Using original code (interpolation routine) for predicting optical depths
-    ! call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
-    !                                    p_lev(:,:,b),       &
-    !                                    t_lay(:,:,b),       &
-    !                                    sfc_t(:  ,b),       &
-    !                                    gas_conc_array(b),  &
-    !                                    optical_props,      &
-    !                                    source,             &
-    !                                    tlev = t_lev(:,:,b)))
-    call system_clock(iTime2)
-    print *,'Elapsed time on gas optics in total: ',real(iTime2-iTime1)/real(count_rate)
+      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
+                                        p_lev(:,:,b),       &
+                                        t_lay(:,:,b),       &
+                                        sfc_t(:  ,b),       &
+                                        gas_conc_array(b),  &
+                                        optical_props,      &
+                                        source,             &
+                                        tlev = t_lev(:,:,b)))
+    end if
 
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
@@ -367,9 +391,6 @@ program rrtmgp_rfmip_lw
     ret =  gptlstart('rte_lw')
 #endif
 
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
-
     call stop_on_err(rte_lw(optical_props,   &
                             top_at_1,        &
                             source,          &
@@ -379,9 +400,6 @@ program rrtmgp_rfmip_lw
     ret =  gptlstop('rte_lw')
 #endif
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on solver: ',real(iTime2-iTime1)/real(count_rate)
-
     ! Save optical depths
     do igpt = 1, ngpt
       tau_lw(:,:,igpt,b)      = optical_props%tau(:,:,igpt)
@@ -389,7 +407,8 @@ program rrtmgp_rfmip_lw
       lay_source(:,:,igpt,b)  = source%lay_source(:,:,igpt)
     end do
 
-  end do
+  end do ! blocks
+!$OMP END PARALLEL DO
 #ifdef USE_TIMING
   !
   ! End timers
@@ -397,6 +416,9 @@ program rrtmgp_rfmip_lw
   ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
+
+call system_clock(iTime2)
+print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
 
   !!$acc exit data delete(sfc_emis_spec)
   !!$acc exit data delete(optical_props%tau)
@@ -417,16 +439,52 @@ program rrtmgp_rfmip_lw
 
  !  mean of flux_down is:   103.2458
 
-
+  ! Save fluxes
   call unblock_and_write(trim(flx_file), 'rlu', flux_up)
   call unblock_and_write(trim(flx_file), 'rld', flux_dn)
 
-  ! call unblock_and_write_3D(trim(output_file), 'tau_lw',tau_lw)
-  ! call unblock_and_write_3D(trim(output_file), 'planck_frac',planck_frac)
-  ! call unblock_and_write_3D(trim(output_file), 'lay_source', lay_source)
+  ! Save optical depths and planck fractions
+  if (save_output) then 
+    call unblock_and_write_3D(trim(output_file), 'tau_lw',tau_lw)
+    call unblock_and_write_3D(trim(output_file), 'planck_frac',planck_frac)
+    ! call unblock_and_write_3D(trim(output_file), 'lay_source', lay_source)
+  end if
+
+  print *, nn_inputs(:,1,1,1)
+
+  ! Save neural network inputs
+  if (save_input) then
+    call unblock_and_write_3D_notrans(trim(input_file), 'col_gas',nn_inputs)
+  end if
+
+
   print *, "success"
-  
-  ! call unblock_and_write_3D_notrans(trim(input_file), 'col_gas',nn_inputs)
+
+  print *, "comparing fluxes to original scheme:"
+
+  allocate(rld_ref( nlay+1, ncol, nexp))
+  allocate(rlu_ref( nlay+1, ncol, nexp))
+  allocate(rld_nn( nlay+1, ncol, nexp))
+  allocate(rlu_nn( nlay+1, ncol, nexp))
+
+  flx_file_ref = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
+
+  if(nf90_open(trim(flx_file), NF90_NOWRITE, ncid) /= NF90_NOERR) &
+    call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file))
+
+  ! print *, ncid
+  rlu_nn = read_field(ncid, "rlu", nlay+1, ncol, nexp)
+  rld_nn = read_field(ncid, "rld", nlay+1, ncol, nexp)
+
+  if(nf90_open(trim(flx_file_ref), NF90_NOWRITE, ncid) /= NF90_NOERR) &
+    call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file_ref))
+
+  rlu_ref = read_field(ncid, "rlu", nlay+1, ncol, nexp)
+  rld_ref = read_field(ncid, "rld", nlay+1, ncol, nexp)
+
+  print *, "RMSE in upwelling fluxes:", rmse(reshape(rlu_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rlu_nn, shape = [nexp*ncol*(nlay+1)]))
+  print *, "RMSE in downwelling fluxes:", rmse(reshape(rld_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rld_nn, shape = [nexp*ncol*(nlay+1)]))
+
 
 
   contains
@@ -442,6 +500,16 @@ program rrtmgp_rfmip_lw
       x(:,:,i,:) = x(:,:,i,:) / stdevs(i)
     end do
   end subroutine standardscaler
+
+  function rmse(x1,x2) result(res)
+    implicit none 
+    real(wp), dimension(:), intent(in) :: x1,x2
+    real(wp) :: res
+    real(wp), dimension(size(x1)) :: diff 
+    
+    diff = x1 - x2
+    res = sqrt( sum(diff**2)/size(diff) )
+  end function rmse
 
 end program rrtmgp_rfmip_lw
 

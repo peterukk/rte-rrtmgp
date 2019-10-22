@@ -23,23 +23,33 @@
 module mo_gas_optics_rrtmgp
   use mo_rte_kind,           only: wp, wl, dp
   use mo_rrtmgp_constants,   only: avogad, m_dry, m_h2o, grav
+  use mo_util_array,         only: zero_array, any_vals_less_than, any_vals_outside
   use mo_optical_props,      only: ty_optical_props
   use mo_source_functions,   only: ty_source_func_lw
   use mo_gas_optics_kernels, only: interpolation,                                                       &
                                    compute_tau_absorption, compute_tau_rayleigh, compute_Planck_source, &
-                                   combine_and_reorder_2str, combine_and_reorder_nstr, zero_array, &
-                                   compute_Planck_source_nn, predict_nn_lw, predict_nn_lw_matmul, predict_nn_lw_flattenlevs
+                                   combine_and_reorder_2str, combine_and_reorder_nstr,  &
+                                   compute_Planck_source_nn, predict_nn_lw, predict_nn_lw_flattenall, predict_nn_lw_flattenlevs
 
   use mo_util_string,        only: lower_case, string_in_array, string_loc_in_array
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_optical_props,      only: ty_optical_props_arry, ty_optical_props_1scl, ty_optical_props_2str, ty_optical_props_nstr
   use mo_gas_optics,         only: ty_gas_optics
   use mo_util_reorder
-  use mod_network!,           only: network_type
-  
+  use mod_network
+#ifdef USE_TIMING
+  !
+  ! Timing library
+  !
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+                                   gptlpercent, gptloverhead
+#endif
   implicit none
   private
   real(wp), parameter :: pi = acos(-1._wp)
+#ifdef USE_TIMING
+  integer :: ret, i
+#endif
 
   ! -------------------------------------------------------------------------------------------------
   type, extends(ty_gas_optics), public :: ty_gas_optics_rrtmgp
@@ -216,7 +226,7 @@ contains
   ! Compute gas optical depth and Planck source functions,
   !  given temperature, pressure, and composition
   !
-function gas_optics_int(this,                             &
+  function gas_optics_int(this,                             &
                           play, plev, tlay, tsfc, gas_desc, &
                           optical_props, sources,           &
                           col_dry, tlev) result(error_msg)
@@ -254,8 +264,11 @@ function gas_optics_int(this,                             &
     !
     ! Gas optics
     !
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
+    ! call system_clock(count_rate=count_rate)
+    ! call system_clock(iTime1)
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_gas_taus')
+#endif
 
     !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
     error_msg = compute_gas_taus(this,                       &
@@ -266,8 +279,11 @@ function gas_optics_int(this,                             &
                                  col_dry)
     if(error_msg  /= '') return
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_gas_taus')
+#endif
+    ! call system_clock(iTime2)
+    ! print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
     ! ----------------------------------------------------------
     !
@@ -304,10 +320,10 @@ function gas_optics_int(this,                             &
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
   end function gas_optics_int
 
-  function gas_optics_int_nn(this,                             &
-                          play, plev, tlay, tsfc, gas_desc, &
-                          optical_props, sources, nn_inputs, scaler_pfrac, &
-                          modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
+  function gas_optics_int_nn(this,                                  &
+                          play, plev, tlay, tsfc, gas_desc,         &
+                          optical_props, sources, nn_inputs,        &
+                          net_tau_tropo, net_tau_strato, net_pfrac, &
                           col_dry, tlev) result(error_msg)
 
   
@@ -323,8 +339,8 @@ function gas_optics_int(this,                             &
     !real(wp), dimension(size(this%gas_names)+2,size(play,dim=2),size(play,dim=1)), intent(out) :: nn_inputs
     !    real(wp),    dimension(size(play,dim=1),size(play,dim=2),0:size(this%gas_names)), intent(  out) :: col_gas
     
-    real(wp), dimension(:,:), intent(in)         :: scaler_pfrac       ! for post-processing the NN-predicted planck fractions 
-    character (len = 60), intent(in)             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
+    !character (len = 60), intent(in)             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
+    type(network_type), intent(inout)               :: net_tau_tropo, net_tau_strato, net_pfrac
 
     class(ty_optical_props_arry),  &
                               intent(inout) :: optical_props ! Optical properties
@@ -388,8 +404,11 @@ function gas_optics_int(this,                             &
     ! Compute optical depths and sources with neural networks
     ! NN inputs are prepared inside the function from col_dry,tlay and play
 
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
+    ! call system_clock(count_rate=count_rate)
+    ! call system_clock(iTime1)
+#ifdef USE_TIMING
+    ret =  gptlstart('interpolation')
+#endif
 
     if (original_source) then ! use original kernels to get source functions
     ! In this case the interpolation coefficients computed in compute_gas_taus are needed
@@ -402,9 +421,12 @@ function gas_optics_int(this,                             &
     else
       tropo     = log(play) > this%press_ref_trop_log
     end if
+#ifdef USE_TIMING
+    ret =  gptlstop('interpolation')
+#endif
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on interpolation coefficients',real(iTime2-iTime1)/real(count_rate)
+    ! call system_clock(iTime2)
+    ! print *,'Elapsed time on interpolation coefficients',real(iTime2-iTime1)/real(count_rate)
 
     ! Find the level (for each column) separating stratosphere and troposphere
 
@@ -423,8 +445,9 @@ function gas_optics_int(this,                             &
       istrato(:, 2) = nlay
     end if
 
-    ! call system_clock(count_rate=count_rate)
-    ! call system_clock(iTime1)
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_taus_pfracs_nnlw')
+#endif
 
     ! Predict g-point taus and planck fractions using neural networks
     error_msg = compute_taus_pfracs_nnlw(this,              &
@@ -432,12 +455,19 @@ function gas_optics_int(this,                             &
                                  itropo, istrato,           &
                                  play, plev, tlay, gas_desc,&
                                  optical_props, pfrac,      &
-                                 scaler_pfrac,              &
-                                 modelfile_tau_tropo, modelfile_tau_strato, modelfile_source, &
+                                 net_tau_tropo, net_tau_strato, net_pfrac, &
                                  nn_inputs, col_dry) 
     
     ! call system_clock(iTime2)
     !print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
+
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_taus_pfracs_nnlw')
+#endif
+
+#ifdef USE_TIMING
+    ret =  gptlstart('Planck-source')
+#endif
 
     if (original_source) then
     ! Use original source computations, including planck fractions by interpolating
@@ -460,6 +490,9 @@ function gas_optics_int(this,                             &
 
     end if
 
+#ifdef USE_TIMING
+    ret =  gptlstop('Planck-source')
+#endif
     ! print *, 'Lay_source(1,1,1) :', sources%lay_source(1,1,1)
 
   end function gas_optics_int_nn
@@ -483,7 +516,6 @@ function gas_optics_int(this,                             &
     real(wp), dimension(:,:), intent(  out) :: toa_src     ! Incoming solar irradiance(ncol,ngpt)
     character(len=128)                      :: error_msg
 
-
     ! Optional inputs
     real(wp), dimension(:,:), intent(in   ), &
                            optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
@@ -496,9 +528,9 @@ function gas_optics_int(this,                             &
     integer,     dimension(2,    get_nflav(this),size(play,dim=1), size(play,dim=2)) :: jeta
 
     !real(wp), dimension(size(play,dim=1),size(play,dim=2),0:size(this%gas_names)) :: col_gas ! 
-
     
-    integer :: ncol, nlay, ngpt, nband, ngas, nflav
+    integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
+    integer :: igpt, icol
     ! ----------------------------------------------------------
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -506,9 +538,11 @@ function gas_optics_int(this,                             &
     nband = this%get_nband()
     ngas  = this%get_ngas()
     nflav = get_nflav(this)
-
     !
     ! Gas optics
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
+
     !
     !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
     error_msg = compute_gas_taus(this,                       &
@@ -520,14 +554,21 @@ function gas_optics_int(this,                             &
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
     if(error_msg  /= '') return
 
+    call system_clock(iTime2)
+    print *,'Elapsed time on gas optics: ',real(iTime2-iTime1)/real(count_rate)
+
     ! ----------------------------------------------------------
     !
     ! External source function is constant
     !
     error_msg = check_extent(toa_src,     ncol,         ngpt, 'toa_src')
     if(error_msg  /= '') return
-    toa_src(:,:) = spread(this%solar_src(:), dim=1, ncopies=ncol)
-
+    !$acc parallel loop collapse(2)
+    do igpt = 1,ngpt
+       do icol = 1,ncol
+          toa_src(icol,igpt) = this%solar_src(igpt)
+       end do
+    end do
   end function gas_optics_ext
   !------------------------------------------------------------------------------------------
   !
@@ -564,7 +605,7 @@ function gas_optics_int(this,                             &
     integer :: igas, idx_h2o ! index of some gases
     ! Number of molecules per cm^2
     real(wp), dimension(ncol,nlay), target  :: col_dry_arr
-    real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
+    real(wp), dimension(:,:),       pointer :: col_dry_wk
     !
     ! Interpolation variables used in major gas but not elsewhere, so don't need exporting
     !
@@ -668,12 +709,10 @@ function gas_optics_int(this,                             &
     !
     !$acc enter data create(jtemp, jpress, jeta, tropo, fmajor)
     !$acc enter data create(tau, tau_rayleigh)
-    !$acc enter data copyin(play, tlay, col_gas)
     !$acc enter data create(col_mix, fminor)
+    !$acc enter data copyin(play, tlay, col_gas)
     !$acc enter data copyin(this)
-    !$acc enter data copyin(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
-    !$acc enter data copyin(this%temp_ref)  ! this one causes problems
-    !$acc enter data copyin(this%kminor_lower, this%kminor_upper)
+    !$acc enter data copyin(this%gpoint_flavor)
     call zero_array(ngpt, nlay, ncol, tau)
     call interpolation(               &
             ncol,nlay,                &        ! problem dimensions
@@ -694,9 +733,10 @@ function gas_optics_int(this,                             &
             col_mix,      &
             tropo,        &
             jeta,jpress)
-    
+
     call system_clock(count_rate=count_rate)
     call system_clock(iTime1)
+
     call compute_tau_absorption(                     &
             ncol,nlay,nband,ngpt,                    &  ! dimensions
             ngas,nflav,neta,npres,ntemp,             &
@@ -725,6 +765,9 @@ function gas_optics_int(this,                             &
             play,tlay,col_gas,                       &
             jeta,jtemp,jpress,                       &
             tau)
+    call system_clock(iTime2)
+    print *,'Elapsed time on compute_tau_absorption ',real(iTime2-iTime1)/real(count_rate)
+
     if (allocated(this%krayl)) then
       !$acc enter data attach(col_dry_wk) copyin(this%krayl)
       call compute_tau_rayleigh(         & !Rayleigh scattering optical depths
@@ -740,461 +783,26 @@ function gas_optics_int(this,                             &
     end if
     if (error_msg /= '') return
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on optical depth kernel: ',real(iTime2-iTime1)/real(count_rate)
+    call system_clock(count_rate=count_rate)
+    call system_clock(iTime1)
 
     ! Combine optical depths and reorder for radiative transfer solver.
     call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
-    !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
+
+    call system_clock(iTime2)
+    print *,'Elapsed time on combine and reorder ',real(iTime2-iTime1)/real(count_rate)
+
     !$acc exit data delete(tau, tau_rayleigh)
-    !$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
-    !$acc exit data delete(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
-    !!!$acc exit data delete(this%temp_ref)  ! this one causes problems
-    !!!$acc exit data delete(this%kminor_lower, this%kminor_upper)
-end function compute_gas_taus
-
- !------------------------------------------------------------------------------------------
-  !
-  ! Returns interpolation coefficients only
-  !
-function compute_interp_coeffs(this,                       &
-  ncol, nlay, ngpt, nband,    &
-  play, plev, tlay, gas_desc, &
-  jtemp, jpress, jeta, tropo, fmajor, &
-  col_dry) result(error_msg)
-
-class(ty_gas_optics_rrtmgp), &
-            intent(in   ) :: this
-integer,                          intent(in   ) :: ncol, nlay, ngpt, nband
-real(wp), dimension(:,:),         intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                             plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-                             tlay      ! layer temperatures [K]; (ncol,nlay)
-type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
-! Interpolation coefficients for use in internal source function
-integer,     dimension(                       ncol, nlay), intent(  out) :: jtemp, jpress
-integer,     dimension(2,    get_nflav(this),ncol, nlay), intent(  out) :: jeta
-logical(wl), dimension(                       ncol, nlay), intent(  out) :: tropo
-real(wp),    dimension(2,2,2,get_nflav(this),ncol, nlay), intent(  out) :: fmajor
-character(len=128)                                         :: error_msg
-
-! Optional inputs
-real(wp), dimension(:,:), intent(in   ), &
- optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
-! ----------------------------------------------------------
-integer :: igas, idx_h2o ! index of some gases
-! Number of molecules per cm^2
-real(wp), dimension(ncol,nlay), target  :: col_dry_arr
-real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
-!
-! Interpolation variables used in major gas but not elsewhere, so don't need exporting
-!
-real(wp), dimension(ncol,nlay,  this%get_ngas()) :: vmr     ! volume mixing ratios
-real(wp), dimension(ncol,nlay,0:this%get_ngas()) :: col_gas ! column amounts for each gas, plus col_dry
-real(wp), dimension(2,    get_nflav(this),ncol,nlay) :: col_mix ! combination of major species's column amounts
-                               ! index(1) : reference temperature level
-                               ! index(2) : flavor
-                               ! index(3) : layer
-real(wp), dimension(2,2,  get_nflav(this),ncol,nlay) :: fminor ! interpolation fractions for minor species
-                                ! index(1) : reference eta level (temperature dependent)
-                                ! index(2) : reference temperature level
-                                ! index(3) : flavor
-                                ! index(4) : layer
-integer :: ngas, nflav, neta, npres, ntemp
-integer :: nminorlower, nminorklower,nminorupper, nminorkupper
-logical :: use_rayl
-! ----------------------------------------------------------
-!
-! Error checking
-!
-use_rayl = allocated(this%krayl)
-error_msg = ''
-! Check for initialization
-if (.not. this%is_initialized()) then
-error_msg = 'ERROR: spectral configuration not loaded'
-return
-end if
-!
-! Check for presence of key species in ty_gas_concs; return error if any key species are not present
-!
-error_msg = this%check_key_species_present(gas_desc)
-if (error_msg /= '') return
-
-!
-! Check input data sizes and values
-!
-error_msg = check_extent(play, ncol, nlay,   'play')
-if(error_msg  /= '') return
-error_msg = check_extent(plev, ncol, nlay+1, 'plev')
-if(error_msg  /= '') return
-error_msg = check_extent(tlay, ncol, nlay,   'tlay')
-if(error_msg  /= '') return
-error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
-if(error_msg  /= '') return
-error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
-if(error_msg  /= '') return
-error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
-if(error_msg  /= '') return
-if(present(col_dry)) then
-error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
-if(error_msg  /= '') return
-error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
-if(error_msg  /= '') return
-end if
-
-! ----------------------------------------------------------
-ngas  = this%get_ngas()
-nflav = get_nflav(this)
-neta  = this%get_neta()
-npres = this%get_npres()
-ntemp = this%get_ntemp()
-! number of minor contributors, total num absorption coeffs
-nminorlower  = size(this%minor_scales_with_density_lower)
-nminorklower = size(this%kminor_lower, 1)
-nminorupper  = size(this%minor_scales_with_density_upper)
-nminorkupper = size(this%kminor_upper, 1)
-!
-! Fill out the array of volume mixing ratios
-!
-do igas = 1, ngas
-!
-! Get vmr if  gas is provided in ty_gas_concs
-!
-if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
-error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
-if (error_msg /= '') return
-endif
-end do
-
-!
-! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
-!
-idx_h2o = string_loc_in_array('h2o', this%gas_names)
-if (present(col_dry)) then
-col_dry_wk => col_dry
-else
-col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
-col_dry_wk => col_dry_arr
-end if
-!
-! compute column gas amounts [molec/cm^2]
-!
-col_gas(1:ncol,1:nlay,0) = col_dry_wk(1:ncol,1:nlay)
-do igas = 1, ngas
-col_gas(1:ncol,1:nlay,igas) = vmr(1:ncol,1:nlay,igas) * col_dry_wk(1:ncol,1:nlay)
-end do
-
-!
-! ---- calculate gas optical depths ----
-!
-!$acc enter data create(jtemp, jpress, jeta, tropo, fmajor)
-!$acc enter data copyin(play, tlay, col_gas)
-!$acc enter data create(col_mix, fminor)
-!$acc enter data copyin(this)
-!$acc enter data copyin(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
-!$acc enter data copyin(this%temp_ref)  ! this one causes problems
-!$acc enter data copyin(this%kminor_lower, this%kminor_upper)
-call interpolation(               &
-ncol,nlay,                &        ! problem dimensions
-ngas, nflav, neta, npres, ntemp, & ! interpolation dimensions
-this%flavor,              &
-this%press_ref_log,       &
-this%temp_ref,            &
-this%press_ref_log_delta, &
-this%temp_ref_min,        &
-this%temp_ref_delta,      &
-this%press_ref_trop_log,  &
-this%vmr_ref, &
-play,         &
-tlay,         &
-col_gas,      &
-jtemp,        & ! outputs
-fmajor,fminor,&
-col_mix,      &
-tropo,        &
-jeta,jpress)
-!$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
-!$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
-!$acc exit data delete(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
-!!!$acc exit data delete(this%temp_ref)  ! this one causes problems
-!!!$acc exit data delete(this%kminor_lower, this%kminor_upper)
-end function compute_interp_coeffs
-
-
-! Function for neural-network accelerated long-wave gas optics (optical depths and planck fractions).
-! This function prepares the outputs for the neural network and then calls the kernel
-function compute_taus_pfracs_nnlw(this,                         &
-    ncol, nlay, ngpt, nband,                                    &
-    itropo, istrato,                                            &
-    play, plev, tlay, gas_desc,                                 &
-    optical_props, pfrac, scaler_pfrac,                         &
-    modelfile_tau_tropo, modelfile_tau_strato, modelfile_source,&
-    nn_inputs, col_dry) result(error_msg)
-
-class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
-integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
-integer,  dimension(ncol,2),          intent(in   ) ::  itropo, istrato
-
-real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                                                        plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-                                                        tlay      ! layer temperatures [K]; (ncol,nlay)
-
-type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
-class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
-real(wp), dimension(ngpt,nlay,ncol),  intent(out)   ::  pfrac ! Planck fractions predicted by NN
-
-real(wp), dimension(ngpt,2), intent(in)             :: scaler_pfrac  ! for post-processing the NN-predicted planck fractions 
-character (len = 60), intent(in)                    :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source  ! text files with model weights
-
-real(wp), dimension(get_ngas(this)+1,nlay,ncol), intent(out) :: nn_inputs 
-
-character(len=128)                               :: error_msg
-
-! Optional inputs
-real(wp), dimension(:,:), intent(in   ), &
-   optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
-! ----------------------------------------------------------
-! Local variables
-type(network_type)                 :: net_tau_tropo, net_tau_strato, net_pfrac
-real(wp), dimension(ngpt,nlay,ncol) :: tau, tau_rayleigh  ! absorption, Rayleigh scattering optical depths
-integer :: igas, ilay, idx_h2o ! index of some gases
-! Number of molecules per cm^2
-real(wp), dimension(ncol,nlay), target  :: col_dry_arr
-real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
-!
-! Interpolation variables used in major gas but not elsewhere, so don't need exporting
-!
-
-real(wp), dimension(ncol,nlay,  this%get_ngas())  :: vmr     ! volume mixing ratios
-real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts for each gas, plus col_dry
-integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
-! ----------------------------------------------------------
-! Neural network input scaling coefficients .. should probably be loaded from a file
-real(wp), dimension(21) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, &
-    2.10885294E2_wp, 1.34087265E-1_wp, 1.10345914E-1_wp, 3.83904511E-2_wp,  & 
-    5.73727873E-1_wp, 7.25674444E4_wp, 2.71173092E5_wp, 1.94999465E-5_wp,   &
-    5.62522302E-5_wp, 1.29234921E-4_wp, 5.32654220E-5_wp, 3.10007757E-5_wp, & 
-    4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
-    2.56267690E-5_wp, 2.48434096E2_wp, 3.62281942E4_wp /)
-
-real(wp), dimension(21) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
-9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 6.02355504E4_wp,           &
-2.25094023E5_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp,           &
-6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp,           &
-2.38989050E-6_wp, 6.06216452E-5_wp, 2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp            /)
-
-real(wp) :: testparam   = 0.5001566410_wp
-real(dp) :: doubleparam = 0.5001566410_dp
-
-! ----------------------------------------------------------
-! Process all the layers and columns simultaenously, using BLAS for matrix-matrix computations? (fastest on intel compilers)
-logical :: flatten_dims
-! If levs and cols are not flattened, use BLAS anyway for matrix-vector computations? (usually slower)
-! If true, the hidden layers must have equal sizes (flat model)
-logical :: use_blas
-
-flatten_dims = .false.
-use_blas     = .false. 
-
-!
-! Error checking
-!
-
-error_msg = ''
-! Check for initialization
-if (.not. this%is_initialized()) then
-error_msg = 'ERROR: spectral configuration not loaded'
-return
-end if
-!
-! Check for presence of key species in ty_gas_concs; return error if any key species are not present
-!
-error_msg = this%check_key_species_present(gas_desc)
-if (error_msg /= '') return
-
-!
-! Check input data sizes and values
-!
-error_msg = check_extent(play, ncol, nlay,   'play')
-if(error_msg  /= '') return
-error_msg = check_extent(plev, ncol, nlay+1, 'plev')
-if(error_msg  /= '') return
-error_msg = check_extent(tlay, ncol, nlay,   'tlay')
-if(error_msg  /= '') return
-error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
-if(error_msg  /= '') return
-error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
-if(error_msg  /= '') return
-error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
-if(error_msg  /= '') return
-if(present(col_dry)) then
-error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
-if(error_msg  /= '') return
-error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
-if(error_msg  /= '') return
-end if
-
-
-
-! ----------------------------------------------------------
-ngas  = this%get_ngas()
-npres = this%get_npres()
-ntemp = this%get_ntemp()
-
-!
-! Fill out the array of volume mixing ratios
-!
-do igas = 1, ngas
-!
-! Get vmr if  gas is provided in ty_gas_concs
-!
-if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
-  error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
-  if (error_msg /= '') return
-  endif
-end do
-
-!
-! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
-!
-idx_h2o = string_loc_in_array('h2o', this%gas_names)
-if (present(col_dry)) then
-  col_dry_wk => col_dry
-else
-  col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
-  col_dry_wk => col_dry_arr
-end if
-!
-! compute column gas amounts [molec/cm^2]
-!
-col_gas(1:ncol,1:nlay,0) = col_dry_wk(1:ncol,1:nlay)
-do igas = 1, ngas
-  col_gas(1:ncol,1:nlay,igas) = vmr(1:ncol,1:nlay,igas) * col_dry_wk(1:ncol,1:nlay)
-end do
-
-!
-! Prepare neural network INPUTS(standard-scaled col_gas + pay + tlay)
-! These need to be normalized using standard scaling
-!
-
-call system_clock(count_rate=count_rate)
-call system_clock(iTime1)
-
-do ilay = 1, nlay
-    ! do igas = 1, ngas+1
-    do igas = 1, 6
-      !nn_inputs(igas,ilay,:) = col_gas(:,ilay,igas-1)
-      nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
-    end do
-    do igas = 9, ngas+1
-      !nn_inputs(igas,ilay,:) = col_gas(:,ilay,igas-1)
-      nn_inputs(igas-2,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
-    end do
-    ! igas = ngas + 1
-    nn_inputs(igas-2,ilay,:) = (tlay(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
-    igas = igas + 1
-    nn_inputs(igas-2,ilay,:) = (play(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
-end do
-
-call system_clock(iTime2)
-print *,'Elapsed time on preparing inputs: ',real(iTime2-iTime1)/real(count_rate)
-
-! print *, 'number of gases:', ngas
-! igas = 0
-! print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', "dry air"//REPEAT(' ',15), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
-!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
-! do igas = 1, ngas
-!     print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', this%gas_names(igas), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
-!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
-! end do  
-
-call zero_array(ngpt, nlay, ncol, tau)
-
-    ! load models (Keras model weights which are saved to ASCII)
-print *, 'loading tau-tropo model from ', modelfile_tau_tropo
-call net_tau_tropo % load(modelfile_tau_tropo)
-
-print *, 'loading tau-strato model from ', modelfile_tau_strato
-call net_tau_strato % load(modelfile_tau_strato)
-
-print *, 'loading planck fraction model from ', modelfile_source
-call net_pfrac % load(modelfile_source)
-
-
-! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
-
-call system_clock(count_rate=count_rate)
-call system_clock(iTime1)    
-
-if (flatten_dims) then
-  print *, "Predicting all the data simulatenously, using SGEMM for big matmul operation"
-  call predict_nn_lw_matmul(                     &
-                        ncol,nlay,ngpt, ngas,     &  ! dimensions
-                        nn_inputs, scaler_pfrac,  &  ! data inputs
-                        net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
-                        tau, pfrac)    ! outputs
-else
-  print *, "Predicting one layer at a time"
-  if (use_blas) then
-    if (abs(testparam-doubleparam)>1.0d-15 ) then
-      print *, "using BLAS, single precision (SGEMV)"
-      call change_kernel(net_pfrac,     output_sgemv_flatmodel)
-      call change_kernel(net_tau_tropo, output_sgemv_flatmodel)
-      call change_kernel(net_tau_strato,output_sgemv_flatmodel)
-    else
-      print *, "using BLAS, double precision (DGEMV)"
-      ! call change_kernel(net_pfrac,     output_dgemv_flatmodel)
-      ! call change_kernel(net_tau_tropo, output_dgemv_flatmodel)
-      ! call change_kernel(net_tau_strato,output_dgemv_flatmodel)
-    end if
-  end if
-
-  ! If NN models have the same amount of neurons in each layer, use an optimized kernel..
-  neurons_first = size(net_tau_tropo % layers(1) % w_transposed, 1)
-  neurons_last = size(net_tau_tropo % layers(size(net_tau_tropo%layers)-1) % w_transposed, 2)
-  ! do ilay = 1, size(net_tau_tropo%layers)
-  !   print *, shape(net_tau_tropo % layers(ilay) % w_transposed)
-  ! end do
-  if (neurons_first == neurons_last) then
-    print *, "Flat model"
-    call change_kernel(net_pfrac, output_opt_flatmodel)
-    call change_kernel(net_tau_tropo, output_opt_flatmodel)
-    call change_kernel(net_tau_strato, output_opt_flatmodel)
-  end if
-
-  call predict_nn_lw(                     &
-                      ncol,nlay,ngpt, ngas,     &  ! dimensions
-                      itropo, istrato,          &  ! data inputs
-                      nn_inputs, scaler_pfrac,  &  ! data inputs
-                      net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
-                      tau, pfrac)    ! outputs
-
-  ! call predict_nn_lw_flattenlevs(                     &
-    ! ncol,nlay,ngpt, ngas,     &  ! dimensions
-    ! itropo, istrato,          &  ! data inputs
-    ! nn_inputs, scaler_pfrac,  &  ! data inputs
-    ! net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
-    ! tau, pfrac)                 ! outputs
-end if
-
-
-
-call system_clock(iTime2)
-print *,'Elapsed time on optical depth kernel: ',real(iTime2-iTime1)/real(count_rate)
-
-if (error_msg /= '') return
-
-! Combine optical depths and reorder for radiative transfer solver.
-call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
-
-
-
-end function compute_taus_pfracs_nnlw
-
+    !$acc exit data delete(play, tlay, col_gas)
+    !$acc exit data delete(col_mix, fminor)
+    !$acc exit data delete(this%gpoint_flavor)
+    !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
+  end function compute_gas_taus
   !------------------------------------------------------------------------------------------
   !
   ! Compute Planck source functions at layer centers and levels
   !
-function source(this,                               &
+  function source(this,                               &
                   ncol, nlay, nbnd, ngpt,             &
                   play, plev, tlay, tsfc,             &
                   jtemp, jpress, jeta, tropo, fmajor, &
@@ -1203,29 +811,30 @@ function source(this,                               &
                   result(error_msg)
     ! inputs
     class(ty_gas_optics_rrtmgp),    intent(in ) :: this
-    integer,                               intent(in ) :: ncol, nlay, nbnd, ngpt
-    real(wp), dimension(ncol,nlay),        intent(in ) :: play   ! layer pressures [Pa, mb]
-    real(wp), dimension(ncol,nlay+1),      intent(in ) :: plev   ! level pressures [Pa, mb]
-    real(wp), dimension(ncol,nlay),        intent(in ) :: tlay   ! layer temperatures [K]
-    real(wp), dimension(ncol),             intent(in ) :: tsfc   ! surface skin temperatures [K]
+    integer,                               intent(in   ) :: ncol, nlay, nbnd, ngpt
+    real(wp), dimension(ncol,nlay),        intent(in   ) :: play   ! layer pressures [Pa, mb]
+    real(wp), dimension(ncol,nlay+1),      intent(in   ) :: plev   ! level pressures [Pa, mb]
+    real(wp), dimension(ncol,nlay),        intent(in   ) :: tlay   ! layer temperatures [K]
+    real(wp), dimension(ncol),             intent(in   ) :: tsfc   ! surface skin temperatures [K]
     ! Interplation coefficients
-    integer,     dimension(ncol,nlay),     intent(in ) :: jtemp, jpress
-    logical(wl), dimension(ncol,nlay),     intent(in ) :: tropo
+    integer,     dimension(ncol,nlay),     intent(in   ) :: jtemp, jpress
+    logical(wl), dimension(ncol,nlay),     intent(in   ) :: tropo
     real(wp),    dimension(2,2,2,get_nflav(this),ncol,nlay),  &
-                                           intent(in ) :: fmajor
+                                           intent(in   ) :: fmajor
     integer,     dimension(2,    get_nflav(this),ncol,nlay),  &
-                                           intent(in ) :: jeta
+                                           intent(in   ) :: jeta
     class(ty_source_func_lw    ),          intent(inout) :: sources
-    real(wp), dimension(ncol,nlay+1),      intent(in ), &
+    real(wp), dimension(ncol,nlay+1),      intent(in   ), &
                                       optional, target :: tlev          ! level temperatures [K]
     character(len=128)                                 :: error_msg
     ! ----------------------------------------------------------
-    integer                                      :: icol, ilay, count_rate, iTime1, iTime2
+    integer                                      :: icol, ilay, igpt
+    integer                                      :: count_rate, iTime1, iTime2
     real(wp), dimension(ngpt,nlay,ncol)          :: lay_source_t, lev_source_inc_t, lev_source_dec_t, planck_frac_out
     real(wp), dimension(ngpt,     ncol)          :: sfc_source_t
     ! Variables for temperature at layer edges [K] (ncol, nlay+1)
     real(wp), dimension(   ncol,nlay+1), target  :: tlev_arr
-    real(wp), dimension(:,:),            pointer :: tlev_wk => NULL()
+    real(wp), dimension(:,:),            pointer :: tlev_wk
     ! ----------------------------------------------------------
     error_msg = ""
     !
@@ -1262,6 +871,9 @@ function source(this,                               &
     !-------------------------------------------------------------------
     ! Compute internal (Planck) source functions at layers and levels,
     !  which depend on mapping from spectral space that creates k-distribution.
+    !$acc enter data copyin(sources)
+    !$acc enter data create(sources%lay_source, sources%lev_source_inc, sources%lev_source_dec, sources%sfc_source)
+    !$acc enter data create(sfc_source_t, lay_source_t, lev_source_inc_t, lev_source_dec_t) attach(tlev_wk)
     call compute_Planck_source(ncol, nlay, nbnd, ngpt, &
                 get_nflav(this), this%get_neta(), this%get_npres(), this%get_ntemp(), this%get_nPlanckTemp(), &
                 tlay, tlev_wk, tsfc, merge(1,nlay,play(1,1) > play(1,nlay)), &
@@ -1269,19 +881,28 @@ function source(this,                               &
                 this%get_gpoint_bands(), this%get_band_lims_gpoint(), this%planck_frac, this%temp_ref_min,&
                 this%totplnk_delta, this%totplnk, this%gpoint_flavor,  &
                 sfc_source_t, lay_source_t, lev_source_inc_t, lev_source_dec_t, planck_frac_out)
-    sources%sfc_source     = transpose(sfc_source_t)
+    !$acc parallel loop collapse(2)
+    do igpt = 1, ngpt
+      do icol = 1, ncol
+        sources%sfc_source(icol,igpt) = sfc_source_t(igpt,icol)
+      end do
+    end do
 
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
+#ifdef USE_TIMING
+    ret =  gptlstart('reorder-source')
+#endif
 
     call reorder123x321(lay_source_t, sources%lay_source)
     call reorder123x321(lev_source_inc_t, sources%lev_source_inc)
     call reorder123x321(lev_source_dec_t, sources%lev_source_dec)
     call reorder123x321(planck_frac_out,  sources%planck_frac)
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on reorder: ',real(iTime2-iTime1)/real(count_rate)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('reorder-source')
+#endif
+    !$acc exit data delete(sfc_source_t, lay_source_t, lev_source_inc_t, lev_source_dec_t) detach(tlev_wk)
+    !$acc exit data copyout(sources%lay_source, sources%lev_source_inc, sources%lev_source_dec, sources%sfc_source)
+    !$acc exit data copyout(sources)
   end function source
   !------------------------------------------------------------------------------------------
   !
@@ -1360,6 +981,10 @@ function source(this,                               &
     ! call system_clock(count_rate=count_rate)
     ! call system_clock(iTime1)
 
+#ifdef USE_TIMING
+    ret =  gptlstart('reorder-source-nn')
+#endif
+
     call reorder123x321(pfrac, pfrac_reverse)
 
     ! call system_clock(iTime2)
@@ -1373,6 +998,10 @@ function source(this,                               &
             pfrac_reverse, &
             sources%sfc_source, sources%lay_source, sources%lev_source_inc, &
             sources%lev_source_dec)
+
+#ifdef USE_TIMING
+    ret =  gptlstop('reorder-source-nn')
+#endif
 
     ! call reorder123x321(planck_frac_t, sources%planck_frac)
 
@@ -1799,6 +1428,477 @@ function source(this,                               &
     if(len_trim(error_msg) > 0) error_msg = "gas_optics: required gases" // trim(error_msg) // " are not provided"
 
   end function check_key_species_present
+
+!------------------------------------------------------------------------------------------
+  !
+  ! Returns interpolation coefficients only
+  !
+function compute_interp_coeffs(this,                       &
+  ncol, nlay, ngpt, nband,    &
+  play, plev, tlay, gas_desc, &
+  jtemp, jpress, jeta, tropo, fmajor, &
+  col_dry) result(error_msg)
+
+class(ty_gas_optics_rrtmgp), &
+            intent(in   ) :: this
+integer,                          intent(in   ) :: ncol, nlay, ngpt, nband
+real(wp), dimension(:,:),         intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                             plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
+                             tlay      ! layer temperatures [K]; (ncol,nlay)
+type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
+! Interpolation coefficients for use in internal source function
+integer,     dimension(                       ncol, nlay), intent(  out) :: jtemp, jpress
+integer,     dimension(2,    get_nflav(this),ncol, nlay), intent(  out) :: jeta
+logical(wl), dimension(                       ncol, nlay), intent(  out) :: tropo
+real(wp),    dimension(2,2,2,get_nflav(this),ncol, nlay), intent(  out) :: fmajor
+character(len=128)                                         :: error_msg
+
+! Optional inputs
+real(wp), dimension(:,:), intent(in   ), &
+ optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
+! ----------------------------------------------------------
+integer :: igas, idx_h2o ! index of some gases
+! Number of molecules per cm^2
+real(wp), dimension(ncol,nlay), target  :: col_dry_arr
+real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
+!
+! Interpolation variables used in major gas but not elsewhere, so don't need exporting
+!
+real(wp), dimension(ncol,nlay,  this%get_ngas()) :: vmr     ! volume mixing ratios
+real(wp), dimension(ncol,nlay,0:this%get_ngas()) :: col_gas ! column amounts for each gas, plus col_dry
+real(wp), dimension(2,    get_nflav(this),ncol,nlay) :: col_mix ! combination of major species's column amounts
+                               ! index(1) : reference temperature level
+                               ! index(2) : flavor
+                               ! index(3) : layer
+real(wp), dimension(2,2,  get_nflav(this),ncol,nlay) :: fminor ! interpolation fractions for minor species
+                                ! index(1) : reference eta level (temperature dependent)
+                                ! index(2) : reference temperature level
+                                ! index(3) : flavor
+                                ! index(4) : layer
+integer :: ngas, nflav, neta, npres, ntemp
+integer :: nminorlower, nminorklower,nminorupper, nminorkupper
+logical :: use_rayl
+! ----------------------------------------------------------
+!
+! Error checking
+!
+use_rayl = allocated(this%krayl)
+error_msg = ''
+! Check for initialization
+if (.not. this%is_initialized()) then
+error_msg = 'ERROR: spectral configuration not loaded'
+return
+end if
+!
+! Check for presence of key species in ty_gas_concs; return error if any key species are not present
+!
+error_msg = this%check_key_species_present(gas_desc)
+if (error_msg /= '') return
+
+!
+! Check input data sizes and values
+!
+error_msg = check_extent(play, ncol, nlay,   'play')
+if(error_msg  /= '') return
+error_msg = check_extent(plev, ncol, nlay+1, 'plev')
+if(error_msg  /= '') return
+error_msg = check_extent(tlay, ncol, nlay,   'tlay')
+if(error_msg  /= '') return
+error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
+if(error_msg  /= '') return
+error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
+if(error_msg  /= '') return
+error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
+if(error_msg  /= '') return
+if(present(col_dry)) then
+error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
+if(error_msg  /= '') return
+error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
+if(error_msg  /= '') return
+end if
+
+! ----------------------------------------------------------
+ngas  = this%get_ngas()
+nflav = get_nflav(this)
+neta  = this%get_neta()
+npres = this%get_npres()
+ntemp = this%get_ntemp()
+! number of minor contributors, total num absorption coeffs
+nminorlower  = size(this%minor_scales_with_density_lower)
+nminorklower = size(this%kminor_lower, 1)
+nminorupper  = size(this%minor_scales_with_density_upper)
+nminorkupper = size(this%kminor_upper, 1)
+!
+! Fill out the array of volume mixing ratios
+!
+do igas = 1, ngas
+!
+! Get vmr if  gas is provided in ty_gas_concs
+!
+if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
+error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
+if (error_msg /= '') return
+endif
+end do
+
+!
+! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
+!
+idx_h2o = string_loc_in_array('h2o', this%gas_names)
+if (present(col_dry)) then
+	col_dry_wk => col_dry
+else
+	col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
+	col_dry_wk => col_dry_arr
+end if
+!
+! compute column gas amounts [molec/cm^2]
+!
+col_gas(1:ncol,1:nlay,0) = col_dry_wk(1:ncol,1:nlay)
+do igas = 1, ngas
+	col_gas(1:ncol,1:nlay,igas) = vmr(1:ncol,1:nlay,igas) * col_dry_wk(1:ncol,1:nlay)
+end do
+
+!
+! ---- calculate gas optical depths ----
+!
+!$acc enter data create(jtemp, jpress, jeta, tropo, fmajor)
+!$acc enter data copyin(play, tlay, col_gas)
+!$acc enter data create(col_mix, fminor)
+!$acc enter data copyin(this)
+!$acc enter data copyin(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
+!$acc enter data copyin(this%temp_ref)  ! this one causes problems
+!$acc enter data copyin(this%kminor_lower, this%kminor_upper)
+call interpolation(               &
+	ncol,nlay,                &        ! problem dimensions
+	ngas, nflav, neta, npres, ntemp, & ! interpolation dimensions
+	this%flavor,              &
+	this%press_ref_log,       &
+	this%temp_ref,            &
+	this%press_ref_log_delta, &
+	this%temp_ref_min,        &
+	this%temp_ref_delta,      &
+	this%press_ref_trop_log,  &
+	this%vmr_ref, &
+	play,         &
+	tlay,         &
+	col_gas,      &
+	jtemp,        & ! outputs
+	fmajor,fminor,&
+	col_mix,      &
+	tropo,        &
+	jeta,jpress)
+!$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
+!$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
+!$acc exit data delete(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
+!!!$acc exit data delete(this%temp_ref)  ! this one causes problems
+!!!$acc exit data delete(this%kminor_lower, this%kminor_upper)
+end function compute_interp_coeffs
+
+
+! Function for neural-network accelerated long-wave gas optics (optical depths and planck fractions).
+! This function prepares the outputs for the neural network and then calls the kernel
+function compute_taus_pfracs_nnlw(this,                         &
+    ncol, nlay, ngpt, nband,                                    &
+    itropo, istrato,                                            &
+    play, plev, tlay, gas_desc,                                 &
+    optical_props, pfrac,                                       &
+    net_tau_tropo, net_tau_strato, net_pfrac,                   &
+    nn_inputs, col_dry) result(error_msg)
+
+class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
+integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
+integer,  dimension(ncol,2),          intent(in   ) ::  itropo, istrato
+
+real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                                                        plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
+                                                        tlay      ! layer temperatures [K]; (ncol,nlay)
+
+type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
+class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
+
+type(network_type), intent(inout)                   :: net_tau_tropo, net_tau_strato, net_pfrac
+real(wp), dimension(get_ngas(this)+1,nlay,ncol), &
+                                      intent(out)   :: nn_inputs 
+real(wp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac ! Planck fractions predicted by NN
+
+character(len=128)                                  :: error_msg
+
+! Optional inputs
+real(wp), dimension(:,:), intent(in   ), &
+   optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
+! ----------------------------------------------------------
+! Local variables
+real(wp), dimension(ngpt,nlay,ncol) :: tau, tau_rayleigh  ! absorption, Rayleigh scattering optical depths
+integer :: igas, ilay, idx_h2o, icol ! index of some gases
+! Number of molecules per cm^2
+real(wp), dimension(ncol,nlay), target  :: col_dry_arr
+real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
+!
+! Interpolation variables used in major gas but not elsewhere, so don't need exporting
+!
+
+real(wp), dimension(ncol,nlay,  this%get_ngas())  :: vmr     ! volume mixing ratios
+real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts for each gas, plus col_dry
+integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
+! ----------------------------------------------------------
+! Neural network input scaling coefficients .. should probably be loaded from a file
+! real(wp), dimension(21) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, &
+!     2.10885294E2_wp, 1.34087265E-1_wp, 1.10345914E-1_wp, 3.83904511E-2_wp,  & 
+!     5.73727873E-1_wp, 7.25674444E4_wp, 2.71173092E5_wp, 1.94999465E-5_wp,   &
+!     5.62522302E-5_wp, 1.29234921E-4_wp, 5.32654220E-5_wp, 3.10007757E-5_wp, & 
+!     4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
+!     2.56267690E-5_wp, 2.48434096E2_wp, 3.62281942E4_wp /)
+
+! real(wp), dimension(21) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
+! 9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 6.02355504E4_wp,           &
+! 2.25094023E5_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp,           &
+! 6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp,           &
+! 2.38989050E-6_wp, 6.06216452E-5_wp, 2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp            /)
+
+real(wp), dimension(19) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, 2.10885294E2_wp, 1.34087265E-1_wp, &
+    1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
+    5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
+    2.56267690E-5_wp, 2.48434096E2_wp, 3.62281942E4_wp /)
+
+real(wp), dimension(19) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
+    9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp, &
+    6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp, 2.38989050E-6_wp, 6.06216452E-5_wp, &
+    2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp /)
+
+
+real(wp) :: testparam   = 0.5001566410_wp
+real(dp) :: doubleparam = 0.5001566410_dp
+! ----------------------------------------------------------
+! Process all the layers and columns simultaenously, using BLAS for matrix-matrix computations? (fastest on intel compilers)
+! logical :: flatten_dims
+integer :: flatten_dims
+! If levs and cols are not flattened, use BLAS anyway for matrix-vector computations? (usually slower)
+! If true, the hidden layers must have equal sizes (flat model)
+logical :: use_blas
+
+! Flatten_dims = 0  for predicting one layer at a time, matrix-vector dot product
+!              = 1  for predicting all layers (or troposphere and stratosphere) at a time, matrix-matrix (SGEMM)
+!              = 2  for predicting all columns and layers at a time, matrix-matrix (SGEMM)
+flatten_dims   = 0
+! If flatten_dims = 0, use BLAS anyway for matrix-vector operations?
+use_blas     = .false. 
+
+!
+! Error checking
+!
+
+error_msg = ''
+! Check for initialization
+if (.not. this%is_initialized()) then
+error_msg = 'ERROR: spectral configuration not loaded'
+return
+end if
+!
+! Check for presence of key species in ty_gas_concs; return error if any key species are not present
+!
+error_msg = this%check_key_species_present(gas_desc)
+if (error_msg /= '') return
+
+!
+! Check input data sizes and values
+!
+error_msg = check_extent(play, ncol, nlay,   'play')
+if(error_msg  /= '') return
+error_msg = check_extent(plev, ncol, nlay+1, 'plev')
+if(error_msg  /= '') return
+error_msg = check_extent(tlay, ncol, nlay,   'tlay')
+if(error_msg  /= '') return
+error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
+if(error_msg  /= '') return
+error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
+if(error_msg  /= '') return
+error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
+if(error_msg  /= '') return
+if(present(col_dry)) then
+error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
+if(error_msg  /= '') return
+error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
+if(error_msg  /= '') return
+end if
+
+
+
+! ----------------------------------------------------------
+ngas  = this%get_ngas()
+npres = this%get_npres()
+ntemp = this%get_ntemp()
+
+!
+! Fill out the array of volume mixing ratios
+!
+do igas = 1, ngas
+!
+! Get vmr if  gas is provided in ty_gas_concs
+!
+if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
+  error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
+  if (error_msg /= '') return
+  endif
+end do
+
+!
+! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
+!
+idx_h2o = string_loc_in_array('h2o', this%gas_names)
+if (present(col_dry)) then
+  col_dry_wk => col_dry
+else
+  col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
+  col_dry_wk => col_dry_arr
+end if
+!
+! compute column gas amounts [molec/cm^2]
+!
+col_gas(1:ncol,1:nlay,0) = col_dry_wk(1:ncol,1:nlay)
+do igas = 1, ngas
+  col_gas(1:ncol,1:nlay,igas) = vmr(1:ncol,1:nlay,igas) * col_dry_wk(1:ncol,1:nlay)
+end do
+
+!
+! Prepare neural network INPUTS (standard-scaled col_gas + pay + tlay)
+! These need to be normalized using standard scaling
+!
+
+do ilay = 1, nlay
+    ! 8th and 9th gases are constants (oxygen and nitrogen), exclude these. Note col_gas index starts from 0 (dry air)
+    do igas = 1, 7
+      nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
+    end do
+    do igas = 8, ngas-1
+      nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas+1) - input_scaler_means(igas)) / input_scaler_std(igas)
+      ! print *, "nn_input:", igas, "is gas:", this%gas_names(igas+1)
+    end do
+    ! Last two inputs are temperature and pressure
+    nn_inputs(igas,ilay,:) = (tlay(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
+    igas = igas + 1
+    nn_inputs(igas,ilay,:) = (play(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
+
+end do
+
+! do igas = 1,7 
+!   print *, "nn_input:", igas, "is gas:", this%gas_names(igas-1)
+! end do
+! do igas = 8, ngas-1
+!   print *, "nn_input:", igas, "is gas:", this%gas_names(igas+1)
+! end do
+! print *, "nn_input:", igas, "is temperature"
+! igas = igas + 1
+! print *, "nn_input:", igas, "is pressure"
+
+
+! print *, 'number of gases:', ngas
+! igas = 0
+! print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', "dry air"//REPEAT(' ',15), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
+!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
+! do igas = 1, ngas
+!     print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', this%gas_names(igas), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
+!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
+! end do  
+
+call zero_array(ngpt, nlay, ncol, tau)
+
+    ! load models (Keras model weights which are saved to ASCII)
+! print *, 'loading tau-tropo model from ', modelfile_tau_tropo
+! call net_tau_tropo % load(modelfile_tau_tropo)
+
+! print *, 'loading tau-strato model from ', modelfile_tau_strato
+! call net_tau_strato % load(modelfile_tau_strato)
+
+! print *, 'loading planck fraction model from ', modelfile_source
+! call net_pfrac % load(modelfile_source)
+
+
+! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
+
+call system_clock(count_rate=count_rate)
+call system_clock(iTime1)   
+
+#ifdef USE_TIMING
+    ret =  gptlstart('predict_nn_lw')
+#endif
+  
+! If NN models have the same amount of neurons in each layer, use an optimized kernel..
+neurons_first = size(net_tau_tropo % layers(1) % w_transposed, 1)
+neurons_last = size(net_tau_tropo % layers(size(net_tau_tropo%layers)-1) % w_transposed, 2)
+
+if (neurons_first == neurons_last) then
+  print *, "Flat model"
+  call change_kernel(net_pfrac,     output_opt_flatmodel, output_sgemm_flatmodel)
+  call change_kernel(net_tau_tropo, output_opt_flatmodel, output_sgemm_flatmodel)
+  call change_kernel(net_tau_strato,output_opt_flatmodel, output_sgemm_flatmodel)
+end if
+
+if (flatten_dims == 2) then
+  print *, "Flattening both levels and columns, using SGEMM for matrix-matrix computations"
+  call predict_nn_lw_flattenall(                  &
+                        ncol,nlay,ngpt, ngas,     &  ! dimensions
+                        nn_inputs,                &  ! data inputs
+                        net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                        tau, pfrac)    ! outputs
+
+else if (flatten_dims == 1) then
+
+  print *, "Flattening levels,  using SGEMM for matrix-matrix computations"
+  call predict_nn_lw_flattenlevs(                     &
+                        ncol,nlay,ngpt, ngas,     &  ! dimensions
+                        itropo, istrato,          &
+                        nn_inputs,                &  ! data inputs
+                        net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                        tau, pfrac)    ! outputs
+
+else
+  print *, "Predicting one layer at a time"
+  if (use_blas) then
+    if (abs(testparam-doubleparam)>1.0d-15 ) then
+      print *, "using BLAS, single precision (SGEMV)"
+      call change_kernel(net_pfrac,     output_sgemv_flatmodel, output_sgemm_flatmodel)
+      call change_kernel(net_tau_tropo, output_sgemv_flatmodel, output_sgemm_flatmodel)
+      call change_kernel(net_tau_strato,output_sgemv_flatmodel, output_sgemm_flatmodel)
+    else
+      print *, "using BLAS, double precision (DGEMV)"
+      ! call change_kernel(net_pfrac,     output_dgemv_flatmodel)
+      ! call change_kernel(net_tau_tropo, output_dgemv_flatmodel)
+      ! call change_kernel(net_tau_strato,output_dgemv_flatmodel)
+    end if
+  end if
+
+
+  call predict_nn_lw(                           &
+                      ncol,nlay,ngpt, ngas,     &  ! dimensions
+                      itropo, istrato,          &  ! data inputs
+                      nn_inputs,                &  ! data inputs
+                      net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                      tau, pfrac)    ! outputs
+end if
+
+#ifdef USE_TIMING
+    ret =  gptlstop('predict_nn_lw')
+#endif
+
+call system_clock(iTime2)
+print *,'Elapsed time on optical depth kernel: ',real(iTime2-iTime1)/real(count_rate)
+
+if (error_msg /= '') return
+
+#ifdef USE_TIMING
+    ret =  gptlstart('combine_and_reorder')
+#endif
+
+! Combine optical depths and reorder for radiative transfer solver.
+call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
+
+#ifdef USE_TIMING
+    ret =  gptlstop('combine_and_reorder')
+#endif
+
+end function compute_taus_pfracs_nnlw
+
   !--------------------------------------------------------------------------------------------------------------------
   !
   ! Function to define names of key and minor gases to be used by gas_optics().
@@ -2256,7 +2356,7 @@ function source(this,                               &
     ncol = size(tau, 3)
     nlay = size(tau, 2)
     ngpt = size(tau, 1)
-
+    !$acc enter data copyin(optical_props)
     if (.not. has_rayleigh) then
       ! index reorder (ngpt, nlay, ncol) -> (ncol,nlay,gpt)
       !$acc enter data copyin(tau)
@@ -2300,6 +2400,7 @@ function source(this,                               &
       end select
       !$acc exit data delete(tau, tau_rayleigh)
     end if
+    !$acc exit data copyout(optical_props)
   end subroutine combine_and_reorder
 
   !--------------------------------------------------------------------------------------------------------------------

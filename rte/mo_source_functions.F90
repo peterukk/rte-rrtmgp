@@ -27,7 +27,10 @@ module mo_source_functions
     real(wp), allocatable, dimension(:,:,:) :: lay_source,     & ! Planck source at layer average temperature
                                                                  ! [W/m2] (ncol, nlay, ngpt)
                                                lev_source_inc, &  ! Planck source at layer edge,
-                                               lev_source_dec,  &   ! [W/m2] (ncol, nlay+1, ngpt)
+                                               lev_source_dec, &  ! [W/m2] (ncol, nlay+1, ngpt)
+                                                                  ! in increasing/decreasing ilay direction
+                                                                  ! Includes spectral weighting that accounts for state-dependent
+                                                                  ! frequency to g-space mapping
                                                planck_frac       ! (ncol, nlay, ngpt)
     real(wp), allocatable, dimension(:,:  ) :: sfc_source
   contains
