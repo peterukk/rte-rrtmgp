@@ -5,6 +5,18 @@
 include Makefile.libs
 include $(RRTMGP_DIR)/Makefile.conf
 
+#use openmp
+OMPFLAG = -fopenmp
+
+# choose BLAS library: "blis", "openblas", "mkl"
+BLASLIB=blis
+
+#
+# Setting macro TIMING=yes uses routines from the General Purpose Timing Library
+#  https://jmrosinski.github.io/GPTL/
+#
+# TIMING=yes
+
 
 # RRTMGP library, module files
 #
@@ -23,8 +35,10 @@ FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib  -L/usr/local/lib 
 LIBS      += -lnetcdff -lnetcdf 
 
-# choose BLAS library: "blis", "openblas", "mkl"
-BLASLIB=blis
+ifeq ($(FC),ifort)
+	BLASLIB=mkl
+endif
+
 ifeq ($(BLASLIB),blis)
 	# BLIS_PREFIX = /usr/local
 	# BLIS_INCLUDE = $(BLIS_PREFIX)/include/blis
@@ -41,14 +55,9 @@ else ifeq ($(BLASLIB),mkl)
 	
 endif
 
-#
-# Setting macro TIMING=yes uses routines from the General Purpose Timing Library
-#  https://jmrosinski.github.io/GPTL/
-#
-TIMING=no
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
 
-ifeq ($(TIMING),yes)
+ifeq ($(USE_TIMING),yes)
 	#
 	# Timing library
 	#
@@ -63,10 +72,10 @@ VPATH = ../
 
 # Compilation rules
 %.o: %.F90
-	$(FC) $(FCFLAGS) $(FCINCLUDE) -c $<
+	$(FC) $(FCFLAGS) $(FCINCLUDE) -c $< $(OMPFLAG)
 
 %: %.o
-	$(FC) $(FCFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS)
+	$(FC) $(FCFLAGS) -o $@ $^ $(LDFLAGS) $(LIBS) $(OMPFLAG)
 
 #
 # Ancillary codes

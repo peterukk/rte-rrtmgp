@@ -16,18 +16,8 @@
 
 module mo_gas_optics_kernels
   use mo_rte_kind,      only : wp, wl
-  use mo_util_string,   only : string_loc_in_array
   use mod_network,      only: network_type
   implicit none
-
-  ! type kernel_pointer
-  !   procedure(kernel_procedure), pointer, pass :: kernelpointer
-  ! end type
-
-  interface zero_array
-    module procedure zero_array_3D, zero_array_4D
-  end interface
-
 contains
   ! --------------------------------------------------------------------------------------
   ! Compute interpolation coefficients
@@ -46,7 +36,7 @@ contains
     integer,                            intent(in) :: ngas,nflav,neta,npres,ntemp
     integer,     dimension(2,nflav),    intent(in) :: flavor
     real(wp),    dimension(npres),      intent(in) :: press_ref_log
-    real(wp),    dimension(npres),      intent(in) :: temp_ref
+    real(wp),    dimension(ntemp),      intent(in) :: temp_ref
     real(wp),                           intent(in) :: press_ref_log_delta, &
                                                       temp_ref_min, temp_ref_delta, &
                                                       press_ref_trop_log
@@ -80,7 +70,7 @@ contains
       do icol = 1, ncol
         ! index and factor for temperature interpolation
         jtemp(icol,ilay) = int((tlay(icol,ilay) - (temp_ref_min - temp_ref_delta)) / temp_ref_delta)
-        jtemp(icol,ilay) = min(npres - 1, max(1, jtemp(icol,ilay))) ! limit the index range
+        jtemp(icol,ilay) = min(ntemp - 1, max(1, jtemp(icol,ilay))) ! limit the index range
         ftemp(icol,ilay) = (tlay(icol,ilay) - temp_ref(jtemp(icol,ilay))) / temp_ref_delta
 
         ! index and factor for pressure interpolation
@@ -239,7 +229,7 @@ contains
     ! ---------------------
     call gas_optical_depths_minor(     &
            ncol,nlay,ngpt,             & ! dimensions
-           ngas,nflav,npres,neta,      &
+           ngas,nflav,ntemp,neta,      &
            nminorlower,nminorklower,   &
            idx_h2o,                    &
            gpoint_flavor(1,:),         &
@@ -259,7 +249,7 @@ contains
     ! ---------------------
     call gas_optical_depths_minor(     &
            ncol,nlay,ngpt,             & ! dimensions
-           ngas,nflav,npres,neta,      &
+           ngas,nflav,ntemp,neta,      &
            nminorupper,nminorkupper,   &
            idx_h2o,                    &
            gpoint_flavor(2,:),         &
@@ -340,7 +330,7 @@ contains
   ! compute minor species optical depths
   !
   subroutine gas_optical_depths_minor(ncol,nlay,ngpt,        &
-                                      ngas,nflav,npres,neta, &
+                                      ngas,nflav,ntemp,neta, &
                                       nminor,nminork,        &
                                       idx_h2o,               &
                                       gpt_flv,               &
@@ -354,24 +344,24 @@ contains
                                       col_gas,fminor,jeta,   &
                                       layer_limits,jtemp,    &
                                       tau) bind(C, name="gas_optical_depths_minor")
-    integer,                                     intent(in ) :: ncol,nlay,ngpt
-    integer,                                     intent(in ) :: ngas,nflav
-    integer,                                     intent(in ) :: npres,neta,nminor,nminork
-    integer,                                     intent(in ) :: idx_h2o
-    integer,     dimension(ngpt),                intent(in ) :: gpt_flv
-    real(wp),    dimension(nminork,neta,npres),  intent(in ) :: kminor
-    integer,     dimension(2,nminor),            intent(in ) :: minor_limits_gpt
-    logical(wl), dimension(  nminor),            intent(in ) :: minor_scales_with_density
-    logical(wl), dimension(  nminor),            intent(in ) :: scale_by_complement
-    integer,     dimension(  nminor),            intent(in ) :: kminor_start
-    integer,     dimension(  nminor),            intent(in ) :: idx_minor, idx_minor_scaling
-    real(wp),    dimension(ncol,nlay),           intent(in ) :: play, tlay
-    real(wp),    dimension(ncol,nlay,0:ngas),    intent(in ) :: col_gas
-    real(wp),    dimension(2,2,nflav,ncol,nlay), intent(in ) :: fminor
-    integer,     dimension(2,  nflav,ncol,nlay), intent(in ) :: jeta
-    integer,     dimension(ncol, 2),             intent(in ) :: layer_limits
-    integer,     dimension(ncol,nlay),           intent(in ) :: jtemp
-    real(wp),    dimension(ngpt,nlay,ncol),      intent(out) :: tau
+    integer,                                     intent(in   ) :: ncol,nlay,ngpt
+    integer,                                     intent(in   ) :: ngas,nflav
+    integer,                                     intent(in   ) :: ntemp,neta,nminor,nminork
+    integer,                                     intent(in   ) :: idx_h2o
+    integer,     dimension(ngpt),                intent(in   ) :: gpt_flv
+    real(wp),    dimension(nminork,neta,ntemp),  intent(in   ) :: kminor
+    integer,     dimension(2,nminor),            intent(in   ) :: minor_limits_gpt
+    logical(wl), dimension(  nminor),            intent(in   ) :: minor_scales_with_density
+    logical(wl), dimension(  nminor),            intent(in   ) :: scale_by_complement
+    integer,     dimension(  nminor),            intent(in   ) :: kminor_start
+    integer,     dimension(  nminor),            intent(in   ) :: idx_minor, idx_minor_scaling
+    real(wp),    dimension(ncol,nlay),           intent(in   ) :: play, tlay
+    real(wp),    dimension(ncol,nlay,0:ngas),    intent(in   ) :: col_gas
+    real(wp),    dimension(2,2,nflav,ncol,nlay), intent(in   ) :: fminor
+    integer,     dimension(2,  nflav,ncol,nlay), intent(in   ) :: jeta
+    integer,     dimension(ncol, 2),             intent(in   ) :: layer_limits
+    integer,     dimension(ncol,nlay),           intent(in   ) :: jtemp
+    real(wp),    dimension(ngpt,nlay,ncol),      intent(inout) :: tau
     ! -----------------
     ! local variables
     real(wp), parameter :: PaTohPa = 0.01
@@ -779,23 +769,21 @@ contains
   subroutine predict_nn_lw(                 &
                     ncol, nlay, ngpt, ngas,       & 
                     itropo, istrato,              &
-                    nn_inputs, scaler_pfrac,      &
+                    nn_inputs,                    &
                     net_tau_tropo, net_tau_strato, net_pfrac,          &
                     tau_gas, pfrac)
     ! inputs
-    integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
-    integer,  dimension(ncol,2),              intent(in) :: itropo, istrato
-    real(wp), dimension(ngas+1,nlay,ncol),    intent(in) :: nn_inputs 
-    real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
-    ! The models should also be inputs
-    type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
+    integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
+    integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
+    real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
+    ! neural network models
+    type(network_type),                       intent(in)    :: net_tau_tropo, net_tau_strato, net_pfrac
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out)   :: pfrac, tau_gas
 
     ! local
-    real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
-    integer                             :: ilay, icol
+    integer                                                 :: ilay, icol
 
     real(wp) :: eps_neural = 0.005_wp 
 
@@ -803,23 +791,20 @@ contains
       do ilay = 1, nlay
       ! do ilay = istrato(icol, 1), istrato(icol, 2)
         ! PREDICT PLANCK FRACTIONS
-        ! call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
-        ! ! Scaling
-        ! pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
+        call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
 
         ! PREDICT OPTICAL DEPTHS
         call net_tau_strato % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
         ! Scaling
-        tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural 
-        tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
+        ! tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
+        tau_gas(:,ilay,icol)    = tau_gas(:,ilay,icol)**8
+        tau_gas(:,ilay,icol)    = max(0.0_wp, tau_gas(:,ilay,icol))
       end do   ! layer
     end do
 
     !   do ilay = itropo(icol, 1), itropo(icol, 2)
     !     ! PREDICT PLANCK FRACTIONS
     !     call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
-    !     ! Scaling
-    !     pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
 
     !     ! PREDICT OPTICAL DEPTHS
     !     call net_tau_tropo % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
@@ -831,17 +816,76 @@ contains
 
   end subroutine predict_nn_lw
 
-  subroutine predict_nn_lw_matmul(                &
+  subroutine predict_nn_lw_flattenlevs(    &
+                    ncol, nlay, ngpt, ngas,      & 
+                    itropo, istrato,             &
+                    nn_inputs,                    &
+                    net_tau_tropo, net_tau_strato, net_pfrac,          &
+                    tau_gas, pfrac)
+    ! inputs
+    integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
+    integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
+    real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
+    ! The models should also be inputs
+    type(network_type),                       intent(in)    :: net_tau_tropo, net_tau_strato, net_pfrac
+    ! type(network_type), optional,             intent(inout) :: net_tau_strato
+    ! outputs
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
+    ! local
+    integer  :: ilay, icol, istart, iend
+    real(wp) :: eps_neural = 0.005_wp 
+
+    if (net_tau_tropo % layers(1) % w(1,1) == net_tau_strato % layers(1) % w(1,1) ) then
+    print *, "same model"
+
+      ! Predict Planck fractions
+      do icol = 1, ncol
+        call net_pfrac % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
+
+      ! Predict optical depths
+        call net_tau_tropo % nn_kernel_m(nn_inputs(:,:,icol), tau_gas(:,:,icol))
+        tau_gas(:,:,icol) = tau_gas(:,:,icol)**8
+        !tau_gas(:,:,icol) = exp(tau_gas(:,:,icol)) - eps_neural
+        tau_gas(:,:,icol) = max(0.0_wp, tau_gas(:,:,icol))
+      end do
+    
+
+    else
+    ! Separate optical depth models for troposphere and stratosphre
+
+      do icol = 1, ncol
+        call net_pfrac % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
+
+        istart  = istrato(icol, 1)
+        iend    = istrato(icol, 2)
+        call net_tau_strato  % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
+
+        tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
+        tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
+
+        istart  = itropo(icol, 1)
+        iend    = itropo(icol, 2)
+        call net_tau_tropo   % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
+
+        tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
+        tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
+
+      end do     ! column
+
+    end if
+  
+  end subroutine predict_nn_lw_flattenlevs
+
+  subroutine predict_nn_lw_flattenall(            &
                     ncol, nlay, ngpt, ngas,       & 
-                    nn_inputs, scaler_pfrac,      &
+                    nn_inputs,                    &
                     net_tau_tropo, net_tau_strato, net_pfrac,          &
                     tau_gas, pfrac)
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
     real(wp), dimension(ngas+1,nlay,ncol),    intent(in) :: nn_inputs 
-    real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
     ! The models should also be inputs
-    type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
+    type(network_type),                       intent(in) :: net_tau_tropo, net_tau_strato, net_pfrac
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
@@ -855,71 +899,23 @@ contains
     ! Process all the data in a single neural network call (big matrix-matrix multiplication done by SGEMM)
     ! This assumes the same neural network model can be used for the stratosphere and troposphere
 
-    ! PREDICT PLANCK FRACTIONS
-    ! call net_pfrac % output_sgemm(reshape(nn_inputs,(/ngas+3,nlay*ncol/)), tmp_output)
-    ! pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
+  ! PREDICT PLANCK FRACTIONS
+    print *, "pfrac"
+    call net_pfrac % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output)
+    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
 
-    ! ! Scaling
-    ! do icol = 1, ncol
-    !   do ilay = 1, nlay
-    !     pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
-    !   end do
-    ! end do
+    print *, "tau"
 
-    ! PREDICT OPTICAL DEPTHS
-    call net_tau_tropo % output_sgemm(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
-    ! Scaling
+    call net_tau_tropo % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
+    !Scaling
     tau_gas = reshape(tmp_output,(/ngpt,nlay,ncol/))       
-    tau_gas = exp(tau_gas) - eps_neural 
+    ! tau_gas = exp(tau_gas) - eps_neural 
+    tau_gas = tau_gas**8
     ! call fastexp(tau_gas,eps_neural)
     tau_gas = max(0.0_wp, tau_gas)
 
-    end subroutine predict_nn_lw_matmul
-
-  subroutine predict_nn_lw_flattenlevs(    &
-                    ncol, nlay, ngpt, ngas,      & 
-                    itropo, istrato,             &
-                    nn_inputs, scaler_pfrac,     &
-                    net_tau_tropo, net_tau_strato, net_pfrac,          &
-                    tau_gas, pfrac)
-    ! inputs
-    integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
-    integer,  dimension(ncol,2),              intent(in) :: itropo, istrato
-    real(wp), dimension(ngas+3,nlay,ncol),    intent(in) :: nn_inputs 
-    real(wp), dimension(ngpt,2),              intent(in) :: scaler_pfrac
-    ! The models should also be inputs
-    type(network_type),                       intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
-    ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
-    ! local
-    integer  :: ilay, icol, istart, iend
-    real(wp) :: eps_neural = 0.005_wp 
-
-    do icol = 1, ncol
-      call net_pfrac % output_sgemm(nn_inputs(:,:,icol), pfrac(:,:,icol))
-
-      do ilay = 1, nlay
-        pfrac(:,ilay,icol) = (pfrac(:,ilay,icol)*scaler_pfrac(:,2)) + scaler_pfrac(:,1)
-      end do
-
-      istart  = istrato(icol, 1)
-      iend    = istrato(icol, 2)
-      call net_tau_strato  % output_sgemm(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
-
-      tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
-      tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
-
-
-      istart  = itropo(icol, 1)
-      iend    = itropo(icol, 2)
-      call net_tau_tropo   % output_sgemm(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
-
-      tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
-      tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
-
-    end do     ! column
+  end subroutine predict_nn_lw_flattenall
   
-  end subroutine predict_nn_lw_flattenlevs
 
   elemental subroutine fastexp(x,eps)
     real(wp), intent(inout) :: x
@@ -951,32 +947,6 @@ contains
     index = min(size(table,dim=1)-1, max(1, int(val0)+1)) ! limit the index range
     res(:) = table(index,:) + frac * (table(index+1,:) - table(index,:))
   end function interpolate1D
-
-    ! ----------------------------------------------------------
-  !
-  ! One dimensional interpolation -- return a single value
-  !
-  pure function interpolate1D_one(val, offset, delta, table) result(res)
-    ! input
-    real(wp), intent(in) :: val,    & ! axis value at which to evaluate table
-                            offset, & ! minimum of table axis
-                            delta     ! step size of table axis
-    real(wp), dimension(:), &
-              intent(in) :: table ! dimensions (axis i.e. temperature)
-    ! output
-    real(wp)  :: res
-
-    ! local
-    real(wp) :: val0 ! fraction index adjusted by offset and delta
-    integer :: index ! index term
-    real(wp) :: frac ! fractional term
-    ! -------------------------------------
-    val0 = (val - offset) / delta
-    frac = val0 - int(val0) ! get fractional part
-    index = min(size(table,dim=1)-1, max(1, int(val0)+1)) ! limit the index range
-    res = table(index) + frac * (table(index+1) - table(index))
-  end function interpolate1D_one
-
   ! ----------------------------------------------------------------------------------------
   !   This function returns a single value from a subset (in gpoint) of the k table
   !
@@ -1137,39 +1107,4 @@ contains
       end do
     end do
   end subroutine combine_and_reorder_nstr
-  ! ----------------------------------------------------------
-  pure subroutine zero_array_3D(ni, nj, nk, array) bind(C, name="zero_array_3D")
-    integer, intent(in) :: ni, nj, nk
-    real(wp), dimension(ni, nj, nk), intent(out) :: array
-    ! -----------------------
-    integer :: i,j,k
-    ! -----------------------
-    do k = 1, nk
-      do j = 1, nj
-        do i = 1, ni
-          array(i,j,k) = 0.0_wp
-        end do
-      end do
-    end do
-
-  end subroutine zero_array_3D
-  ! ----------------------------------------------------------
-  pure subroutine zero_array_4D(ni, nj, nk, nl, array) bind(C, name="zero_array_4D")
-    integer, intent(in) :: ni, nj, nk, nl
-    real(wp), dimension(ni, nj, nk, nl), intent(out) :: array
-    ! -----------------------
-    integer :: i,j,k,l
-    ! -----------------------
-    do l = 1, nl
-      do k = 1, nk
-        do j = 1, nj
-          do i = 1, ni
-            array(i,j,k,l) = 0.0_wp
-          end do
-        end do
-      end do
-    end do
-
-  end subroutine zero_array_4D
-  ! ----------------------------------------------------------
 end module mo_gas_optics_kernels

@@ -9,6 +9,12 @@ VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL
 include Makefile.conf
 include Makefile.rules
 
+ifeq ($(USE_TIMING),yes)
+	#
+	# Timing library
+	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -fopenmp
+endif
+
 all: librte.a librrtmgp.a libneural.a
 
 include $(RTE_DIR)/Make.depends

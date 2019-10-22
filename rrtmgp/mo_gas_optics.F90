@@ -16,6 +16,8 @@ module mo_gas_optics
   use mo_source_functions,   only: ty_source_func_lw
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_optical_props,      only: ty_optical_props, ty_optical_props_arry
+  use mod_network,           only: network_type
+
 
   type, abstract, extends(ty_optical_props), public :: ty_gas_optics
   contains
@@ -28,9 +30,9 @@ module mo_gas_optics
     !    but need to be visible in the abstract type or the interfaces won't be inherited
     ! See https://software.intel.com/en-us/forums/intel-fortran-compiler-for-linux-and-mac-os-x/topic/681705
     !
-    procedure(gas_optics_int_abstract), deferred  :: gas_optics_int
-    procedure(gas_optics_int_nn_abstract), deferred  :: gas_optics_int_nn
-    procedure(gas_optics_ext_abstract), deferred  :: gas_optics_ext
+    procedure(gas_optics_int_abstract), deferred      :: gas_optics_int
+    procedure(gas_optics_int_nn_abstract), deferred   :: gas_optics_int_nn
+    procedure(gas_optics_ext_abstract), deferred      :: gas_optics_ext
 
     procedure(logical_abstract), deferred, public :: source_is_internal
     procedure(logical_abstract), deferred, public :: source_is_external
@@ -73,25 +75,22 @@ module mo_gas_optics
     function gas_optics_int_nn_abstract(this,                             &
                                      play, plev, tlay, tsfc, gas_desc,    &
                                      optical_props, sources, nn_inputs,   &
-                                     scaler_pfrac,                        &
-                                     modelfile_tau_tropo, modelfile_tau_strato, modelfile_source,     &                           
+                                     net_tau_tropo, net_tau_strato, net_pfrac,     &                           
                                      col_dry, tlev) result(error_msg)
-      import ty_gas_optics, wp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw
-      class(ty_gas_optics),     intent(in   ) :: this
-      real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+      import ty_gas_optics, wp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw, network_type
+      class(ty_gas_optics),       intent(in   ) :: this
+      real(wp), dimension(:,:),   intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
                                                  plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
                                                  tlay      ! layer temperatures [K]; (ncol,nlay)
-      real(wp), dimension(:),   intent(in   ) :: tsfc      ! surface skin temperatures [K]; (ncol)
-      type(ty_gas_concs),       intent(in   ) :: gas_desc  ! Gas volume mixing ratios
+      real(wp), dimension(:),     intent(in   ) :: tsfc      ! surface skin temperatures [K]; (ncol)
+      type(ty_gas_concs),         intent(in   ) :: gas_desc  ! Gas volume mixing ratios
       class(ty_optical_props_arry),  &
-                                intent(inout) :: optical_props ! Optical properties
+                                  intent(inout) :: optical_props ! Optical properties
       class(ty_source_func_lw    ),  &
-                                intent(inout) :: sources       ! Planck sources
+                                  intent(inout) :: sources       ! Planck sources
 
       real(wp), dimension(:,:,:), intent(inout) :: nn_inputs
-      real(wp), dimension(:,:), intent(in)      :: scaler_pfrac 
-      character (len = 60),     intent(in)      :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
-
+      type(network_type),         intent(inout) :: net_tau_tropo, net_tau_strato, net_pfrac
 
       character(len=128)                      :: error_msg
       real(wp), dimension(:,:), intent(in   ), &
