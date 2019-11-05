@@ -125,10 +125,11 @@ program rrtmgp_rfmip_lw
 
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
 
-  character (len = 60)                            :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
-  type(network_type)                              :: net_tau_tropo, net_tau_strato, net_pfrac
+  character (len = 60)                :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
+  type(network_type)                  :: net_tau_tropo, net_tau_strato, net_pfrac
+  type(network_type), dimension(3)    :: neural_nets
 
-  logical :: use_nn, save_output, save_input
+  logical :: use_nn, save_output, save_input, compare_flux
 
   !
   ! Classes used by rte+rrtmgp
@@ -153,31 +154,39 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_nn      = .true.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
-  save_output = .false.
   save_input  = .false.
+  save_output = .false.
+  ! Compare fluxes to original? 
+  compare_flux = .true.
 
   ! Where neural network model weights are located (required!)
   ! 
   !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-pow8-50-50-hyb-06.txt"
-  !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-big-cams-30-60.txt"
-  modelfile_tau_tropo     = "../../neural/data/tau-rfmip-big-cams-40-60-rmseT.txt"
-  modelfile_tau_strato = modelfile_tau_tropo
-  modelfile_source   = "../../neural/data/pfrac-rfmip-big-30-30.txt"
+  !modelfile_tau_tropo     = "../../neural/data/tautot-lw-trop-19-52-52.txt"
+  modelfile_tau_tropo     = "../../neural/data/tautot-lw-tropstrat-19-30-60.txt"
+  modelfile_tau_strato    = modelfile_tau_tropo
+  !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-big-cams-40-60-rmseT.txt"
+  !modelfile_tau_strato    = "../../neural/data/tautot-lw-strat-19-44-44.txt"
+  !modelfile_source        = "../../neural/data/pfrac-rfmip-big-30-30.txt"
+  modelfile_source        = "../../neural/data/pfrac-tropstrat-34-34-nfac2.txt"
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_NN.nc'
-  !flx_file = 'rlud_RFMIP-BIG.nc'
+  !flx_file = 'rlud_RFMIP-BIGG_NN.nc'
 
   ! FOR DEVELOPMENT (not required) 
   ! Where to save g-point optical depths and planck fractions
   !output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP-BIG_1f1_REF.nc'
   !output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_CAMS2_1f1_REF.nc'
-
+  !output_file = '/data/puk/rrtmgp/outp_lw_RFMIP-BIGALL_1f1_REF_taumajmin.nc'
+  ! output_file = '/data/puk/rrtmgp/outp_lw_CAMS3_1f1_REF.nc'
+  
   ! Where to save neural network inputs (scaled gases)
   !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_CAMS2_1f1_NN.nc'
-  !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_RFMIP-BIG_1f1_NN.nc '
+  !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_RFMIP-BIGG_1f1_NN.nc'
+  ! input_file =  '/data/puk/rrtmgp/inp2_lw_CAMS3_1f1_NN.nc'
   ! input_file = 'inp.nc'
 
   ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
@@ -192,6 +201,10 @@ program rrtmgp_rfmip_lw
 
   print *, 'loading planck fraction model from ', modelfile_source
   call net_pfrac % load(modelfile_source)
+
+  neural_nets(1) = net_pfrac
+  neural_nets(2) = net_tau_strato
+  neural_nets(3) = net_tau_tropo
 
   end if  
 
@@ -325,7 +338,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
 !  do i = 1, 32
 #endif
 
-!$OMP PARALLEL DO
+!bo !$OMP PARALLEL DO
   do b = 1, nblocks
 
     PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
@@ -364,9 +377,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
                                         optical_props,      &
                                         source,             &
                                         nn_inputs(:,:,:,b), &
-                                        net_tau_tropo,      &
-                                        net_tau_strato,     &
-                                        net_pfrac,          &
+                                        neural_nets,        & !net_pfrac, net_tau_tropo, net_tau_strato
                                         tlev = t_lev(:,:,b)))
     else 
     ! Using original code (interpolation routine) for predicting optical depths
@@ -408,7 +419,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
     end do
 
   end do ! blocks
-!$OMP END PARALLEL DO
+!bo !$OMP END PARALLEL DO
 #ifdef USE_TIMING
   !
   ! End timers
@@ -439,51 +450,54 @@ print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
 
  !  mean of flux_down is:   103.2458
 
-  ! Save fluxes
-  call unblock_and_write(trim(flx_file), 'rlu', flux_up)
-  call unblock_and_write(trim(flx_file), 'rld', flux_dn)
-
   ! Save optical depths and planck fractions
   if (save_output) then 
-    call unblock_and_write_3D(trim(output_file), 'tau_lw',tau_lw)
+    call unblock_and_write_3D(trim(output_file), 'tau_lw_minor',tau_lw)
     call unblock_and_write_3D(trim(output_file), 'planck_frac',planck_frac)
     ! call unblock_and_write_3D(trim(output_file), 'lay_source', lay_source)
   end if
 
-  print *, nn_inputs(:,1,1,1)
+  !print *, nn_inputs(:,1,1,1)
 
   ! Save neural network inputs
   if (save_input) then
     call unblock_and_write_3D_notrans(trim(input_file), 'col_gas',nn_inputs)
   end if
 
+  ! Save fluxes
+  call unblock_and_write(trim(flx_file), 'rlu', flux_up)
+  call unblock_and_write(trim(flx_file), 'rld', flux_dn)
 
   print *, "success"
 
-  print *, "comparing fluxes to original scheme:"
+  if (compare_flux) then
 
-  allocate(rld_ref( nlay+1, ncol, nexp))
-  allocate(rlu_ref( nlay+1, ncol, nexp))
-  allocate(rld_nn( nlay+1, ncol, nexp))
-  allocate(rlu_nn( nlay+1, ncol, nexp))
+    print *, "comparing fluxes to original scheme:"
 
-  flx_file_ref = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
+    allocate(rld_ref( nlay+1, ncol, nexp))
+    allocate(rlu_ref( nlay+1, ncol, nexp))
+    allocate(rld_nn( nlay+1, ncol, nexp))
+    allocate(rlu_nn( nlay+1, ncol, nexp))
 
-  if(nf90_open(trim(flx_file), NF90_NOWRITE, ncid) /= NF90_NOERR) &
-    call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file))
+    flx_file_ref = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
 
-  ! print *, ncid
-  rlu_nn = read_field(ncid, "rlu", nlay+1, ncol, nexp)
-  rld_nn = read_field(ncid, "rld", nlay+1, ncol, nexp)
+    if(nf90_open(trim(flx_file), NF90_NOWRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file))
 
-  if(nf90_open(trim(flx_file_ref), NF90_NOWRITE, ncid) /= NF90_NOERR) &
-    call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file_ref))
+    ! print *, ncid
+    rlu_nn = read_field(ncid, "rlu", nlay+1, ncol, nexp)
+    rld_nn = read_field(ncid, "rld", nlay+1, ncol, nexp)
 
-  rlu_ref = read_field(ncid, "rlu", nlay+1, ncol, nexp)
-  rld_ref = read_field(ncid, "rld", nlay+1, ncol, nexp)
+    if(nf90_open(trim(flx_file_ref), NF90_NOWRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file_ref))
 
-  print *, "RMSE in upwelling fluxes:", rmse(reshape(rlu_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rlu_nn, shape = [nexp*ncol*(nlay+1)]))
-  print *, "RMSE in downwelling fluxes:", rmse(reshape(rld_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rld_nn, shape = [nexp*ncol*(nlay+1)]))
+    rlu_ref = read_field(ncid, "rlu", nlay+1, ncol, nexp)
+    rld_ref = read_field(ncid, "rld", nlay+1, ncol, nexp)
+
+    print *, "RMSE in upwelling fluxes:", rmse(reshape(rlu_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rlu_nn, shape = [nexp*ncol*(nlay+1)]))
+    print *, "RMSE in downwelling fluxes:", rmse(reshape(rld_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rld_nn, shape = [nexp*ncol*(nlay+1)]))
+
+  end if
 
 
 
