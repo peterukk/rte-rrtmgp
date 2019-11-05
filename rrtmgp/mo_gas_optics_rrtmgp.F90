@@ -323,24 +323,26 @@ contains
   function gas_optics_int_nn(this,                                  &
                           play, plev, tlay, tsfc, gas_desc,         &
                           optical_props, sources, nn_inputs,        &
-                          net_tau_tropo, net_tau_strato, net_pfrac, &
+                          neural_nets,                              &
                           col_dry, tlev) result(error_msg)
 
   
-    class(ty_gas_optics_rrtmgp), intent(in) :: this
-    real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                                               plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-                                               tlay      ! layer temperatures [K]; (ncol,nlay)
-    real(wp), dimension(:),   intent(in   ) :: tsfc      ! surface skin temperatures [K]; (ncol)
-    type(ty_gas_concs),       intent(in   ) :: gas_desc  ! Gas volume mixing ratios
-    ! output
-    !! EDITS !!
-    real(wp),    dimension(:,:,:), intent(inout) :: nn_inputs
-    !real(wp), dimension(size(this%gas_names)+2,size(play,dim=2),size(play,dim=1)), intent(out) :: nn_inputs
-    !    real(wp),    dimension(size(play,dim=1),size(play,dim=2),0:size(this%gas_names)), intent(  out) :: col_gas
-    
-    !character (len = 60), intent(in)             :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
-    type(network_type), intent(inout)               :: net_tau_tropo, net_tau_strato, net_pfrac
+    class(ty_gas_optics_rrtmgp),    intent(in)    :: this
+    real(wp), dimension(:,:),       intent(in)    :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                                                  plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
+                                                  tlay      ! layer temperatures [K]; (ncol,nlay)
+    real(wp),    dimension(:),      intent(in)    :: tsfc      ! surface skin temperatures [K]; (ncol)
+    type(ty_gas_concs),             intent(in)    :: gas_desc  ! Gas volume mixing ratios
+    real(wp),    dimension(:,:,:),  intent(inout) :: nn_inputs
+
+    !type(network_type), intent(inout)             :: net_tau_tropo, net_tau_strato, net_pfrac
+    type(network_type), dimension(:), intent(inout)  :: neural_nets
+
+    ! The neural neural networks are stored in an array, because the number of models can change:
+    ! As a minimum, one model for predicting planck fractions and one for optical depths.
+    ! For Planck fracs, one model shrould be enough.  
+    ! For optical depths, the number of nets can be : 1 (tau), 2 (tau_trop, tau_strat), 
+    ! or 4 (tau_major_trop, tau_minor_trop, tau_major_trop,  tau_minor_strat)
 
     class(ty_optical_props_arry),  &
                               intent(inout) :: optical_props ! Optical properties
@@ -355,17 +357,18 @@ contains
     ! ----------------------------------------------------------
     ! Local variables
     ! Interpolation coefficients for use in source function
+                   
     integer,     dimension(size(play,dim=1), size(play,dim=2))                        :: jtemp, jpress
     logical(wl), dimension(size(play,dim=1), size(play,dim=2))                        :: tropo
     real(wp),    dimension(2,2,2,get_nflav(this),size(play,dim=1), size(play,dim=2))  :: fmajor
     integer,     dimension(2,    get_nflav(this),size(play,dim=1), size(play,dim=2))  :: jeta
     integer,     dimension(size(play,dim=1),2)                                        :: itropo, istrato
-
+    real(wp),    dimension(size(play,dim=1), size(play,dim=2))                        :: play_log
     real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: pfrac ! Planck fractions predicted by NN
     integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
     logical :: original_source, top_at_1
 
-    original_source = .true.
+    original_source = .false.
     ! ----------------------------------------------------------
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -416,10 +419,11 @@ contains
       error_msg = compute_interp_coeffs(this,                  &
                                   ncol, nlay, ngpt, nband,    &
                                   play, plev, tlay, gas_desc, &
-                                  jtemp, jpress, jeta, tropo, fmajor, &
+                                  jtemp, jpress, jeta, tropo, fmajor, play_log, &
                                   col_dry)
     else
-      tropo     = log(play) > this%press_ref_trop_log
+      play_log = log(play)
+      tropo    = play_log > this%press_ref_trop_log
     end if
 #ifdef USE_TIMING
     ret =  gptlstop('interpolation')
@@ -453,9 +457,9 @@ contains
     error_msg = compute_taus_pfracs_nnlw(this,              &
                                  ncol, nlay, ngpt, nband,   &
                                  itropo, istrato,           &
-                                 play, plev, tlay, gas_desc,&
-                                 optical_props, pfrac,      &
-                                 net_tau_tropo, net_tau_strato, net_pfrac, &
+                                 play, play_log, plev, tlay, gas_desc,&
+                                 optical_props, pfrac,                &
+                                 neural_nets, &
                                  nn_inputs, col_dry) 
     
     ! call system_clock(iTime2)
@@ -606,6 +610,7 @@ contains
     ! Number of molecules per cm^2
     real(wp), dimension(ncol,nlay), target  :: col_dry_arr
     real(wp), dimension(:,:),       pointer :: col_dry_wk
+    real(wp), dimension(ncol,nlay)          :: play_log
     !
     ! Interpolation variables used in major gas but not elsewhere, so don't need exporting
     !
@@ -732,7 +737,7 @@ contains
             fmajor,fminor,&
             col_mix,      &
             tropo,        &
-            jeta,jpress)
+            jeta,jpress,play_log)
 
     call system_clock(count_rate=count_rate)
     call system_clock(iTime1)
@@ -985,7 +990,7 @@ contains
     ret =  gptlstart('reorder-source-nn')
 #endif
 
-    call reorder123x321(pfrac, pfrac_reverse)
+    call reorder123x321(pfrac, sources%planck_frac)
 
     ! call system_clock(iTime2)
     ! print *,'Elapsed time on reorder: ',real(iTime2-iTime1)/real(count_rate)
@@ -995,7 +1000,7 @@ contains
             tlay, tlev_wk, tsfc, merge(1,nlay,play(1,1) > play(1,nlay)), &
             this%get_band_lims_gpoint(), &
             this%temp_ref_min, this%totplnk_delta, this%totplnk, &
-            pfrac_reverse, &
+            sources%planck_frac, &
             sources%sfc_source, sources%lay_source, sources%lev_source_inc, &
             sources%lev_source_dec)
 
@@ -1003,7 +1008,7 @@ contains
     ret =  gptlstop('reorder-source-nn')
 #endif
 
-    ! call reorder123x321(planck_frac_t, sources%planck_frac)
+    !call reorder123x321(planck_frac_t, sources%planck_frac)
 
   end function source_nn
   !--------------------------------------------------------------------------------------------------------------------
@@ -1436,7 +1441,7 @@ contains
 function compute_interp_coeffs(this,                       &
   ncol, nlay, ngpt, nband,    &
   play, plev, tlay, gas_desc, &
-  jtemp, jpress, jeta, tropo, fmajor, &
+  jtemp, jpress, jeta, tropo, fmajor, play_log, &
   col_dry) result(error_msg)
 
 class(ty_gas_optics_rrtmgp), &
@@ -1447,10 +1452,11 @@ real(wp), dimension(:,:),         intent(in   ) :: play, &   ! layer pressures [
                              tlay      ! layer temperatures [K]; (ncol,nlay)
 type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
 ! Interpolation coefficients for use in internal source function
-integer,     dimension(                       ncol, nlay), intent(  out) :: jtemp, jpress
-integer,     dimension(2,    get_nflav(this),ncol, nlay), intent(  out) :: jeta
-logical(wl), dimension(                       ncol, nlay), intent(  out) :: tropo
-real(wp),    dimension(2,2,2,get_nflav(this),ncol, nlay), intent(  out) :: fmajor
+integer,     dimension(                       ncol, nlay), intent(  out)  :: jtemp, jpress
+integer,     dimension(2,    get_nflav(this),ncol, nlay), intent(  out)   :: jeta
+logical(wl), dimension(                       ncol, nlay), intent(  out)  :: tropo
+real(wp),    dimension(2,2,2,get_nflav(this),ncol, nlay), intent(  out)   :: fmajor
+real(wp),    dimension(                       ncol, nlay), intent(  out)  :: play_log
 character(len=128)                                         :: error_msg
 
 ! Optional inputs
@@ -1587,7 +1593,7 @@ call interpolation(               &
 	fmajor,fminor,&
 	col_mix,      &
 	tropo,        &
-	jeta,jpress)
+	jeta,jpress,play_log)
 !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
 !$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
 !$acc exit data delete(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
@@ -1601,9 +1607,9 @@ end function compute_interp_coeffs
 function compute_taus_pfracs_nnlw(this,                         &
     ncol, nlay, ngpt, nband,                                    &
     itropo, istrato,                                            &
-    play, plev, tlay, gas_desc,                                 &
+    play, play_log, plev, tlay, gas_desc,                       &
     optical_props, pfrac,                                       &
-    net_tau_tropo, net_tau_strato, net_pfrac,                   &
+    neural_nets,                                                &
     nn_inputs, col_dry) result(error_msg)
 
 class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
@@ -1611,13 +1617,15 @@ integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
 integer,  dimension(ncol,2),          intent(in   ) ::  itropo, istrato
 
 real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                                                        play_log, &
                                                         plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
                                                         tlay      ! layer temperatures [K]; (ncol,nlay)
 
 type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
 class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
 
-type(network_type), intent(inout)                   :: net_tau_tropo, net_tau_strato, net_pfrac
+type(network_type), dimension(:),     intent(inout) :: neural_nets
+! type(network_type), intent(inout)                   :: net_tau_tropo, net_tau_strato, net_pfrac
 real(wp), dimension(get_ngas(this)+1,nlay,ncol), &
                                       intent(out)   :: nn_inputs 
 real(wp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac ! Planck fractions predicted by NN
@@ -1630,7 +1638,7 @@ real(wp), dimension(:,:), intent(in   ), &
 ! ----------------------------------------------------------
 ! Local variables
 real(wp), dimension(ngpt,nlay,ncol) :: tau, tau_rayleigh  ! absorption, Rayleigh scattering optical depths
-integer :: igas, ilay, idx_h2o, icol ! index of some gases
+integer :: igas, ilay, idx_h2o, icol, inet ! index of some gases
 ! Number of molecules per cm^2
 real(wp), dimension(ncol,nlay), target  :: col_dry_arr
 real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
@@ -1643,28 +1651,26 @@ real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts fo
 integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
 ! ----------------------------------------------------------
 ! Neural network input scaling coefficients .. should probably be loaded from a file
-! real(wp), dimension(21) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, &
-!     2.10885294E2_wp, 1.34087265E-1_wp, 1.10345914E-1_wp, 3.83904511E-2_wp,  & 
-!     5.73727873E-1_wp, 7.25674444E4_wp, 2.71173092E5_wp, 1.94999465E-5_wp,   &
-!     5.62522302E-5_wp, 1.29234921E-4_wp, 5.32654220E-5_wp, 3.10007757E-5_wp, & 
-!     4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
+
+! real(wp), dimension(19) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, 2.10885294E2_wp, 1.34087265E-1_wp, &
+!     1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
+!     5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
 !     2.56267690E-5_wp, 2.48434096E2_wp, 3.62281942E4_wp /)
 
-! real(wp), dimension(21) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
-! 9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 6.02355504E4_wp,           &
-! 2.25094023E5_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp,           &
-! 6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp,           &
-! 2.38989050E-6_wp, 6.06216452E-5_wp, 2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp            /)
+! real(wp), dimension(19) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
+!     9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp, &
+!     6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp, 2.38989050E-6_wp, 6.06216452E-5_wp, &
+!     2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp /)
 
 real(wp), dimension(19) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, 2.10885294E2_wp, 1.34087265E-1_wp, &
-    1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
-    5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
-    2.56267690E-5_wp, 2.48434096E2_wp, 3.62281942E4_wp /)
+1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
+5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
+2.56267690E-5_wp, 2.48434096E2_wp, 9.05813519_wp /)
 
 real(wp), dimension(19) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
     9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp, &
     6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp, 2.38989050E-6_wp, 6.06216452E-5_wp, &
-    2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp /)
+    2.52634071E-5_wp,  2.89428695E1_wp, 2.47024725_wp /)
 
 
 real(wp) :: testparam   = 0.5001566410_wp
@@ -1768,19 +1774,26 @@ end do
 do ilay = 1, nlay
     ! 8th and 9th gases are constants (oxygen and nitrogen), exclude these. Note col_gas index starts from 0 (dry air)
     do igas = 1, 7
+      ! print *, this%gas_names(igas-1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
     end do
     do igas = 8, ngas-1
+      ! print *, this%gas_names(igas+1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas+1) - input_scaler_means(igas)) / input_scaler_std(igas)
       ! print *, "nn_input:", igas, "is gas:", this%gas_names(igas+1)
     end do
     ! Last two inputs are temperature and pressure
     nn_inputs(igas,ilay,:) = (tlay(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
     igas = igas + 1
-    nn_inputs(igas,ilay,:) = (play(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
+    nn_inputs(igas,ilay,:) = (play_log(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
 
 end do
 
+print *, "siz:", size(nn_inputs,1)
+
+! do igas = 1, ngas 
+!   print *, "ngas",igas,":",this%gas_names(igas)
+! end do
 ! do igas = 1,7 
 !   print *, "nn_input:", igas, "is gas:", this%gas_names(igas-1)
 ! end do
@@ -1792,27 +1805,8 @@ end do
 ! print *, "nn_input:", igas, "is pressure"
 
 
-! print *, 'number of gases:', ngas
-! igas = 0
-! print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', "dry air"//REPEAT(' ',15), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
-!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
-! do igas = 1, ngas
-!     print "(a6,i4, a3, a15,a18, e9.3, a22, f8.3)", 'igas:', igas, '= ', this%gas_names(igas), "maxval (raw):  ", maxval(col_gas(:,:,igas) ), &
-!       "maxval (nn-input):", maxval(nn_inputs(igas+1,:,:))
-! end do  
 
 call zero_array(ngpt, nlay, ncol, tau)
-
-    ! load models (Keras model weights which are saved to ASCII)
-! print *, 'loading tau-tropo model from ', modelfile_tau_tropo
-! call net_tau_tropo % load(modelfile_tau_tropo)
-
-! print *, 'loading tau-strato model from ', modelfile_tau_strato
-! call net_tau_strato % load(modelfile_tau_strato)
-
-! print *, 'loading planck fraction model from ', modelfile_source
-! call net_pfrac % load(modelfile_source)
-
 
 ! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
 
@@ -1823,23 +1817,37 @@ call system_clock(iTime1)
     ret =  gptlstart('predict_nn_lw')
 #endif
   
-! If NN models have the same amount of neurons in each layer, use an optimized kernel..
-neurons_first = size(net_tau_tropo % layers(1) % w_transposed, 1)
-neurons_last = size(net_tau_tropo % layers(size(net_tau_tropo%layers)-1) % w_transposed, 2)
+  !   if (abs(testparam-doubleparam)>1.0d-15 ) then
+  !     print *, "using BLAS, single precision (SGEMV)"
+  !     call change_kernel(net_pfrac,     output_sgemv_flatmodel, output_sgemm_flatmodel)
+  !     call change_kernel(net_tau_tropo, output_sgemv_flatmodel, output_sgemm_flatmodel)
+  !     call change_kernel(net_tau_strato,output_sgemv_flatmodel, output_sgemm_flatmodel)
+  !   else
+  !     print *, "using BLAS, double precision (DGEMV)"
+  !     ! call change_kernel(net_pfrac,     output_dgemv_flatmodel)
+  !     ! call change_kernel(net_tau_tropo, output_dgemv_flatmodel)
+  !     ! call change_kernel(net_tau_strato,output_dgemv_flatmodel)
+  !   end if
 
-if (neurons_first == neurons_last) then
-  print *, "Flat model"
-  call change_kernel(net_pfrac,     output_opt_flatmodel, output_sgemm_flatmodel)
-  call change_kernel(net_tau_tropo, output_opt_flatmodel, output_sgemm_flatmodel)
-  call change_kernel(net_tau_strato,output_opt_flatmodel, output_sgemm_flatmodel)
-end if
+do inet = 1, size(neural_nets)
+  ! If NN models have the same amount of neurons in each layer, use an optimized kernel..
+  neurons_first = size(neural_nets(inet) % layers(1) % w_transposed, 1)
+  neurons_last = size(neural_nets(inet) % layers(size(neural_nets(inet)%layers)-1) % w_transposed, 2)
+  if (neurons_first == neurons_last) then
+    print *, "Flat model"
+    call change_kernel(neural_nets(inet), output_opt_flatmodel, output_sgemm_flatmodel)
+  end if
+end do
+
+
+
 
 if (flatten_dims == 2) then
   print *, "Flattening both levels and columns, using SGEMM for matrix-matrix computations"
   call predict_nn_lw_flattenall(                  &
                         ncol,nlay,ngpt, ngas,     &  ! dimensions
                         nn_inputs,                &  ! data inputs
-                        net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                        neural_nets,              &  ! NN models (input)
                         tau, pfrac)    ! outputs
 
 else if (flatten_dims == 1) then
@@ -1849,31 +1857,17 @@ else if (flatten_dims == 1) then
                         ncol,nlay,ngpt, ngas,     &  ! dimensions
                         itropo, istrato,          &
                         nn_inputs,                &  ! data inputs
-                        net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                        neural_nets,              &  ! NN models (input)
                         tau, pfrac)    ! outputs
 
 else
   print *, "Predicting one layer at a time"
-  if (use_blas) then
-    if (abs(testparam-doubleparam)>1.0d-15 ) then
-      print *, "using BLAS, single precision (SGEMV)"
-      call change_kernel(net_pfrac,     output_sgemv_flatmodel, output_sgemm_flatmodel)
-      call change_kernel(net_tau_tropo, output_sgemv_flatmodel, output_sgemm_flatmodel)
-      call change_kernel(net_tau_strato,output_sgemv_flatmodel, output_sgemm_flatmodel)
-    else
-      print *, "using BLAS, double precision (DGEMV)"
-      ! call change_kernel(net_pfrac,     output_dgemv_flatmodel)
-      ! call change_kernel(net_tau_tropo, output_dgemv_flatmodel)
-      ! call change_kernel(net_tau_strato,output_dgemv_flatmodel)
-    end if
-  end if
-
 
   call predict_nn_lw(                           &
                       ncol,nlay,ngpt, ngas,     &  ! dimensions
                       itropo, istrato,          &  ! data inputs
                       nn_inputs,                &  ! data inputs
-                      net_tau_tropo, net_tau_strato, net_pfrac,      &  ! NN models (input)
+                      neural_nets,              &  ! NN models (input)
                       tau, pfrac)    ! outputs
 end if
 
@@ -1892,6 +1886,7 @@ if (error_msg /= '') return
 
 ! Combine optical depths and reorder for radiative transfer solver.
 call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
+
 
 #ifdef USE_TIMING
     ret =  gptlstop('combine_and_reorder')

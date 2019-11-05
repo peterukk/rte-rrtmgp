@@ -27,7 +27,7 @@ module mo_rfmip_io
   use mo_gas_concentrations, &
                         only: ty_gas_concs
   use mo_util_string,   only: lower_case, string_in_array, string_loc_in_array
-  use mo_simple_netcdf, only: read_field, write_field, get_dim_size
+  use mo_simple_netcdf, only: read_field, write_field, get_dim_size, get_var_size
   use netcdf
   implicit none
   private
@@ -355,12 +355,14 @@ contains
                                 intent(  out) :: gas_conc_array
 
     ! ---------------------------
-    integer :: ncid
+    integer :: ncid, varid, ndims
     integer :: nblocks
     integer :: b, g
     integer,  dimension(:,:),   allocatable :: exp_num
     real(wp), dimension(:),     allocatable :: gas_conc_temp_1d
+    real(wp), dimension(:,:),   allocatable :: gas_conc_temp_2d
     real(wp), dimension(:,:,:), allocatable :: gas_conc_temp_3d
+    character(len=32) :: varName
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) &
       call stop_on_err("read_and_block_lw_bc: Haven't read problem size yet.")
@@ -370,6 +372,8 @@ contains
     allocate(gas_conc_array(nblocks))
     ! Experiment index for each colum
     exp_num = reshape(spread([(b, b = 1, nexp_l)], 1, ncopies = ncol_l), shape = [blocksize, nblocks], order=[1,2])
+    
+    print *, "shape(exp_num):", shape(exp_num)
 
     if(nf90_open(trim(fileName), NF90_NOWRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("read_and_block_gases_ty: can't find file " // trim(fileName))
@@ -386,6 +390,7 @@ contains
                                shape = [nlay_l, blocksize, nblocks]) * read_scaling(ncid, "ozone")
     do b = 1, nblocks
       call stop_on_err(gas_conc_array(b)%set_vmr('o3', transpose(gas_conc_temp_3d(:,:,b))))
+      !                                         nlay, ncol, nexp -> nlay, blocksize, nblock -> blocksize, nlay
     end do
 
     !
@@ -395,22 +400,53 @@ contains
       !
       ! Skip 3D fields above, also NO2 since RFMIP doesn't have this
       !
+      varName = trim(names_in_file(g)) // "_GM"
+
+      ! print *, varName
+
       if(string_in_array(gas_names(g), ['h2o', 'o3 ', 'no2'])) cycle
 
-      ! Read the values as a function of experiment
-      gas_conc_temp_1d = read_field(ncid, trim(names_in_file(g)) // "_GM", nexp_l) * read_scaling(ncid, trim(names_in_file(g)) // "_GM")
+      if(nf90_inq_varid(ncid, varName, varid) /= NF90_NOERR) &
+      call stop_on_err("get_var_size: can't find variable " // varName)
+      if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
+      call stop_on_err("get_var_size: can't get information for variable " // varName)
 
-      do b = 1, nblocks
-        ! Does every value in this block belong to the same experiment?
-        if(all(exp_num(1,b) == exp_num(2:,b))) then
-          ! Provide a scalar value
-          call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), gas_conc_temp_1d(exp_num(1,b))))
-        else
-          ! Create 2D field, blocksize x nlay, with scalar values from each experiment
+      ! print *, "ndims:", ndims
+
+      ! print *, "get_var_size:", get_var_size(ncid, varName, ndims)
+
+      ! Read the values as a function of experiment
+      if (ndims == 2) then  ! this is a 2d field ncol*nexp.  
+        ! need a 2d field (blocksize, nlay) 
+        ! (ncol, nexp) --> -> (blocksize, nblocks) --> spread 1 block -> (blocksize, nlay)
+        gas_conc_temp_2d = read_field(ncid, varName, ncol_l, nexp_l) * read_scaling(ncid, varName)
+        gas_conc_temp_2d = reshape(gas_conc_temp_2d, shape = [blocksize, nblocks])
+
+        do b = 1, nblocks
           call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), &
-          spread(gas_conc_temp_1d(exp_num(:,b)), 2, ncopies = nlay_l)))
-        end if
-      end do
+                                  spread(gas_conc_temp_2d(:,b), dim=2, ncopies=nlay_l) ))
+        end do
+        ! print *, "ho"
+
+      else
+        ! print *, "hey"
+        gas_conc_temp_1d = read_field(ncid, varName, nexp_l) * read_scaling(ncid, varName)
+        ! print *, "shape(gas_temp_1d):", shape(gas_conc_temp_1d)
+
+        do b = 1, nblocks
+          ! Does every value in this block belong to the same experiment?
+          if(all(exp_num(1,b) == exp_num(2:,b))) then
+            ! Provide a scalar value
+            
+            call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), gas_conc_temp_1d(exp_num(1,b))))
+          else
+            ! Create 2D field, blocksize x nlay, with scalar values from each experiment
+            call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), &
+            spread(gas_conc_temp_1d(exp_num(:,b)), 2, ncopies = nlay_l)))
+          end if
+        end do
+    end if 
+    
 
     end do
     ncid = nf90_close(ncid)

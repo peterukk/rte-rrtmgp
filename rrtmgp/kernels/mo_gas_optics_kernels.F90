@@ -30,7 +30,7 @@ contains
                 temp_ref_min,temp_ref_delta,press_ref_trop_log, &
                 vmr_ref,                                        &
                 play,tlay,col_gas,                              &
-                jtemp,fmajor,fminor,col_mix,tropo,jeta,jpress) bind(C, name="interpolation")
+                jtemp,fmajor,fminor,col_mix,tropo,jeta,jpress,play_log) bind(C, name="interpolation")
     ! input dimensions
     integer,                            intent(in) :: ncol,nlay
     integer,                            intent(in) :: ngas,nflav,neta,npres,ntemp
@@ -53,6 +53,7 @@ contains
     real(wp),    dimension(2,    nflav,ncol,nlay), intent(out) :: col_mix
     real(wp),    dimension(2,2,2,nflav,ncol,nlay), intent(out) :: fmajor
     real(wp),    dimension(2,2,  nflav,ncol,nlay), intent(out) :: fminor
+    real(wp),    dimension(ncol,nlay),             intent(out) :: play_log
     ! -----------------
     ! local
     real(wp), dimension(ncol,nlay) :: ftemp, fpress ! interpolation fraction for temperature, pressure
@@ -74,12 +75,13 @@ contains
         ftemp(icol,ilay) = (tlay(icol,ilay) - temp_ref(jtemp(icol,ilay))) / temp_ref_delta
 
         ! index and factor for pressure interpolation
-        locpress = 1._wp + (log(play(icol,ilay)) - press_ref_log(1)) / press_ref_log_delta
+        play_log(icol,ilay) = log(play(icol,ilay))
+        locpress = 1._wp + (play_log(icol,ilay) - press_ref_log(1)) / press_ref_log_delta
         jpress(icol,ilay) = min(npres-1, max(1, int(locpress)))
         fpress(icol,ilay) = locpress - float(jpress(icol,ilay))
 
         ! determine if in lower or upper part of atmosphere
-        tropo(icol,ilay) = log(play(icol,ilay)) > press_ref_trop_log
+        tropo(icol,ilay) = play_log(icol,ilay) > press_ref_trop_log
       end do
     end do
 
@@ -224,6 +226,8 @@ contains
           col_mix,fmajor,            &
           jeta,tropo,jtemp,jpress,   &
           tau)
+
+    
     ! ---------------------
     ! Minor Species - lower
     ! ---------------------
@@ -698,9 +702,9 @@ contains
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
     real(wp), dimension(ncol,nlay,ngpt),          intent(in) :: pfrac
 
-    real(wp), dimension(ncol,     ngpt), intent(inout) :: sfc_src
-    real(wp), dimension(ncol,nlay,ngpt), intent(inout) :: lay_src
-    real(wp), dimension(ncol,nlay,ngpt), intent(inout) :: lev_src_inc, lev_src_dec
+    real(wp), dimension(ncol,     ngpt),          intent(inout) :: sfc_src
+    real(wp), dimension(ncol,nlay,ngpt),          intent(inout) :: lay_src
+    real(wp), dimension(ncol,nlay,ngpt),          intent(inout) :: lev_src_inc, lev_src_dec
     ! -----------------
     ! local
     integer  :: ilay, icol, igpt, ibnd
@@ -767,108 +771,118 @@ contains
    ! ---------------------------------------------------------
 
   subroutine predict_nn_lw(                 &
-                    ncol, nlay, ngpt, ngas,       & 
-                    itropo, istrato,              &
-                    nn_inputs,                    &
-                    net_tau_tropo, net_tau_strato, net_pfrac,          &
-                    tau_gas, pfrac)
+                    ncol, nlay, ngpt, ngas, & 
+                    itropo, istrato,        &
+                    nn_inputs,              &
+                    neural_nets,            &
+                    tau, pfrac)
     ! inputs
     integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
     integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
     real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
     ! neural network models
-    type(network_type),                       intent(in)    :: net_tau_tropo, net_tau_strato, net_pfrac
+    type(network_type), dimension(:),         intent(in)    :: neural_nets
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out)   :: pfrac, tau_gas
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out)   :: pfrac, tau
 
     ! local
     integer                                                 :: ilay, icol
 
     real(wp) :: eps_neural = 0.005_wp 
 
-    do icol = 1, ncol
-      do ilay = 1, nlay
-      ! do ilay = istrato(icol, 1), istrato(icol, 2)
-        ! PREDICT PLANCK FRACTIONS
-        call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+    if (size(neural_nets) == 2 ) then
+      do icol = 1, ncol
+        do ilay = 1, nlay
+        ! do ilay = istrato(icol, 1), istrato(icol, 2)
+          ! PREDICT PLANCK FRACTIONS
+          call neural_nets(1) % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+          pfrac(:,ilay,icol) =  max(0.0_wp,(pfrac(:,ilay,icol)**2))
+          ! PREDICT OPTICAL DEPTHS
+          call neural_nets(2) % nn_kernel(nn_inputs(:,ilay,icol), tau(:,ilay,icol))
+          ! Scaling
+          ! tau(:,ilay,icol) = exp(tau(:,ilay,icol)) - eps_neural
+          tau(:,ilay,icol)    = max(0.0_wp, (tau(:,ilay,icol)**8))
+        end do   ! layer
+      end do ! column
+    
+    else
+      print *, "jo"
+      do icol = 1, ncol
+        do ilay = istrato(icol, 1), istrato(icol, 2)
+          ! PREDICT PLANCK FRACTIONS
+          call neural_nets(1) % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+          pfrac(:,ilay,icol) = max(0.0_wp,(pfrac(:,ilay,icol)**2))
+          ! PREDICT OPTICAL DEPTHS
+          call neural_nets(2) % nn_kernel(nn_inputs(:,ilay,icol), tau(:,ilay,icol))
+          tau(:,ilay,icol)    = max(0.0_wp, (tau(:,ilay,icol)**8))
+        end do   ! layer
+        do ilay = itropo(icol, 1), itropo(icol, 2)
+          ! PREDICT PLANCK FRACTIONS
+          call neural_nets(1) % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
+          pfrac(:,ilay,icol)  = max(0.0_wp,(pfrac(:,ilay,icol)**2))
+          ! PREDICT OPTICAL DEPTHS
+          call neural_nets(3) % nn_kernel(nn_inputs(:,ilay,icol), tau(:,ilay,icol))
+          tau(:,ilay,icol)    = max(0.0_wp, (tau(:,ilay,icol)**8))
+        end do   ! layer
+      end do     ! column
 
-        ! PREDICT OPTICAL DEPTHS
-        call net_tau_strato % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
-        ! Scaling
-        ! tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural
-        tau_gas(:,ilay,icol)    = tau_gas(:,ilay,icol)**8
-        tau_gas(:,ilay,icol)    = max(0.0_wp, tau_gas(:,ilay,icol))
-      end do   ! layer
-    end do
-
-    !   do ilay = itropo(icol, 1), itropo(icol, 2)
-    !     ! PREDICT PLANCK FRACTIONS
-    !     call net_pfrac % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
-
-    !     ! PREDICT OPTICAL DEPTHS
-    !     call net_tau_tropo % nn_kernel(nn_inputs(:,ilay,icol), tau_gas(:,ilay,icol))
-    !     ! Scaling
-    !     tau_gas(:,ilay,icol) = exp(tau_gas(:,ilay,icol)) - eps_neural 
-    !     tau_gas(:,ilay,icol) = max(0.0_wp, tau_gas(:,ilay,icol))
-    !   end do   ! layer
-    ! end do     ! column
+    end if
 
   end subroutine predict_nn_lw
 
-  subroutine predict_nn_lw_flattenlevs(    &
-                    ncol, nlay, ngpt, ngas,      & 
-                    itropo, istrato,             &
-                    nn_inputs,                    &
-                    net_tau_tropo, net_tau_strato, net_pfrac,          &
-                    tau_gas, pfrac)
+  subroutine predict_nn_lw_flattenlevs(     &
+                    ncol, nlay, ngpt, ngas, & 
+                    itropo, istrato,        &
+                    nn_inputs,              &
+                    neural_nets,            &
+                    tau, pfrac)
     ! inputs
     integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
     integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
     real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
     ! The models should also be inputs
-    type(network_type),                       intent(in)    :: net_tau_tropo, net_tau_strato, net_pfrac
-    ! type(network_type), optional,             intent(inout) :: net_tau_strato
+    type(network_type), dimension(:),         intent(in)    :: neural_nets
+
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau
     ! local
     integer  :: ilay, icol, istart, iend
     real(wp) :: eps_neural = 0.005_wp 
 
-    if (net_tau_tropo % layers(1) % w(1,1) == net_tau_strato % layers(1) % w(1,1) ) then
-    print *, "same model"
+    if (size(neural_nets) == 2 ) then
+    ! print *, "same model"
 
       ! Predict Planck fractions
       do icol = 1, ncol
-        call net_pfrac % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
-
+        call neural_nets(1) % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
+        pfrac(:,:,icol) = max(0.0_wp,(pfrac(:,:,icol)**2))
       ! Predict optical depths
-        call net_tau_tropo % nn_kernel_m(nn_inputs(:,:,icol), tau_gas(:,:,icol))
-        tau_gas(:,:,icol) = tau_gas(:,:,icol)**8
-        !tau_gas(:,:,icol) = exp(tau_gas(:,:,icol)) - eps_neural
-        tau_gas(:,:,icol) = max(0.0_wp, tau_gas(:,:,icol))
+        call neural_nets(2) % nn_kernel_m(nn_inputs(:,:,icol), tau(:,:,icol))
+        tau(:,:,icol) = max(0.0_wp, (tau(:,:,icol)**8))
       end do
     
 
     else
+    print *, "boo"
+
     ! Separate optical depth models for troposphere and stratosphre
 
       do icol = 1, ncol
-        call net_pfrac % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
+        call neural_nets(1) % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
+        pfrac(:,:,icol) = max(0.0_wp,(pfrac(:,:,icol)**2))
 
         istart  = istrato(icol, 1)
         iend    = istrato(icol, 2)
-        call net_tau_strato  % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
+        call neural_nets(2)  % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau(:,istart:iend,icol))
 
-        tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
-        tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
+        tau(:,istart:iend,icol) = max(0.0_wp, (tau(:,istart:iend,icol)**8))
 
         istart  = itropo(icol, 1)
         iend    = itropo(icol, 2)
-        call net_tau_tropo   % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau_gas(:,istart:iend,icol))
+        call neural_nets(3)  % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau(:,istart:iend,icol))
 
-        tau_gas(:,istart:iend,icol) = exp(tau_gas(:,istart:iend,icol)) - eps_neural 
-        tau_gas(:,istart:iend,icol) = max(0.0_wp, tau_gas(:,istart:iend,icol))
+        tau(:,istart:iend,icol) = max(0.0_wp, (tau(:,istart:iend,icol)**8))
 
       end do     ! column
 
@@ -876,43 +890,93 @@ contains
   
   end subroutine predict_nn_lw_flattenlevs
 
+  ! subroutine predict_nn_lw_flattenlevs_majmin(     &
+  !                   ncol, nlay, ngpt, ngas, & 
+  !                   itropo, istrato,        &
+  !                   nn_inputs,              &
+  !                   net_pfrac,              &
+  !                   net_tau_maj_tropo, net_tau_maj_strato,   &
+  !                   net_tau_min_tropo, net_tau_min_strato,   &
+  !                   tau, pfrac)
+  !   ! inputs
+  !   integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
+  !   integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
+  !   real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
+  !   ! The models should also be inputs
+  !   type(network_type),                       intent(in)    :: net_pfrac,  &
+  !             net_tau_maj_tropo, net_tau_maj_strato, net_tau_min_tropo, net_tau_min_strato
+  !   ! outputs
+  !   real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau
+  !   ! local
+  !   real(wp), dimension(ngpt,nlay,ncol)   ::  tau_minor
+  !   integer  :: ilay, icol, istart, iend
+  !   real(wp) :: eps_neural = 0.005_wp 
+
+
+  !   ! Separate optical depth models for troposphere and stratosphre
+
+  !   do icol = 1, ncol
+  !     call net_pfrac % nn_kernel_m(nn_inputs(:,:,icol), pfrac(:,:,icol))
+
+  !     istart  = istrato(icol, 1)
+  !     iend    = istrato(icol, 2)
+
+  !     call net_tau_min_strato  % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau_minor(:,istart:iend,icol))
+  !     tau_minor(:,istart:iend,icol) = max(0.0_wp(tau_minor(:,istart:iend,icol)**8))
+
+  !     call net_tau_maj_strato  % nn_kernel_m(nn_inputs_maj(:,istart:iend,icol), tau(:,istart:iend,icol))
+  !     tau(:,istart:iend,icol) = max(0.0_wp(tau(:,istart:iend,icol)**8))
+  !     tau(:,istart:iend,icol) = tau(:,istart:iend,icol) + tau_minor
+
+  !     istart  = itropo(icol, 1)
+  !     iend    = itropo(icol, 2)
+
+  !     call net_tau_min_tropo  % nn_kernel_m(nn_inputs(:,istart:iend,icol), tau_minor(:,istart:iend,icol))
+  !     tau_minor(:,istart:iend,icol) = max(0.0_wp(tau_minor(:,istart:iend,icol)**8))
+
+  !     call net_tau_maj_tropo  % nn_kernel_m(nn_inputs_maj(:,istart:iend,icol), tau(:,istart:iend,icol))
+  !     tau(:,istart:iend,icol) = max(0.0_wp(tau(:,istart:iend,icol)**8))
+  !     tau(:,istart:iend,icol) = tau(:,istart:iend,icol) + tau_minor
+
+  !   end do     ! column
+
+  ! end subroutine predict_nn_lw_flattenlevs_majmin
+
   subroutine predict_nn_lw_flattenall(            &
                     ncol, nlay, ngpt, ngas,       & 
                     nn_inputs,                    &
-                    net_tau_tropo, net_tau_strato, net_pfrac,          &
-                    tau_gas, pfrac)
+                    neural_nets,                  &
+                    tau, pfrac)
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
     real(wp), dimension(ngas+1,nlay,ncol),    intent(in) :: nn_inputs 
     ! The models should also be inputs
-    type(network_type),                       intent(in) :: net_tau_tropo, net_tau_strato, net_pfrac
+    type(network_type), dimension(:),         intent(in) :: neural_nets
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau_gas
+    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau
 
     ! local
     real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
     integer                             :: ilay, icol
-
-    real(wp) :: eps_neural = 0.005_wp 
-
     ! Process all the data in a single neural network call (big matrix-matrix multiplication done by SGEMM)
     ! This assumes the same neural network model can be used for the stratosphere and troposphere
 
+    if (size(neural_nets) == 3 ) then
+      print *, "Kernel flattenall only works with a single optical depth model, without trop-strat separation!"
+    end if 
   ! PREDICT PLANCK FRACTIONS
     print *, "pfrac"
-    call net_pfrac % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output)
+    call neural_nets(1) % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output)
     pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
+    pfrac = max(0.0_wp, pfrac**2)
 
     print *, "tau"
-
-    call net_tau_tropo % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
+    call neural_nets(2) % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
     !Scaling
-    tau_gas = reshape(tmp_output,(/ngpt,nlay,ncol/))       
-    ! tau_gas = exp(tau_gas) - eps_neural 
-    tau_gas = tau_gas**8
-    ! call fastexp(tau_gas,eps_neural)
-    tau_gas = max(0.0_wp, tau_gas)
+    tau = reshape(tmp_output,(/ngpt,nlay,ncol/))       
+    ! tau = exp(tau) - eps_neural 
+    tau = max(0.0_wp, tau**8)
 
   end subroutine predict_nn_lw_flattenall
   
