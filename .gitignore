@@ -22,6 +22,7 @@ examples/rfmip-clear-sky/rrtmgp_rfmip_lw
 examples/rfmip-clear-sky/rrtmgp_rfmip_sw
 
 gprof*
+*.out
 =======
 # Don't commit specific Makefile variants
 Makefile.libs
