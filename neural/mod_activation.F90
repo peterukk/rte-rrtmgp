@@ -83,4 +83,14 @@ contains
     x = x / (abs(x) + 1)
   end subroutine
 
+  pure subroutine linear(x)
+    real(wp), intent(inout) :: x(:)
+    x = x
+  end subroutine
+
+  pure subroutine linear_m(x)
+    real(wp), intent(inout) :: x(:,:)
+    x = x
+  end subroutine
+
 end module mod_activation
