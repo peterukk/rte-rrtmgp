@@ -23,15 +23,16 @@
 !
 ! -------------------------------------------------------------------------------------------------
 module mo_rfmip_io
-  use mo_rte_kind,   only: wp
+  use mo_rte_kind,      only: wp
   use mo_gas_concentrations, &
                         only: ty_gas_concs
-  use mo_util_string,   only: lower_case, string_in_array, string_loc_in_array
-  use mo_simple_netcdf, only: read_field, write_field, get_dim_size, get_var_size
+  use mo_rrtmgp_util_string, &
+                        only: lower_case, string_in_array, string_loc_in_array
+  use mo_simple_netcdf, only: read_field, write_field, get_dim_size
   use netcdf
   implicit none
   private
-  public :: read_kdist_gas_names, determine_gas_names, read_size, read_and_block_pt, read_and_block_pt2, &
+  public :: read_kdist_gas_names, determine_gas_names, read_size, read_and_block_pt, &
             read_and_block_sw_bc, read_and_block_lw_bc, read_and_block_gases_ty, &
             unblock_and_write, unblock_and_write_3D,  unblock_and_write_3D_notrans
 
@@ -114,52 +115,6 @@ contains
 
     ncid = nf90_close(ncid)
   end subroutine read_and_block_pt
-
-  subroutine read_and_block_pt2(fileName, blocksize, &
-                               p_lay, p_lev, t_lay)
-    character(len=*),           intent(in   ) :: fileName
-    integer,                    intent(in   ) :: blocksize
-    real(wp), dimension(:,:,:), allocatable, & ! [blocksize, nlay/+1, nblocks]
-                                intent(  out) :: p_lay, p_lev, t_lay
-    ! ---------------------------
-    integer :: ncid
-    integer :: b, nblocks
-    real(wp), dimension(:,:  ), allocatable :: temp2d
-    real(wp), dimension(:,:,:), allocatable :: temp3d
-    ! ---------------------------
-    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("read_and_block_pt: Haven't read problem size yet.")
-    if(mod(ncol_l*nexp_l, blocksize) /= 0 ) call stop_on_err("read_and_block_pt: number of columns doesn't fit evenly into blocks.")
-    nblocks = (ncol_l*nexp_l)/blocksize
-    allocate(p_lay(blocksize, nlay_l,   nblocks), t_lay(blocksize, nlay_l,   nblocks), &
-             p_lev(blocksize, nlay_l+1, nblocks))
-
-    if(nf90_open(trim(fileName), NF90_NOWRITE, ncid) /= NF90_NOERR) &
-      call stop_on_err("read_and_block_pt: can't find file " // trim(fileName))
-    !
-    ! Read p, T data; reshape to suit RRTMGP dimensions
-    !
-    temp3d = reshape(spread(read_field(ncid, "pres_layer", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
-                     shape = [nlay_l, blocksize, nblocks])
-    do b = 1, nblocks
-      p_lay(:,:,b) = transpose(temp3d(:,:,b))
-    end do
-    temp3d = reshape(       read_field(ncid, "temp_layer", nlay_l,   ncol_l, nexp_l), &
-                     shape = [nlay_l, blocksize, nblocks])
-    do b = 1, nblocks
-      t_lay(:,:,b) = transpose(temp3d(:,:,b))
-    end do
-
-    deallocate(temp3d)
-    temp3d = reshape(spread(read_field(ncid, "pres_level", nlay_l+1, ncol_l),  dim = 3, ncopies = nexp_l), &
-                    shape = [nlay_l+1, blocksize, nblocks])
-    do b = 1, nblocks
-      p_lev(:,:,b) = transpose(temp3d(:,:,b))
-    end do
-    temp3d = reshape(       read_field(ncid, "temp_level", nlay_l+1, ncol_l, nexp_l), &
-                    shape = [nlay_l+1, blocksize, nblocks])
-
-    ncid = nf90_close(ncid)
-  end subroutine read_and_block_pt2
   !--------------------------------------------------------------------------------------------------------------------
   !
   ! Read and reshape shortwave boundary conditions
@@ -282,22 +237,32 @@ contains
           names_in_file(i) = conc_name(string_loc_in_array(names_in_file(i), chem_name))
       end do
     case (2)
-      num_gases = 5
+      num_gases = 6
       allocate(names_in_kdist(num_gases), names_in_file(num_gases))
-      names_in_kdist = ['co2  ', 'ch4  ', 'n2o  ', 'cfc12', 'cfc11']
+      !
+      ! Not part of the RFMIP specification, but oxygen is included because it's a major
+      !    gas in some bands in the SW
+      !
+      names_in_kdist = ['co2  ', 'ch4  ', 'n2o  ', 'o2   ', 'cfc12', 'cfc11']
       names_in_file =  ['carbon_dioxide', &
                         'methane       ', &
                         'nitrous_oxide ', &
+                        'oxygen        ', &
                         'cfc12         ', &
                         'cfc11eq       ']
     case (3)
-      num_gases = 5
+      num_gases = 6
       allocate(names_in_kdist(num_gases), names_in_file(num_gases))
-      names_in_kdist = ['co2    ', 'ch4    ', 'n2o    ', 'cfc12  ', &
-                       'hfc134a']
+      !
+      ! Not part of the RFMIP specification, but oxygen is included because it's a major
+      !    gas in some bands in the SW
+      !
+      names_in_kdist = ['co2    ', 'ch4    ', 'n2o    ', 'o2     ', 'cfc12  ', &
+                        'hfc134a']
       names_in_file =  ['carbon_dioxide', &
                         'methane       ', &
                         'nitrous_oxide ', &
+                        'oxygen        ', &
                         'cfc12eq       ', &
                         'hfc134aeq     ']
     case default
@@ -370,7 +335,6 @@ contains
       call stop_on_err("read_and_block_lw_bc: number of columns doesn't fit evenly into blocks.")
     nblocks = (ncol_l*nexp_l)/blocksize
     allocate(gas_conc_array(nblocks))
-
     !
     ! gas_names contains 'no2' which isn't available in the RFMIP files. We should remove it
     !   here but that's kinda hard, so we set its concentration to 0 below.
@@ -381,10 +345,10 @@ contains
     !
     ! Which gases are known to the k-distribution and available in the files?
     !
-    
+
     ! Experiment index for each colum
     exp_num = reshape(spread([(b, b = 1, nexp_l)], 1, ncopies = ncol_l), shape = [blocksize, nblocks], order=[1,2])
-    
+
     if(nf90_open(trim(fileName), NF90_NOWRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("read_and_block_gases_ty: can't find file " // trim(fileName))
     !
@@ -436,10 +400,8 @@ contains
           call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), &
                                   spread(gas_conc_temp_2d(:,b), dim=2, ncopies=nlay_l) ))
         end do
-        ! print *, "ho"
 
       else
-        ! print *, "hey"
         gas_conc_temp_1d = read_field(ncid, varName, nexp_l) * read_scaling(ncid, varName)
         ! print *, "shape(gas_temp_1d):", shape(gas_conc_temp_1d)
 
@@ -455,15 +417,16 @@ contains
             spread(gas_conc_temp_1d(exp_num(:,b)), 2, ncopies = nlay_l)))
           end if
         end do
-
+        ! 
         ! NO2 is the one gas known to the k-distribution that isn't provided by RFMIP
         !   It would be better to remove it from
         !
         do b = 1, nblocks
           call stop_on_err(gas_conc_array(b)%set_vmr('no2', 0._wp))
         end do
+
     end if 
-    
+ 
     end do
     ncid = nf90_close(ncid)
   end subroutine read_and_block_gases_ty
