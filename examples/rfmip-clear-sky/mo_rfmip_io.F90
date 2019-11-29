@@ -313,7 +313,7 @@ contains
     character(len=*),           intent(in   ) :: fileName
     integer,                    intent(in   ) :: blocksize
     character(len=*),  dimension(:), &
-                                intent(in   ) :: gas_names ! Names used by the k-distribution/gas concentration type
+                                intent(inout   ) :: gas_names ! Names used by the k-distribution/gas concentration type
     character(len=*),  dimension(:), &
                                 intent(in   ) :: names_in_file ! Corresponding names in the RFMIP file
     type(ty_gas_concs), dimension(:), allocatable, &
@@ -322,7 +322,7 @@ contains
     ! ---------------------------
     integer :: ncid, varid, ndims
     integer :: nblocks
-    integer :: b, g
+    integer :: b, g, ind
     integer,  dimension(:,:),   allocatable :: exp_num
     real(wp), dimension(:),     allocatable :: gas_conc_temp_1d
     real(wp), dimension(:,:),   allocatable :: gas_conc_temp_2d
@@ -338,7 +338,10 @@ contains
     !
     ! gas_names contains 'no2' which isn't available in the RFMIP files. We should remove it
     !   here but that's kinda hard, so we set its concentration to 0 below.
-    !
+    !  gas_names = gas_names(1:size(gas_names)-1)
+    !call strip(gas_names,"no2")
+    ! gas_names = REPLACE(gas_names,"no2","") 
+    !  print *, gas_names
     do b = 1, nblocks
       call stop_on_err(gas_conc_array(b)%init(gas_names))
     end do
@@ -430,6 +433,7 @@ contains
     end do
     ncid = nf90_close(ncid)
   end subroutine read_and_block_gases_ty
+
   !--------------------------------------------------------------------------------------------------------------------
   function read_scaling(ncid, varName)
     integer,          intent(in) :: ncid

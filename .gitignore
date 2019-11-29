@@ -10,7 +10,7 @@
 # Intel vectorization reports
 *.optrpt
 
-<<<<<<< HEAD
+
 timing.*
 
 examples/rfmip-clear-sky/outp_lw_RFMIP_1f1_NN.nc 
@@ -23,10 +23,10 @@ examples/rfmip-clear-sky/rrtmgp_rfmip_sw
 
 gprof*
 *.out
-=======
+
 # Don't commit specific Makefile variants
 Makefile.libs
 Makefile.conf
 
 src/
->>>>>>> upstream/master
+
