@@ -79,7 +79,7 @@ contains
 
     ! Local variables, no g-point dependency
     real(wp), dimension(ncol,nlay) :: tau_loc, &  ! path length (tau/mu)
-                                        trans,trans2       ! transmissivity  = exp(-tau)
+                                        trans       ! transmissivity  = exp(-tau)
     real(wp), dimension(ncol,nlay) :: source_dn, source_up
     real(wp), dimension(ncol     ) :: source_sfc, sfc_albedo
 
@@ -87,11 +87,6 @@ contains
 
     real(wp), parameter :: pi = acos(-1._wp)
     integer             :: ilev, igpt, top_level
-    !!!!!!!!!! EDITS !!!!!!!
-    real(wp), dimension(ncol,       ngpt) :: D_exp
-    real(wp), dimension(ncol,nlay,  ngpt) :: tau2          ! Absorption optical thickness []
-
-
     ! ------------------------------------
     ! Which way is up?
     ! Level Planck sources for upward and downward radiation
@@ -423,47 +418,6 @@ contains
       end do
     end do
   end subroutine lw_source_noscat
-
-  subroutine lw_source_noscat2(ncol, nlay, lay_source, lev_source_up, lev_source_dn, tau, trans, &
-                              source_dn, source_up) bind(C, name="lw_source_noscat2")
-    integer,                         intent(in) :: ncol, nlay
-    real(wp), dimension(ncol, nlay), intent(in) :: lay_source, & ! Planck source at layer center
-                                                   lev_source_up, & ! Planck source at levels (layer edges),
-                                                   lev_source_dn, & !   increasing/decreasing layer index
-                                                   tau,        & ! Optical path (tau/mu)
-                                                   trans         ! Transmissivity (exp(-tau))
-    real(wp), dimension(ncol, nlay), intent(out):: source_dn, source_up
-                                                                   ! Source function at layer edges
-                                                                   ! Down at the bottom of the layer, up at the top
-    ! --------------------------------
-    integer             :: icol, ilay
-    real(wp)            :: fact
-    real(wp), parameter :: tau_thresh = sqrt(epsilon(tau))
-    real(wp), dimension(ncol, nlay) :: tau2
-    ! ---------------------------------------------------------------
-    tau2 = max(epsilon(tau),tau)
-    tau2 = -1*log(tau2)
-    ! print *, tau2(:,10)
-    do ilay = 1, nlay
-      do icol = 1, ncol
-      !
-      ! Weighting factor. Use 2nd order series expansion when rounding error (~tau^2)
-      !   is of order epsilon (smallest difference from 1. in working precision)
-      !   Thanks to Peter Blossey
-      !
-      fact = merge((1._wp - trans(icol,ilay))/tau2(icol,ilay) - trans(icol,ilay), &
-                   tau2(icol, ilay) * ( 0.5_wp - 1._wp/3._wp*tau2(icol, ilay)   ), &
-                   tau2(icol, ilay) > tau_thresh)
-      !
-      ! Equation below is developed in Clough et al., 1992, doi:10.1029/92JD01419, Eq 13
-      !
-      source_dn(icol,ilay) = (1._wp - trans(icol,ilay)) * lev_source_dn(icol,ilay) + &
-                              2._wp * fact * (lay_source(icol,ilay) - lev_source_dn(icol,ilay))
-      source_up(icol,ilay) = (1._wp - trans(icol,ilay)) * lev_source_up(icol,ilay  ) + &
-                              2._wp * fact * (lay_source(icol,ilay) - lev_source_up(icol,ilay))
-      end do
-    end do
-  end subroutine lw_source_noscat2
   ! -------------------------------------------------------------------------------------------------
   !
   ! Longwave no-scattering transport

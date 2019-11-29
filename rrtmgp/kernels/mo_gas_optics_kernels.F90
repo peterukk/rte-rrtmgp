@@ -640,6 +640,7 @@ contains
     real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_src
     real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lay_src
     real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lev_src_inc, lev_src_dec
+    ! pfrac is an output so it can be saved for neural network training
     real(wp), dimension(ngpt,nlay,ncol), intent(out) :: pfrac
     ! -----------------
     ! local

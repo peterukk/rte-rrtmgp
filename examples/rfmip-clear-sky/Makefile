@@ -1,31 +1,15 @@
 #
 # Here set variables RRTMGP_DIR, NCHOME, NFHOME, TIME_DIR (for GPTL)
+#   or have those variables set in the environment
 #
-
-include Makefile.libs
-include $(RRTMGP_DIR)/Makefile.conf
-
-#use openmp
-OMPFLAG = -fopenmp
-
-# choose BLAS library: "blis", "openblas", "mkl"
-BLASLIB=blis
-
+-include Makefile.libs
+-include $(RRTMGP_DIR)/Makefile.conf
 #
-# Setting macro TIMING=yes uses routines from the General Purpose Timing Library
-#  https://jmrosinski.github.io/GPTL/
-#
-# TIMING=yes
-
-
-# RRTMGP library, module files
+# RRTMGP and NEURAL-FORTRAN libraries, module files
 #
 LDFLAGS   += -L$(RRTMGP_DIR)
-LIBS      += -lrrtmgp -lrte 
+LIBS      += -lrrtmgp -lrte -lneural
 FCINCLUDE += -I$(RRTMGP_DIR)
-
-# NEURAL-FORTRAN LIBRARY
-LIBS      += -lneural 
 
 #
 # netcdf library, module files
@@ -35,14 +19,30 @@ FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib  -L/usr/local/lib 
 LIBS      += -lnetcdff -lnetcdf 
 
+#
+# Setting macro TIMING=yes uses routines from the General Purpose Timing Library
+#  https://jmrosinski.github.io/GPTL/
+#
+# THIS IS SET UP IN THE MASTER MAKEFILE
+
+# Use OpenMP?
+ifeq ($(OMP),yes)
+	OMPFLAG = -fopenmp
+endif
+
+# 
+# Choose BLAS library: e.g. "blis", "openblas", "mkl"
+# 
+BLASLIB=blis
+
 ifeq ($(FC),ifort)
 	BLASLIB=mkl
 endif
 
 ifeq ($(BLASLIB),blis)
-	# BLIS_PREFIX = /usr/local
-	# BLIS_INCLUDE = $(BLIS_PREFIX)/include/blis
-	# BLIS_LIB    = $(BLIS_PREFIX)/lib
+	# BLIS_PREFIX 	= /usr/local
+	# BLIS_INCLUDE 	= $(BLIS_PREFIX)/include/blis
+	# BLIS_LIB   	= $(BLIS_PREFIX)/lib
 	# FCINCLUDE 	+= -I$(BLIS_INCLUDE)
 	# LDFLAGS   	+= -L$(BLIS_LIB) 
 	# LIBS      	+= -lm -lpthread -lblis
@@ -84,11 +84,11 @@ ADDITIONS = mo_simple_netcdf.o mo_rfmip_io.o mo_load_coefficients.o
 
 all: rrtmgp_rfmip_lw rrtmgp_rfmip_sw
 
-rrtmgp_rfmip_lw:   rrtmgp_rfmip_lw.o   $(ADDITIONS)
+rrtmgp_rfmip_lw:   rrtmgp_rfmip_lw.o   $(ADDITIONS) $(RRTMGP_DIR)/librte.a $(RRTMGP_DIR)/librrtmgp.a $(RRTMGP_DIR)/libneural.a
 
 rrtmgp_rfmip_lw.o: rrtmgp_rfmip_lw.F90 $(ADDITIONS)
 
-rrtmgp_rfmip_sw:   rrtmgp_rfmip_sw.o   $(ADDITIONS)
+rrtmgp_rfmip_sw:   rrtmgp_rfmip_sw.o   $(ADDITIONS) $(RRTMGP_DIR)/librte.a $(RRTMGP_DIR)/librrtmgp.a $(RRTMGP_DIR)/libneural.a
 
 rrtmgp_rfmip_sw.o: rrtmgp_rfmip_sw.F90 $(ADDITIONS)
 
