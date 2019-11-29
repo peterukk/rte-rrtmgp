@@ -1866,7 +1866,7 @@ do ilay = 1, nlay
       ! print *, this%gas_names(igas-1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
     end do
-    do igas = 8, ngas-1
+    do igas = 8, ngas-2 ! previously ngas-1, temporary fix to remove NO2
       ! print *, this%gas_names(igas+1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas+1) - input_scaler_means(igas)) / input_scaler_std(igas)
       ! print *, "nn_input:", igas, "is gas:", this%gas_names(igas+1)
