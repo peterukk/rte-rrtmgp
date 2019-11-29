@@ -67,6 +67,9 @@ contains
       case('tanh')
         self % activation => tanhf
         self % activation_m => tanhf_m
+      case('linear')
+        self % activation => linear
+        self % activation_m => linear_m
       case default
         self % activation => sigmoid
         self % activation_m => sigmoid_m

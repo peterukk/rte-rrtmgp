@@ -102,7 +102,7 @@ program rrtmgp_rfmip_lw
   !character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-1_none.nc', &
   !                      kdist_file = 'coefficients_lw.nc'
   character(len=132) :: rfmip_file,kdist_file
-  character(len=132) :: flxdn_file, flxup_file, output_file, input_file, flx_file, flx_file_ref
+  character(len=132) :: flxdn_file, flxup_file, output_file, input_file, flx_file, flx_file_ref, flx_file_lbl
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
   integer            :: b, icol, ibnd, igpt
@@ -116,7 +116,7 @@ program rrtmgp_rfmip_lw
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_games
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
-  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn
+  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn, rlu_lbl, rld_lbl
   real(wp), dimension(:,:,:,:),       allocatable :: tau_lw    ! block_size, nlay, ngpt, nblocks
   real(wp), dimension(:,:,:,:),       allocatable :: nn_inputs    !  ngas, nlay, block_size, nblocks   (ngas,nlay,ncol)
   real(wp), dimension(:,:,:,:),       allocatable :: planck_frac, lay_source    ! block_size, nlay, ngpt, nblocks
@@ -125,7 +125,7 @@ program rrtmgp_rfmip_lw
 
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
 
-  character (len = 60)                :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
+  character (len = 80)                :: modelfile_tau_tropo, modelfile_tau_strato, modelfile_source
   type(network_type)                  :: net_tau_tropo, net_tau_strato, net_pfrac
   type(network_type), dimension(3)    :: neural_nets
 
@@ -154,7 +154,7 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .true.
+  use_nn      = .false.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
@@ -164,12 +164,15 @@ program rrtmgp_rfmip_lw
   ! Where neural network model weights are located (required!)
   ! 
   !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-pow8-50-50-hyb-06.txt"
-  !modelfile_tau_tropo     = "../../neural/data/tautot-lw-trop-19-52-52.txt"
-  modelfile_tau_tropo     = "../../neural/data/tautot-lw-tropstrat-19-30-60.txt"
+  !modelfile_tau_tropo     = "../../neural/data/tautot-lw-trop-19-40-60.txt"
+  !modelfile_tau_tropo     = "../../neural/data/tautot-lw-tropstrat-19-64-48.txt"
+  modelfile_tau_tropo     = "../../neural/data/tautot-lw-tropstrat-19-48-48-48.txt"
+  modelfile_tau_tropo     = "../../neural/data/tautot-lw-tropstrat-19-48-48-48-relulast-pow4.txt"
+
+  !modelfile_tau_tropo     = "../../neural/data/tautot-lw-tropstrat-nocams-19-48-48-36.txt"
   modelfile_tau_strato    = modelfile_tau_tropo
-  !modelfile_tau_tropo     = "../../neural/data/tau-rfmip-big-cams-40-60-rmseT.txt"
-  !modelfile_tau_strato    = "../../neural/data/tautot-lw-strat-19-44-44.txt"
-  !modelfile_source        = "../../neural/data/pfrac-rfmip-big-30-30.txt"
+  !modelfile_tau_strato     = "../../neural/data/tautot-lw-strat-19-40-40.txt"
+  !modelfile_tau_strato    = "../../neural/data/tautot-lw-strat-19-60-40.txt"
   modelfile_source        = "../../neural/data/pfrac-tropstrat-34-34-nfac2.txt"
 
   ! Save upwelling and downwelling fluxes in the same file
@@ -180,14 +183,12 @@ program rrtmgp_rfmip_lw
   ! Where to save g-point optical depths and planck fractions
   !output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_RFMIP-BIG_1f1_REF.nc'
   !output_file = '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/outp_lw_CAMS2_1f1_REF.nc'
-  !output_file = '/data/puk/rrtmgp/outp_lw_RFMIP-BIGALL_1f1_REF_taumajmin.nc'
-  ! output_file = '/data/puk/rrtmgp/outp_lw_CAMS3_1f1_REF.nc'
+  output_file = '/data/puk/rrtmgp/outp_lw_RFMIP-BIGALL_1f1_REF_taumajmin.nc'
+  ! output_file = '/data/puk/rrtmgp/outp_lw_CAMS2_1f1_REF.nc'
   
   ! Where to save neural network inputs (scaled gases)
   !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_CAMS2_1f1_NN.nc'
-  !input_file =  '/media/pepe/SEAGATE/work/phd/rrtmgp-nn/inp_lw_RFMIP-BIGG_1f1_NN.nc'
-  ! input_file =  '/data/puk/rrtmgp/inp2_lw_CAMS3_1f1_NN.nc'
-  ! input_file = 'inp.nc'
+  input_file =  '/data/puk/rrtmgp/inp2_lw_RFMIP-BIGALL_1f1_NN.nc'
 
   ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
 
@@ -259,7 +260,6 @@ program rrtmgp_rfmip_lw
   ! Allocation on assignment within reading routines
   !
   call read_and_block_pt(rfmip_file, block_size, p_lay, p_lev, t_lay, t_lev)
-  !call read_and_block_pt(rfmip_file, block_size, p_lay, p_lev, t_lay)
 
   ! Are the arrays ordered in the vertical with 1 at the top or the bottom of the domain?
   !
@@ -478,8 +478,11 @@ print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
     allocate(rlu_ref( nlay+1, ncol, nexp))
     allocate(rld_nn( nlay+1, ncol, nexp))
     allocate(rlu_nn( nlay+1, ncol, nexp))
+    allocate(rld_lbl( nlay+1, ncol, nexp))
+    allocate(rlu_lbl( nlay+1, ncol, nexp))
 
     flx_file_ref = 'rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
+    flx_file_lbl = 'rlud_Efx_LBLRTM-12-8_rad-irf_r1i1p1f1_gn.nc'
 
     if(nf90_open(trim(flx_file), NF90_NOWRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file))
@@ -494,8 +497,72 @@ print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
     rlu_ref = read_field(ncid, "rlu", nlay+1, ncol, nexp)
     rld_ref = read_field(ncid, "rld", nlay+1, ncol, nexp)
 
-    print *, "RMSE in upwelling fluxes:", rmse(reshape(rlu_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rlu_nn, shape = [nexp*ncol*(nlay+1)]))
-    print *, "RMSE in downwelling fluxes:", rmse(reshape(rld_ref, shape = [nexp*ncol*(nlay+1)]), reshape(rld_nn, shape = [nexp*ncol*(nlay+1)]))
+    if(nf90_open(trim(flx_file_lbl), NF90_NOWRITE, ncid) /= NF90_NOERR) &
+    call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file_lbl))
+
+    rlu_lbl = read_field(ncid, "rlu", nlay+1, ncol, nexp)
+    rld_lbl = read_field(ncid, "rld", nlay+1, ncol, nexp)
+
+    print *, "---- UPWELLING ----"
+
+    print *, "MAE in upwelling fluxes of NN w.r.t LBL, present-day:", &
+     mae(reshape(rlu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rlu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in upwelling fluxes of NN w.r.t LBL, future:     ", &
+     mae(reshape(rlu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rlu_nn(:,:,4), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in upwelling fluxes of RRTMGP w.r.t LBL, present-day:", &
+     mae(reshape(rlu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rlu_ref(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in upwelling fluxes of RRTMGP w.r.t LBL, future:     ", &
+     mae(reshape(rlu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rlu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
+
+    print *, "Max-vertical-error in upwelling fluxes of NN w.r.t LBL, present-day:", &
+      maxval(rlu_lbl(:,:,1)-rlu_nn(:,:,1))
+
+    print *, "Max-vertical-error in upwelling fluxes of NN w.r.t LBL, future:     ", &
+      maxval(rlu_lbl(:,:,4)-rlu_nn(:,:,4))
+
+    print *, "Max-vertical-error in upwelling fluxes of RRTMGP w.r.t LBL, present-day:", &
+      maxval(rlu_lbl(:,:,1)-rlu_ref(:,:,1))
+
+    print *, "Max-vertical-error in upwelling fluxes of RRTMGP w.r.t LBL, future:     ", &
+      maxval(rlu_lbl(:,:,4)-rlu_ref(:,:,4))
+
+    print *, "---- DOWNWELLING ----"
+
+    print *, "MAE in downwelling fluxes of NN w.r.t LBL, present-day:", &
+     mae(reshape(rld_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rld_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in downwelling fluxes of NN w.r.t LBL, future:     ", &
+     mae(reshape(rld_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rld_nn(:,:,4), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in downwelling fluxes of RRTMGP w.r.t LBL, present-day:", &
+     mae(reshape(rld_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rld_ref(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in downwelling fluxes of RRTMGP w.r.t LBL, future:     ", &
+     mae(reshape(rld_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rld_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
+
+    print *, "Max-vertical-error in downwelling fluxes of NN w.r.t LBL, present-day:", &
+      maxval(rld_lbl(:,:,1)-rld_nn(:,:,1))
+
+    print *, "Max-vertical-error in downwelling fluxes of NN w.r.t LBL, future:     ", &
+      maxval(rld_lbl(:,:,4)-rld_nn(:,:,4))
+
+    print *, "Max-vertical-error in downwelling fluxes of RRTMGP w.r.t LBL, present-day:", &
+      maxval(rld_lbl(:,:,1)-rld_ref(:,:,1))
+
+    print *, "Max-vertical-error in downwelling fluxes of RRTMGP w.r.t LBL, future:     ", &
+      maxval(rld_lbl(:,:,4)-rld_ref(:,:,4))
+
+    print *, "---------"
+
+
+    print *, "MAE in upwelling fluxes of NN w.r.t RRTMGP, present-day:", &
+     mae(reshape(rlu_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rlu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in downwelling fluxes of NN w.r.t RRTMGP, present-day:", &
+     mae(reshape(rld_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rld_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
 
   end if
 
@@ -524,6 +591,16 @@ print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
     diff = x1 - x2
     res = sqrt( sum(diff**2)/size(diff) )
   end function rmse
+
+  function mae(x1,x2) result(res)
+    implicit none 
+    real(wp), dimension(:), intent(in) :: x1,x2
+    real(wp) :: res
+    real(wp), dimension(size(x1)) :: diff 
+    
+    diff = abs(x1 - x2)
+    res = sum(diff, dim=1)/size(diff, dim=1)
+  end function mae
 
 end program rrtmgp_rfmip_lw
 

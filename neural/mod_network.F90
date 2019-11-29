@@ -20,9 +20,8 @@ module mod_network
     procedure, public :: change_kernel
     procedure, public, pass(self) :: init
     procedure, public, pass(self) :: load
-    procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input
-    procedure, public, pass(self) :: output_opt_flatmodel_looper            ! Matrix input, loop through samples
-    procedure, public, pass(self) :: output_sgemv_flatmodel                 ! BLAS, vector input
+    procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input, matrix-vector product
+    procedure, public, pass(self) :: output_sgemv_flatmodel                 ! Vector input, matrix-vector product using BLAS
     procedure, public, pass(self) :: output_matmul_flatmodel                ! Matrix input, matrix-matrix product
     procedure, public, pass(self) :: output_sgemm, output_sgemm_flatmodel   ! Matrix input, matrix-matrix product using BLAS
     procedure, public, pass(self) :: save
@@ -123,7 +122,7 @@ contains
     do n = 1, size(self % dims) - 1
       read(fileunit, fmt=*) activation_type
       call self % layers(n+1) % set_activation(activation_type)
-    end do
+    end do    
 
     close(fileunit)
   end subroutine load
@@ -152,6 +151,7 @@ contains
     integer,  dimension(2)  :: matsize
     integer                 :: n
 
+
     associate(layers => self % layers)
       matsize = shape(layers(1) % w_transposed)
       a = matvecmul(layers(1) % w_transposed, x, matsize(1), matsize(2)) + layers(2) % b
@@ -166,7 +166,13 @@ contains
       ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
       matsize = shape(layers(n-1) % w_transposed)
       output = (matvecmul(layers(n-1) % w_transposed, a, matsize(1), matsize(2)) + layers(n) % b)
+      call layers(n) % activation(output)
     end associate
+  end subroutine
+
+  pure subroutine linear(x)
+    real(wp), intent(inout) :: x(:)
+    x = x
   end subroutine
 
   subroutine output_opt_flatmodel(self, x, output)
@@ -199,41 +205,7 @@ contains
       end do
       ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
       output = (matvecmul(layers(n-1) % w_transposed, a, size(output), neurons) + layers(n) % b)
-    end associate
-  end subroutine
-
-  subroutine output_opt_flatmodel_looper(self, x, output)
-    ! Use this routine for a 2D input data array
-    class(network_type),      intent(in)    :: self
-    real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
-    real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
-    ! Local variables
-    ! The signal/tensor passing through the network
-    real(wp), dimension(size(self % layers(1) % w_transposed,1))  :: a 
-    integer,  dimension(size(self % layers), 2)                   :: weightdims
-    integer                     :: n, i, num_sample
-
-    num_sample = size(x,2)
-    
-    associate(layers => self % layers)
-
-      do n = 1, size(layers)
-        weightdims(n,:) = shape(layers(n) % w_transposed) 
-      end do
-
-      do i = 1, num_sample
-
-        a = matvecmul(layers(1) % w_transposed, x(:,i), weightdims(1,1), weightdims(1,2)) + layers(2) % b
-
-        call layers(2) % activation(a)
-        ! INTERMEDIATE LAYERS
-        do n = 3, size(layers)-1
-          a = matvecmul(layers(n-1) % w_transposed, a, weightdims(n-1,1), weightdims(n-1,2)) + layers(n) % b
-          call layers(n) % activation(a)
-        end do
-        ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
-        output(:,i) = (matvecmul(layers(n-1) % w_transposed, a, weightdims(n-1,1), weightdims(n-1,2)) + layers(n) % b)
-      end do
+      call layers(n) % activation(output)
     end associate
   end subroutine
 
@@ -273,6 +245,7 @@ contains
       ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
       call sgemv("N",size(output),neurons,alpha,layers(n-1) % w_transposed,size(output),a,incx,beta,output,incy)
       output = output + layers(n) % b
+      call layers(n) % activation(output)
     end associate
   end subroutine
 
@@ -309,6 +282,7 @@ contains
       do isample = 1, num_sample
         output(:,isample) = output(:,isample ) + layers(n) % b
       end do
+      call layers(n) % activation_m(output)
     end associate
   end subroutine
 
@@ -367,6 +341,7 @@ contains
       do isample = 1, num_sample
         output(:,isample) = output(:,isample ) + layers(n) % b
       end do
+      call layers(n) % activation_m(output)
       !  output = output + transpose(spread( layers(n) % b, 1, num_sample ))
     end associate
   end subroutine
@@ -413,7 +388,9 @@ contains
       do isample = 1, num_sample
         output(:,isample) = output(:,isample ) + layers(n) % b
       end do
-    end associate
+      call layers(n) % activation_m(output)
+      
+      end associate
   end subroutine
 
   function matvecmul(matA,vecB,nrow,ncol)

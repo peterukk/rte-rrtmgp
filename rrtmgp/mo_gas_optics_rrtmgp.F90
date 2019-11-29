@@ -29,7 +29,8 @@ module mo_gas_optics_rrtmgp
   use mo_gas_optics_kernels, only: interpolation,                                                       &
                                    compute_tau_absorption, compute_tau_rayleigh, compute_Planck_source, &
                                    combine_and_reorder_2str, combine_and_reorder_nstr,  &
-                                   compute_Planck_source_nn, predict_nn_lw, predict_nn_lw_flattenall, predict_nn_lw_flattenlevs
+                                   compute_Planck_source_nn, predict_nn_lw, predict_nn_lw_flattenall, predict_nn_lw_flattenlevs, &
+                                   gas_optical_depths_major
 
   use mo_util_string,        only: lower_case, string_in_array, string_loc_in_array
   use mo_gas_concentrations, only: ty_gas_concs
@@ -365,10 +366,12 @@ contains
     integer,     dimension(size(play,dim=1),2)                                        :: itropo, istrato
     real(wp),    dimension(size(play,dim=1), size(play,dim=2))                        :: play_log
     real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: pfrac ! Planck fractions predicted by NN
+    real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: tau_maj
     integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
-    logical :: original_source, top_at_1
+    logical :: original_source, top_at_1, interp_taumaj
 
     original_source = .false.
+    interp_taumaj   = .false.
     ! ----------------------------------------------------------
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -453,6 +456,24 @@ contains
     ret =  gptlstart('compute_taus_pfracs_nnlw')
 #endif
 
+    if(interp_taumaj) then
+
+    error_msg = compute_interp_coeffs(this,                  &
+                                ncol, nlay, ngpt, nband,    &
+                                play, plev, tlay, gas_desc, &
+                                jtemp, jpress, jeta, tropo, fmajor, play_log, &
+                                col_dry, tau_maj)
+
+    error_msg = compute_taus_pfracs_nnlw(this,              &
+                                 ncol, nlay, ngpt, nband,   &
+                                 itropo, istrato,           &
+                                 play, play_log, plev, tlay, gas_desc,&
+                                 optical_props, pfrac,                &
+                                 neural_nets, &
+                                 nn_inputs, col_dry, tau_maj) 
+
+    else  
+
     ! Predict g-point taus and planck fractions using neural networks
     error_msg = compute_taus_pfracs_nnlw(this,              &
                                  ncol, nlay, ngpt, nband,   &
@@ -461,7 +482,7 @@ contains
                                  optical_props, pfrac,                &
                                  neural_nets, &
                                  nn_inputs, col_dry) 
-    
+    end if
     ! call system_clock(iTime2)
     !print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
@@ -1442,7 +1463,7 @@ function compute_interp_coeffs(this,                       &
   ncol, nlay, ngpt, nband,    &
   play, plev, tlay, gas_desc, &
   jtemp, jpress, jeta, tropo, fmajor, play_log, &
-  col_dry) result(error_msg)
+  col_dry, tau_maj) result(error_msg)
 
 class(ty_gas_optics_rrtmgp), &
             intent(in   ) :: this
@@ -1462,6 +1483,9 @@ character(len=128)                                         :: error_msg
 ! Optional inputs
 real(wp), dimension(:,:), intent(in   ), &
  optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
+ ! optional output
+ real(wp), dimension(ngpt,nlay,ncol), intent(out   ), &
+ optional :: tau_maj ! Column dry amount; dim(ncol,nlay)
 ! ----------------------------------------------------------
 integer :: igas, idx_h2o ! index of some gases
 ! Number of molecules per cm^2
@@ -1593,7 +1617,21 @@ call interpolation(               &
 	fmajor,fminor,&
 	col_mix,      &
 	tropo,        &
-	jeta,jpress,play_log)
+  jeta,jpress,play_log)
+
+  if(present(tau_maj))then
+    call gas_optical_depths_major(   &
+    ncol,nlay,this%get_nband(),this%get_ngpt(),       & ! dimensions
+    nflav,neta,npres,ntemp,    &
+    this%gpoint_flavor,             &
+    this%get_band_lims_gpoint(),             &
+    this%kmajor,                    &
+    col_mix,fmajor,            &
+    jeta,tropo,jtemp,jpress,   &
+    tau_maj)
+  endif
+ 
+
 !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
 !$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
 !$acc exit data delete(this%flavor, this%press_ref_log, this%vmr_ref, this%gpoint_flavor)
@@ -1610,7 +1648,7 @@ function compute_taus_pfracs_nnlw(this,                         &
     play, play_log, plev, tlay, gas_desc,                       &
     optical_props, pfrac,                                       &
     neural_nets,                                                &
-    nn_inputs, col_dry) result(error_msg)
+    nn_inputs, col_dry, tau_maj) result(error_msg)
 
 class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
 integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
@@ -1635,6 +1673,7 @@ character(len=128)                                  :: error_msg
 ! Optional inputs
 real(wp), dimension(:,:), intent(in   ), &
    optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
+real(wp), dimension(ngpt,nlay,ncol), intent(in), optional :: tau_maj
 ! ----------------------------------------------------------
 ! Local variables
 real(wp), dimension(ngpt,nlay,ncol) :: tau, tau_rayleigh  ! absorption, Rayleigh scattering optical depths
@@ -1681,14 +1720,12 @@ real(dp) :: doubleparam = 0.5001566410_dp
 integer :: flatten_dims
 ! If levs and cols are not flattened, use BLAS anyway for matrix-vector computations? (usually slower)
 ! If true, the hidden layers must have equal sizes (flat model)
-logical :: use_blas
+! logical :: use_blas
 
 ! Flatten_dims = 0  for predicting one layer at a time, matrix-vector dot product
 !              = 1  for predicting all layers (or troposphere and stratosphere) at a time, matrix-matrix (SGEMM)
 !              = 2  for predicting all columns and layers at a time, matrix-matrix (SGEMM)
-flatten_dims   = 0
-! If flatten_dims = 0, use BLAS anyway for matrix-vector operations?
-use_blas     = .false. 
+flatten_dims   = 2
 
 !
 ! Error checking
@@ -1835,6 +1872,7 @@ do inet = 1, size(neural_nets)
   neurons_last = size(neural_nets(inet) % layers(size(neural_nets(inet)%layers)-1) % w_transposed, 2)
   if (neurons_first == neurons_last) then
     print *, "Flat model"
+    
     call change_kernel(neural_nets(inet), output_opt_flatmodel, output_sgemm_flatmodel)
   end if
 end do
@@ -1871,6 +1909,14 @@ else
                       tau, pfrac)    ! outputs
 end if
 
+if(present(tau_maj))then
+  print *, "max of taumaj is", maxval(tau_maj)
+  print *, "min of taumaj is", minval(tau_maj)  
+  print *, "max of taumin is", maxval(tau)
+  print *, "min of taumin is", minval(tau)
+  tau = tau + tau_maj
+endif
+
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw')
 #endif
@@ -1884,9 +1930,14 @@ if (error_msg /= '') return
     ret =  gptlstart('combine_and_reorder')
 #endif
 
+call system_clock(count_rate=count_rate)
+call system_clock(iTime1)   
+
 ! Combine optical depths and reorder for radiative transfer solver.
 call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
 
+call system_clock(iTime2)
+print *,'Elapsed time on combine and reorder: ',real(iTime2-iTime1)/real(count_rate)
 
 #ifdef USE_TIMING
     ret =  gptlstop('combine_and_reorder')

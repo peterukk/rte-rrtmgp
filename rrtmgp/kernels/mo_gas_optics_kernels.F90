@@ -430,6 +430,137 @@ contains
       enddo
     end if
   end subroutine gas_optical_depths_minor
+
+    subroutine gas_optical_depths_minor2(ncol,nlay,ngpt,        &
+                                      ngas,nflav,ntemp,neta, &
+                                      nminor,nminork,        &
+                                      idx_h2o,               &
+                                      gpt_flv,               &
+                                      kminor,                &
+                                      minor_limits_gpt,      &
+                                      minor_scales_with_density,    &
+                                      scale_by_complement,   &
+                                      idx_minor, idx_minor_scaling, &
+                                      kminor_start,          &
+                                      play, tlay,            &
+                                      col_gas,fminor,jeta,   &
+                                      layer_limits,jtemp,    &
+                                      tau) bind(C, name="gas_optical_depths_minor2")
+    integer,                                     intent(in   ) :: ncol,nlay,ngpt
+    integer,                                     intent(in   ) :: ngas,nflav
+    integer,                                     intent(in   ) :: ntemp,neta,nminor,nminork
+    integer,                                     intent(in   ) :: idx_h2o
+    integer,     dimension(ngpt),                intent(in   ) :: gpt_flv
+    real(wp),    dimension(nminork,neta,ntemp),  intent(in   ) :: kminor
+    integer,     dimension(2,nminor),            intent(in   ) :: minor_limits_gpt
+    logical(wl), dimension(  nminor),            intent(in   ) :: minor_scales_with_density
+    logical(wl), dimension(  nminor),            intent(in   ) :: scale_by_complement
+    integer,     dimension(  nminor),            intent(in   ) :: kminor_start
+    integer,     dimension(  nminor),            intent(in   ) :: idx_minor, idx_minor_scaling
+    real(wp),    dimension(ncol,nlay),           intent(in   ) :: play, tlay
+    real(wp),    dimension(ncol,nlay,0:ngas),    intent(in   ) :: col_gas
+    real(wp),    dimension(2,2,nflav,ncol,nlay), intent(in   ) :: fminor
+    integer,     dimension(2,  nflav,ncol,nlay), intent(in   ) :: jeta
+    integer,     dimension(ncol, 2),             intent(in   ) :: layer_limits
+    integer,     dimension(ncol,nlay),           intent(in   ) :: jtemp
+    real(wp),    dimension(ngpt,nlay,ncol),      intent(inout) :: tau
+    ! -----------------
+    ! local variables
+    real(wp), parameter :: PaTohPa = 0.01
+    real(wp) :: vmr_fact, dry_fact             ! conversion from column abundance to dry vol. mixing ratio;
+    real(wp) :: scaling, kminor_loc            ! minor species absorption coefficient, optical depth
+    integer  :: icol, ilay, iflav, igpt, imnr
+    integer  :: gptS, gptE
+    real(wp), dimension(ngpt) :: tau_minor
+    ! -----------------
+    !
+    ! Guard against layer limits being 0 -- that means don't do anything i.e. there are no
+    !   layers with pressures in the upper or lower atmosphere respectively
+    ! First check skips the routine entirely if all columns are out of bounds...
+    !
+    if(any(layer_limits(:,1) > 0)) then
+      do imnr = 1, size(scale_by_complement,dim=1) ! loop over minor absorbers in each band
+        if (minor_scales_with_density(imnr)) then
+          do icol = 1, ncol
+            !
+            ! This check skips individual columns with no pressures in range
+            !
+            if(layer_limits(icol,1) > 0) then
+              do ilay = layer_limits(icol,1), layer_limits(icol,2)
+                !
+                ! Scaling of minor gas absortion coefficient begins with column amount of minor gas
+                !
+                scaling = col_gas(icol,ilay,idx_minor(imnr))
+                !
+                ! Density scaling (e.g. for h2o continuum, collision-induced absorption)
+                !
+                ! if (minor_scales_with_density(imnr)) then
+                  !
+                  ! NOTE: P needed in hPa to properly handle density scaling.
+                  !
+                  scaling = scaling * (PaTohPa*play(icol,ilay)/tlay(icol,ilay))
+                  if(idx_minor_scaling(imnr) > 0) then  ! there is a second gas that affects this gas's absorption
+                    vmr_fact = 1._wp / col_gas(icol,ilay,0)
+                    dry_fact = 1._wp / (1._wp + col_gas(icol,ilay,idx_h2o) * vmr_fact)
+                    ! scale by density of special gas
+                    if (scale_by_complement(imnr)) then ! scale by densities of all gases but the special one
+                      scaling = scaling * (1._wp - col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
+                    else
+                      scaling = scaling *          col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact
+                    endif
+                  endif
+                ! endif
+                !
+                ! Interpolation of absorption coefficient and calculation of optical depth
+                !
+                ! Which gpoint range does this minor gas affect?
+                gptS = minor_limits_gpt(1,imnr)
+                gptE = minor_limits_gpt(2,imnr)
+                iflav = gpt_flv(gptS)
+                tau_minor(gptS:gptE) = scaling *                   &
+                                        interpolate2D_byflav(fminor(:,:,iflav,icol,ilay), &
+                                                            kminor, &
+                                                            kminor_start(imnr), kminor_start(imnr)+(gptE-gptS), &
+                                                            jeta(:,iflav,icol,ilay), jtemp(icol,ilay))
+                tau(gptS:gptE,ilay,icol) = tau(gptS:gptE,ilay,icol) + tau_minor(gptS:gptE)
+              enddo
+            end if
+          enddo
+        else
+          do icol = 1, ncol
+            !
+            ! This check skips individual columns with no pressures in range
+            !
+            if(layer_limits(icol,1) > 0) then
+              do ilay = layer_limits(icol,1), layer_limits(icol,2)
+                !
+                ! Scaling of minor gas absortion coefficient begins with column amount of minor gas
+                !
+                scaling = col_gas(icol,ilay,idx_minor(imnr))
+                !
+                ! Density scaling (e.g. for h2o continuum, collision-induced absorption)
+                !
+              
+                !
+                ! Interpolation of absorption coefficient and calculation of optical depth
+                !
+                ! Which gpoint range does this minor gas affect?
+                gptS = minor_limits_gpt(1,imnr)
+                gptE = minor_limits_gpt(2,imnr)
+                iflav = gpt_flv(gptS)
+                tau_minor(gptS:gptE) = scaling *                   &
+                                        interpolate2D_byflav(fminor(:,:,iflav,icol,ilay), &
+                                                            kminor, &
+                                                            kminor_start(imnr), kminor_start(imnr)+(gptE-gptS), &
+                                                            jeta(:,iflav,icol,ilay), jtemp(icol,ilay))
+                tau(gptS:gptE,ilay,icol) = tau(gptS:gptE,ilay,icol) + tau_minor(gptS:gptE)
+              enddo
+            end if
+          enddo ! col
+        end if
+      enddo
+    end if
+  end subroutine gas_optical_depths_minor2
   ! ----------------------------------------------------------
   !
   ! compute Rayleigh scattering optical depths
@@ -807,7 +938,7 @@ contains
       end do ! column
     
     else
-      print *, "jo"
+
       do icol = 1, ncol
         do ilay = istrato(icol, 1), istrato(icol, 2)
           ! PREDICT PLANCK FRACTIONS
@@ -864,7 +995,6 @@ contains
     
 
     else
-    print *, "boo"
 
     ! Separate optical depth models for troposphere and stratosphre
 
@@ -966,17 +1096,15 @@ contains
       print *, "Kernel flattenall only works with a single optical depth model, without trop-strat separation!"
     end if 
   ! PREDICT PLANCK FRACTIONS
-    print *, "pfrac"
     call neural_nets(1) % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output)
     pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
     pfrac = max(0.0_wp, pfrac**2)
 
-    print *, "tau"
     call neural_nets(2) % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
     !Scaling
     tau = reshape(tmp_output,(/ngpt,nlay,ncol/))       
     ! tau = exp(tau) - eps_neural 
-    tau = max(0.0_wp, tau**8)
+    tau = max(0.0_wp, tau**4)
 
   end subroutine predict_nn_lw_flattenall
   
