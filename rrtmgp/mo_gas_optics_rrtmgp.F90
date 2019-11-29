@@ -370,35 +370,17 @@ contains
     original_source = .false.
     interp_taumaj   = .false.
     ! ----------------------------------------------------------
+    print *, "heiho1"
+
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
     ngpt  = this%get_ngpt()
     nband = this%get_nband()
     ngas  = this%get_ngas()
 
-    ! ----------------------------------------------------------
-    !
-    ! External source -- check arrays sizes and values
-    ! input data sizes and values
-    !
-    error_msg = check_extent(tsfc, ncol, 'tsfc')
-    if(error_msg  /= '') return
-    error_msg = check_range(tsfc, this%temp_ref_min,  this%temp_ref_max,  'tsfc')
-    if(error_msg  /= '') return
-    if(present(tlev)) then
-      error_msg = check_extent(tlev, ncol, nlay+1, 'tlev')
-      if(error_msg  /= '') return
-      error_msg = check_range(tlev, this%temp_ref_min, this%temp_ref_max, 'tlev')
-      if(error_msg  /= '') return
-    end if
+    print *, "heiho1.5"
 
-        
-    !   output extents
-    !
-    if(any([sources%get_ncol(), sources%get_nlay(), sources%get_ngpt()] /= [ncol, nlay, ngpt])) &
-      error_msg = "gas_optics%gas_optics: source function arrays inconsistently sized"
-    if(error_msg  /= '') return
-
+  
     !
     ! Gas optics 
     !
@@ -412,6 +394,8 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('interpolation')
 #endif
+
+    print *, "heiho2"
 
     if (original_source) then ! use original kernels to get source functions
     ! In this case the interpolation coefficients computed in compute_gas_taus are needed
@@ -483,9 +467,39 @@ contains
     ! call system_clock(iTime2)
     !print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
+    print *, "heiho3"
+
+
 #ifdef USE_TIMING
     ret =  gptlstop('compute_taus_pfracs_nnlw')
 #endif
+
+    ! ----------------------------------------------------------
+    !
+    ! External source -- check arrays sizes and values
+    ! input data sizes and values
+    !
+    !$acc enter data copyin(tsfc,tlev)
+    if(.not. extents_are(tsfc, ncol)) &
+      error_msg = "gas_optics(): array tsfc has wrong size"
+    if(any_vals_outside(tsfc, this%temp_ref_min,  this%temp_ref_max)) &
+      error_msg = "gas_optics(): array tsfc has values outside range"
+    if(error_msg  /= '') return
+
+    if(present(tlev)) then
+      if(.not. extents_are(tlev, ncol, nlay+1)) &
+        error_msg = "gas_optics(): array tlev has wrong size"
+      if(any_vals_outside(tlev, this%temp_ref_min, this%temp_ref_max)) &
+        error_msg = "gas_optics(): array tlev has values outside range"
+      if(error_msg  /= '') return
+    end if
+
+    !
+    !   output extents
+    !
+    if(any([sources%get_ncol(), sources%get_nlay(), sources%get_ngpt()] /= [ncol, nlay, ngpt])) &
+      error_msg = "gas_optics%gas_optics: source function arrays inconsistently sized"
+    if(error_msg  /= '') return
 
 #ifdef USE_TIMING
     ret =  gptlstart('Planck-source')
@@ -1555,27 +1569,33 @@ end if
 error_msg = this%check_key_species_present(gas_desc)
 if (error_msg /= '') return
 
-!
 ! Check input data sizes and values
 !
-error_msg = check_extent(play, ncol, nlay,   'play')
+!$acc enter data copyin(play,plev,tlay)
+if(.not. extents_are(play, ncol, nlay  )) &
+error_msg = "gas_optics(): array play has wrong size"
+if(.not. extents_are(tlay, ncol, nlay  )) &
+error_msg = "gas_optics(): array tlay has wrong size"
+if(.not. extents_are(plev, ncol, nlay+1)) &
+error_msg = "gas_optics(): array plev has wrong size"
 if(error_msg  /= '') return
-error_msg = check_extent(plev, ncol, nlay+1, 'plev')
+
+if(any_vals_outside(play, this%press_ref_min,this%press_ref_max)) &
+error_msg = "gas_optics(): array play has values outside range"
+if(any_vals_outside(plev, this%press_ref_min,this%press_ref_max)) &
+error_msg = "gas_optics(): array plev has values outside range"
+if(any_vals_outside(tlay, this%temp_ref_min,  this%temp_ref_max)) &
+error_msg = "gas_optics(): array tlay has values outside range"
 if(error_msg  /= '') return
-error_msg = check_extent(tlay, ncol, nlay,   'tlay')
-if(error_msg  /= '') return
-error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
-if(error_msg  /= '') return
-error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
-if(error_msg  /= '') return
-error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
-if(error_msg  /= '') return
+
 if(present(col_dry)) then
-error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
-if(error_msg  /= '') return
-error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
+if(.not. extents_are(col_dry, ncol, nlay)) &
+error_msg = "gas_optics(): array col_dry has wrong size"
+if(any_vals_less_than(col_dry, 0._wp)) &
+error_msg = "gas_optics(): array col_dry has values outside range"
 if(error_msg  /= '') return
 end if
+
 
 ! ----------------------------------------------------------
 ngas  = this%get_ngas()
@@ -1608,8 +1628,8 @@ idx_h2o = string_loc_in_array('h2o', this%gas_names)
 if (present(col_dry)) then
 	col_dry_wk => col_dry
 else
-	col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
-	col_dry_wk => col_dry_arr
+  col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev) ! dry air column amounts computation
+  col_dry_wk => col_dry_arr
 end if
 !
 ! compute column gas amounts [molec/cm^2]
@@ -1775,27 +1795,29 @@ if (error_msg /= '') return
 
 !
 ! Check input data sizes and values
-!
-error_msg = check_extent(play, ncol, nlay,   'play')
+if(.not. extents_are(play, ncol, nlay  )) &
+error_msg = "gas_optics(): array play has wrong size"
+if(.not. extents_are(tlay, ncol, nlay  )) &
+error_msg = "gas_optics(): array tlay has wrong size"
+if(.not. extents_are(plev, ncol, nlay+1)) &
+error_msg = "gas_optics(): array plev has wrong size"
 if(error_msg  /= '') return
-error_msg = check_extent(plev, ncol, nlay+1, 'plev')
+
+if(any_vals_outside(play, this%press_ref_min,this%press_ref_max)) &
+error_msg = "gas_optics(): array play has values outside range"
+if(any_vals_outside(plev, this%press_ref_min,this%press_ref_max)) &
+error_msg = "gas_optics(): array plev has values outside range"
+if(any_vals_outside(tlay, this%temp_ref_min,  this%temp_ref_max)) &
+error_msg = "gas_optics(): array tlay has values outside range"
 if(error_msg  /= '') return
-error_msg = check_extent(tlay, ncol, nlay,   'tlay')
-if(error_msg  /= '') return
-error_msg = check_range(play, this%press_ref_min,this%press_ref_max, 'play')
-if(error_msg  /= '') return
-error_msg = check_range(plev, this%press_ref_min, this%press_ref_max, 'plev')
-if(error_msg  /= '') return
-error_msg = check_range(tlay, this%temp_ref_min,  this%temp_ref_max,  'tlay')
-if(error_msg  /= '') return
+
 if(present(col_dry)) then
-error_msg = check_extent(col_dry, ncol, nlay, 'col_dry')
-if(error_msg  /= '') return
-error_msg = check_range(col_dry, 0._wp, huge(col_dry), 'col_dry')
+if(.not. extents_are(col_dry, ncol, nlay)) &
+error_msg = "gas_optics(): array col_dry has wrong size"
+if(any_vals_less_than(col_dry, 0._wp)) &
+error_msg = "gas_optics(): array col_dry has values outside range"
 if(error_msg  /= '') return
 end if
-
-
 
 ! ----------------------------------------------------------
 ngas  = this%get_ngas()
@@ -1822,7 +1844,7 @@ idx_h2o = string_loc_in_array('h2o', this%gas_names)
 if (present(col_dry)) then
   col_dry_wk => col_dry
 else
-  col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev, tlay) ! dry air column amounts computation
+  col_dry_arr = get_col_dry(vmr(:,:,idx_h2o), plev) ! dry air column amounts computation
   col_dry_wk => col_dry_arr
 end if
 !
@@ -2086,7 +2108,6 @@ end function compute_taus_pfracs_nnlw
     ! input
     real(wp), dimension(:,:), intent(in) :: vmr_h2o  ! volume mixing ratio of water vapor to dry air; (ncol,nlay)
     real(wp), dimension(:,:), intent(in) :: plev     ! Layer boundary pressures [Pa] (ncol,nlay+1)
-    real(wp), dimension(:,:), intent(in) :: tlay     ! Layer temperatures [K] (ncol,nlay)
     real(wp), dimension(:),   optional, &
                               intent(in) :: latitude ! Latitude [degrees] (ncol)
     ! output
@@ -2116,7 +2137,6 @@ end function compute_taus_pfracs_nnlw
         g0(icol) = grav
       end do
     end if
-    delta_plev(:,:) = abs(plev(:,1:nlev-1) - plev(:,2:nlev))
 
     !$acc parallel loop gang vector collapse(2) copyin(plev,vmr_h2o) copyout(col_dry)
     do ilev = 1, nlev-1

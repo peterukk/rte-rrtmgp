@@ -42,7 +42,9 @@ program rrtmgp_rfmip_lw
   !
   ! Modules for working with rte and rrtmgp
   !
+#ifdef USE_TIMING
   use omp_lib
+#endif
   ! Working precision for real variables
   !
   use mo_rte_kind,           only: wp
@@ -80,7 +82,7 @@ program rrtmgp_rfmip_lw
   ! RRTMGP's gas optics class needs to be initialized with data read from a netCDF files
   !
   use mo_load_coefficients,  only: load_and_init
-  use mo_rfmip_io,           only: read_size, read_and_block_pt,read_and_block_pt2, read_and_block_gases_ty, unblock_and_write, &
+  use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
                                    unblock_and_write_3D, unblock_and_write_3D_notrans, read_and_block_lw_bc, determine_gas_names
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
@@ -146,7 +148,7 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_nn      = .true.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
@@ -202,13 +204,9 @@ program rrtmgp_rfmip_lw
   !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
   nargs = command_argument_count()
-  call read_size(rfmip_file, ncol, nlay, nexp)
-  if(nargs >= 1) then
-    call get_command_argument(1, block_size_char)
-    read(block_size_char, '(i4)') block_size
-  else
-    block_size = ncol
-  end if
+
+  call get_command_argument(1, block_size_char)
+  read(block_size_char, '(i4)') block_size
   if(nargs >= 2) call get_command_argument(2, rfmip_file)
   if(nargs >= 3) call get_command_argument(3, kdist_file)
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
@@ -296,7 +294,6 @@ program rrtmgp_rfmip_lw
   allocate(tau_lw(    	block_size, nlay, ngpt, nblocks))
   allocate(nn_inputs( 	ngas+1, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
   allocate(planck_frac(	block_size, nlay, ngpt, nblocks))
-  allocate(lay_source( 	block_size, nlay, ngpt, nblocks))
 
   allocate(sfc_emis_spec(nbnd, block_size))
   call stop_on_err(source%alloc            (block_size, nlay, k_dist))
@@ -318,8 +315,9 @@ program rrtmgp_rfmip_lw
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
   ret = gptlinitialize()
 #endif
-
+#ifdef OMP
 print *, "OpenMP processes available:", omp_get_num_procs()
+#endif
     call system_clock(count_rate=count_rate)
     call system_clock(iTime1)
   !
@@ -331,9 +329,9 @@ print *, "OpenMP processes available:", omp_get_num_procs()
 
 !bo !$OMP PARALLEL DO
   do b = 1, nblocks
-
+#ifdef OMP
     PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
-
+#endif
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
     !
@@ -357,19 +355,19 @@ print *, "OpenMP processes available:", omp_get_num_procs()
     print *, "starting computations"
 
     if (use_nn) then
-    ! Using NEURAL NETWORK for predicting optical depths
-    call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
-                                        p_lev(:,:,b),       &
-                                        t_lay(:,:,b),       &
-                                        sfc_t(:  ,b),       &
-                                        gas_conc_array(b),  &
-                                        optical_props,      &
-                                        source,             &
-                                        nn_inputs(:,:,:,b), &
-                                        neural_nets,        & !net_pfrac, net_tau_tropo, net_tau_strato
-                                        tlev = t_lev(:,:,b)))
+      print *, "Using neural networks for predicting optical depths"
+      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
+                                          p_lev(:,:,b),       &
+                                          t_lay(:,:,b),       &
+                                          sfc_t(:  ,b),       &
+                                          gas_conc_array(b),  &
+                                          optical_props,      &
+                                          source,             &
+                                          nn_inputs(:,:,:,b), &
+                                          neural_nets,        & !net_pfrac, net_tau_tropo, net_tau_strato
+                                          tlev = t_lev(:,:,b)))
     else 
-    ! Using original code (interpolation routine) for predicting optical depths
+      print *, "Using original code (interpolation routine) for predicting optical depths"
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -401,7 +399,6 @@ print *, "OpenMP processes available:", omp_get_num_procs()
     do igpt = 1, ngpt
       tau_lw(:,:,igpt,b)      = optical_props%tau(:,:,igpt)
       planck_frac(:,:,igpt,b) = source%planck_frac(:,:,igpt)
-      lay_source(:,:,igpt,b)  = source%lay_source(:,:,igpt)
     end do
 
   end do ! blocks
