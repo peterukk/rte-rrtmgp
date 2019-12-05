@@ -370,7 +370,6 @@ contains
     original_source = .false.
     interp_taumaj   = .false.
     ! ----------------------------------------------------------
-    print *, "heiho1"
 
     ncol  = size(play,dim=1)
     nlay  = size(play,dim=2)
@@ -378,9 +377,6 @@ contains
     nband = this%get_nband()
     ngas  = this%get_ngas()
 
-    print *, "heiho1.5"
-
-  
     !
     ! Gas optics 
     !
@@ -394,8 +390,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('interpolation')
 #endif
-
-    print *, "heiho2"
 
     if (original_source) then ! use original kernels to get source functions
     ! In this case the interpolation coefficients computed in compute_gas_taus are needed
@@ -1713,9 +1707,9 @@ type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume m
 class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
 
 type(network_type), dimension(:),     intent(inout) :: neural_nets
-! type(network_type), intent(inout)                   :: net_tau_tropo, net_tau_strato, net_pfrac
-real(wp), dimension(get_ngas(this)+1,nlay,ncol), &
-                                      intent(out)   :: nn_inputs 
+
+real(wp), dimension(get_ngas(this),nlay,ncol), intent(out)   :: nn_inputs 
+!real(wp), dimension(:,:,:),           intent(out)   :: nn_inputs 
 real(wp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac ! Planck fractions predicted by NN
 
 character(len=128)                                  :: error_msg
@@ -1741,25 +1735,28 @@ integer                                           :: ngas, npres, ntemp,  count_
 ! ----------------------------------------------------------
 ! Neural network input scaling coefficients .. should probably be loaded from a file
 
+
 ! real(wp), dimension(19) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, 2.10885294E2_wp, 1.34087265E-1_wp, &
-!     1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
-!     5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
-!     2.56267690E-5_wp, 2.48434096E2_wp, 3.62281942E4_wp /)
+! 1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
+! 5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
+! 2.56267690E-5_wp, 2.48434096E2_wp, 9.05813519_wp /)
 
 ! real(wp), dimension(19) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
 !     9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp, &
 !     6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp, 2.38989050E-6_wp, 6.06216452E-5_wp, &
-!     2.52634071E-5_wp,  2.89428695E1_wp, 3.67932881E4_wp /)
+!     2.52634071E-5_wp,  2.89428695E1_wp, 2.47024725_wp /)
 
-real(wp), dimension(19) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, 2.10885294E2_wp, 1.34087265E-1_wp, &
-1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
-5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
-2.56267690E-5_wp, 2.48434096E2_wp, 9.05813519_wp /)
+real(wp), dimension(19) :: input_scaler_means = (/4.32155586E5_wp, 1.50567158E3_wp, 3.03431184E2_wp, 1.67521191E-1_wp, &
+       1.35015806E-1_wp, 4.37451436E-2_wp, 6.80378326E-1_wp, 1.59224330E-5_wp, &
+       1.05737124E-4_wp, 1.14812313E-4_wp, 4.27522004E-5_wp, 9.92715052E-5_wp, &
+       1.33700130E-4_wp, 6.91886629E-6_wp, 1.55411482E-6_wp, 6.77498534E-5_wp, &
+       3.03697001E-5_wp, 2.39662574E2_wp, 8.76987892E0_wp /)
 
-real(wp), dimension(19) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
-    9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp, &
-    6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp, 2.38989050E-6_wp, 6.06216452E-5_wp, &
-    2.52634071E-5_wp,  2.89428695E1_wp, 2.47024725_wp /)
+real(wp), dimension(19) :: input_scaler_std = (/3.93707999E5_wp, 3.87605107E3_wp, 4.02556768E2_wp, 2.24530064E-1_wp, &
+1.27834878E-1_wp, 5.03624184E-2_wp, 7.47975734E-1_wp, 2.58462536E-5_wp, &
+2.17398717E-4_wp, 1.60784004E-4_wp, 7.20443774E-5_wp, 1.95084899E-4_wp, &
+2.64337382E-4_wp, 9.26325333E-6_wp, 2.61683251E-6_wp, 1.13002146E-4_wp, &
+3.63426590E-5_wp, 2.88759196E1_wp, 2.71611697E0_wp /)
 
 
 real(wp) :: testparam   = 0.5001566410_wp
@@ -1831,9 +1828,9 @@ do igas = 1, ngas
 !
 ! Get vmr if  gas is provided in ty_gas_concs
 !
-if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
-  error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
-  if (error_msg /= '') return
+  if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
+    error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
+    if (error_msg /= '') return
   endif
 end do
 
@@ -1859,7 +1856,7 @@ end do
 ! Prepare neural network INPUTS (standard-scaled col_gas + pay + tlay)
 ! These need to be normalized using standard scaling
 !
-
+print *, "pii"
 do ilay = 1, nlay
     ! 8th and 9th gases are constants (oxygen and nitrogen), exclude these. Note col_gas index starts from 0 (dry air)
     do igas = 1, 7
@@ -1867,7 +1864,6 @@ do ilay = 1, nlay
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
     end do
     do igas = 8, ngas-2 ! previously ngas-1, temporary fix to remove NO2
-      ! print *, this%gas_names(igas+1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas+1) - input_scaler_means(igas)) / input_scaler_std(igas)
       ! print *, "nn_input:", igas, "is gas:", this%gas_names(igas+1)
     end do
@@ -1877,8 +1873,17 @@ do ilay = 1, nlay
     nn_inputs(igas,ilay,:) = (play_log(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
 
 end do
+print *, "poo"
 
-print *, "siz:", size(nn_inputs,1)
+! do igas = 0,ngas
+!   print *, "max for gas", igas,":", maxval(col_gas(:,:,igas))
+! end do
+
+! do igas = 1,size(nn_inputs,1)
+!   print *, "max for nn_input", igas,":", maxval(nn_inputs(igas,:,:))
+! end do
+
+! print *, "siz:", size(nn_inputs,1)
 
 ! do igas = 1, ngas 
 !   print *, "ngas",igas,":",this%gas_names(igas)
@@ -1893,9 +1898,14 @@ print *, "siz:", size(nn_inputs,1)
 ! igas = igas + 1
 ! print *, "nn_input:", igas, "is pressure"
 
+call system_clock(count_rate=count_rate)
+call system_clock(iTime1)   
 
+! call zero_array(ngpt, nlay, ncol, tau)
+tau = 0.0_wp
 
-call zero_array(ngpt, nlay, ncol, tau)
+call system_clock(iTime2)
+print *,'Elapsed time on zero_array: ',real(iTime2-iTime1)/real(count_rate)
 
 ! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
 
@@ -1929,6 +1939,7 @@ do inet = 1, size(neural_nets)
   end if
 end do
 
+print *, "joo"
 
 
 

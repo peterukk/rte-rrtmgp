@@ -911,7 +911,7 @@ contains
     ! inputs
     integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
     integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
-    real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
+    real(wp), dimension(ngas,nlay,ncol),    intent(in)    :: nn_inputs 
     ! neural network models
     type(network_type), dimension(:),         intent(in)    :: neural_nets
 
@@ -972,7 +972,7 @@ contains
     ! inputs
     integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
     integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
-    real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
+    real(wp), dimension(ngas,nlay,ncol),    intent(in)    :: nn_inputs 
     ! The models should also be inputs
     type(network_type), dimension(:),         intent(in)    :: neural_nets
 
@@ -1032,7 +1032,7 @@ contains
   !   ! inputs
   !   integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
   !   integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
-  !   real(wp), dimension(ngas+1,nlay,ncol),    intent(in)    :: nn_inputs 
+  !   real(wp), dimension(ngas,nlay,ncol),    intent(in)    :: nn_inputs 
   !   ! The models should also be inputs
   !   type(network_type),                       intent(in)    :: net_pfrac,  &
   !             net_tau_maj_tropo, net_tau_maj_strato, net_tau_min_tropo, net_tau_min_strato
@@ -1080,7 +1080,7 @@ contains
                     tau, pfrac)
     ! inputs
     integer,                                  intent(in) :: ncol, nlay, ngpt, ngas
-    real(wp), dimension(ngas+1,nlay,ncol),    intent(in) :: nn_inputs 
+    real(wp), dimension(ngas,nlay,ncol),    intent(in) :: nn_inputs 
     ! The models should also be inputs
     type(network_type), dimension(:),         intent(in) :: neural_nets
 
@@ -1097,11 +1097,11 @@ contains
       print *, "Kernel flattenall only works with a single optical depth model, without trop-strat separation!"
     end if 
   ! PREDICT PLANCK FRACTIONS
-    call neural_nets(1) % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output)
+    call neural_nets(1) % nn_kernel_m(reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output)
     pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
     pfrac = max(0.0_wp, pfrac**2)
 
-    call neural_nets(2) % nn_kernel_m(reshape(nn_inputs,(/ngas+1,nlay*ncol/)), tmp_output )
+    call neural_nets(2) % nn_kernel_m(reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output )
     !Scaling
     tau = reshape(tmp_output,(/ngpt,nlay,ncol/))       
     ! tau = exp(tau) - eps_neural 
