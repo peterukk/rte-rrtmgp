@@ -78,7 +78,7 @@ contains
     integer :: n_quad_angs
     integer :: icol, iband, igpt
     real(wp), dimension(:,:,:), allocatable :: gpt_flux_up, gpt_flux_dn
-    real(wp), dimension(:,:),   allocatable :: sfc_emis_gpt
+    real(wp), dimension(:,:),   allocatable :: sfc_emis_gpt 
     ! --------------------------------------------------
     !
     ! Weights and angle secants for first order (k=1) Gaussian quadrature.
@@ -232,12 +232,13 @@ contains
     ! ...and reduce spectral fluxes to desired output quantities
     !
     error_msg = fluxes%reduce(gpt_flux_up, gpt_flux_dn, optical_props, top_at_1)
+    deallocate(gpt_flux_up,gpt_flux_dn,sfc_emis_gpt)
     !$acc exit data delete(sources%lay_source, sources%lev_source_inc, sources%lev_source_dec, sources%sfc_source)
     !$acc exit data delete(sfc_emis_gpt, gauss_Ds, gauss_wts)
     !$acc exit data delete(gpt_flux_up,gpt_flux_dn)
   end function rte_lw
   !--------------------------------------------------------------------------------------------------------------------
-  !
+  ! 
   ! Expand from band to g-point dimension, transpose dimensions (nband, ncol) -> (ncol,ngpt)
   !
   subroutine expand_and_transpose(ops,arr_in,arr_out)

@@ -23,7 +23,7 @@
 !
 ! -------------------------------------------------------------------------------------------------
 module mo_rfmip_io
-  use mo_rte_kind,      only: wp
+  use mo_rte_kind,      only: wp, sp
   use mo_gas_concentrations, &
                         only: ty_gas_concs
   use mo_rrtmgp_util_string, &
@@ -34,7 +34,8 @@ module mo_rfmip_io
   private
   public :: read_kdist_gas_names, determine_gas_names, read_size, read_and_block_pt, &
             read_and_block_sw_bc, read_and_block_lw_bc, read_and_block_gases_ty, &
-            unblock_and_write, unblock_and_write_3D,  unblock_and_write_3D_notrans
+            unblock_and_write, unblock_and_write_3D,  unblock_and_write_3D_notrans, &
+            unblock_and_write_3D_sp,  unblock_and_write_3D_notrans_sp
 
   integer :: ncol_l = 0, nlay_l = 0, nexp_l = 0 ! Local copies
 contains
@@ -76,7 +77,6 @@ contains
     ! ---------------------------
     integer :: ncid
     integer :: b, nblocks
-    real(wp), dimension(:,:  ), allocatable :: temp2d
     real(wp), dimension(:,:,:), allocatable :: temp3d
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("read_and_block_pt: Haven't read problem size yet.")
@@ -112,8 +112,9 @@ contains
     do b = 1, nblocks
       t_lev(:,:,b) = transpose(temp3d(:,:,b))
     end do
-
     ncid = nf90_close(ncid)
+
+    deallocate(temp3d)
   end subroutine read_and_block_pt
   !--------------------------------------------------------------------------------------------------------------------
   !
@@ -371,15 +372,13 @@ contains
     end do
 
     !
-    ! All other gases are a function of experiment only
+    ! EDIT: other gases are NOT necessarily a function of experiment only, check using if statement
     !
     do g = 1, size(gas_names)
       !
       ! Skip 3D fields above, also NO2 since RFMIP doesn't have this
       !
       varName = trim(names_in_file(g)) // "_GM"
-
-      ! print *, varName
 
       if(string_in_array(gas_names(g), ['h2o', 'o3 ', 'no2'])) cycle
 
@@ -388,12 +387,20 @@ contains
       if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
       call stop_on_err("get_var_size: can't get information for variable " // varName)
 
-      ! print *, "ndims:", ndims
-
-      ! print *, "get_var_size:", get_var_size(ncid, varName, ndims)
+      ! print *, "varname:", varName, "ndims:", ndims
 
       ! Read the values as a function of experiment
-      if (ndims == 2) then  ! this is a 2d field ncol*nexp.  
+
+      if (ndims == 3) then
+        gas_conc_temp_3d = reshape(read_field(ncid, varName, nlay_l, ncol_l, nexp_l), &
+        shape = [nlay_l, blocksize, nblocks]) * read_scaling(ncid, varName)
+
+        do b = 1, nblocks
+          call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), transpose(gas_conc_temp_3d(:,:,b))))
+          !                                         nlay, ncol, nexp -> nlay, blocksize, nblock -> blocksize, nlay
+        end do
+
+      else if (ndims == 2) then  ! this is a 2d field ncol*nexp.  
         ! need a 2d field (blocksize, nlay) 
         ! (ncol, nexp) --> -> (blocksize, nblocks) --> spread 1 block -> (blocksize, nlay)
         gas_conc_temp_2d = read_field(ncid, varName, ncol_l, nexp_l) * read_scaling(ncid, varName)
@@ -431,6 +438,11 @@ contains
     end if 
  
     end do
+
+    if (allocated(gas_conc_temp_3d)) deallocate(gas_conc_temp_3d)
+    if (allocated(gas_conc_temp_2d)) deallocate(gas_conc_temp_2d)
+    if (allocated(gas_conc_temp_1d)) deallocate(gas_conc_temp_1d)
+
     ncid = nf90_close(ncid)
   end subroutine read_and_block_gases_ty
 
@@ -487,6 +499,7 @@ contains
                                  reshape(temp2d, shape = [nlev, ncol_l, nexp_l])))
 
     ncid = nf90_close(ncid)
+    deallocate(temp2d)
   end subroutine unblock_and_write
 
   subroutine unblock_and_write_3D(fileName, varName, values)
@@ -523,6 +536,7 @@ contains
                                  reshape(temp3D, shape = [nbnd, nlev, ncol_l, nexp_l])))
 
     ncid = nf90_close(ncid)
+    deallocate(temp3D)
   end subroutine unblock_and_write_3D
 
   subroutine unblock_and_write_3D_notrans(fileName, varName, values)
@@ -557,7 +571,103 @@ contains
                                  reshape(temp3D, shape = [nbnd, nlev, ncol_l, nexp_l])))
 
     ncid = nf90_close(ncid)
+    deallocate(temp3D)
   end subroutine unblock_and_write_3D_notrans
+
+  subroutine unblock_and_write_3D_sp(fileName, varName, values)
+    character(len=*),           intent(in   ) :: fileName, varName
+    real(sp), dimension(:,:,:,:), allocatable, & ! [blocksize, nlay, nbnd, nblocks]  
+                                intent(inout   ) :: values
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks, nbnd, ibnd
+    real(sp), dimension(:,:,:), allocatable :: temp3D
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
+    blocksize = size(values,1)
+    nlev      = size(values,2)
+    nbnd      = size(values,3)
+    nblocks   = size(values,4)
+    if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
+
+    allocate(temp3D(nbnd, nlev, ncol_l*nexp_l))
+
+    do ibnd = 1, nbnd
+      do b = 1, nblocks
+        temp3D(ibnd, 1:nlev, ((b-1)*blocksize+1):(b*blocksize)) = transpose(values(1:blocksize,1:nlev,ibnd,b))
+      end do
+    end do
+
+    deallocate(values)
+    !
+    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
+    !
+
+    if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
+    call stop_on_err(write_4d_sp(ncid, varName,  &
+                                 reshape(temp3D, shape = [nbnd, nlev, ncol_l, nexp_l])))
+
+    ncid = nf90_close(ncid)
+    deallocate(temp3D)
+  end subroutine unblock_and_write_3D_sp
+
+  subroutine unblock_and_write_3D_notrans_sp(fileName, varName, values)
+    character(len=*),           intent(in   ) :: fileName, varName
+    real(sp), dimension(:,:,:,:), allocatable, & !   (ngas, nlay, block_size, nblocks)
+                                intent(inout   ) :: values
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks, nbnd, ibnd
+    real(sp), dimension(:,:,:), allocatable :: temp3D
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
+    nbnd      = size(values,1)
+    nlev      = size(values,2)
+    blocksize = size(values,3)
+    nblocks   = size(values,4)
+    if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
+
+    allocate(temp3D(nbnd, nlev, ncol_l*nexp_l))
+
+    do b = 1, nblocks
+       temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
+    end do
+
+    deallocate(values)
+    !
+    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
+    !
+
+    if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
+    call stop_on_err(write_4D_sp(ncid, varName,  &
+                                 reshape(temp3D, shape = [nbnd, nlev, ncol_l, nexp_l])))
+
+    ncid = nf90_close(ncid)
+    deallocate(temp3D)
+  end subroutine unblock_and_write_3D_notrans_sp
+
+  function write_4D_sp(ncid, varName, var) result(err_msg)
+    integer,                    intent(in) :: ncid
+    character(len=*),           intent(in) :: varName
+    real(sp), dimension(:,:,:,:), intent(in) :: var
+    character(len=128)                     :: err_msg
+
+    integer :: varid
+
+    err_msg = ""
+    if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) then
+      err_msg = "write_field: can't find variable " // trim(varName)
+      return
+    end if
+    if(nf90_put_var(ncid, varid, var)  /= NF90_NOERR) &
+      err_msg = "write_field: can't write variable " // trim(varName)
+
+  end function write_4d_sp
+  !----------------------------
 
   !--------------------------------------------------------------------------------------------------------------------
   subroutine stop_on_err(msg)
