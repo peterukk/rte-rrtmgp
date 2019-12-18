@@ -4,7 +4,32 @@ module mod_network
   use mod_layer, only: layer_type
   
   implicit none
-
+  real(wp), dimension(256) :: output_scaler_means = (/ 0.67_wp, 0.78_wp, 0.84_wp, 0.9_wp, &
+  0.96_wp, 1.04_wp, 1.15_wp, 1.3_wp, 1.53_wp, 1.74_wp, 1.82_wp, &
+  1.92_wp, 2.03_wp, 2.18_wp, 2.4_wp, 2.6_wp, 0.45_wp, 0.5_wp, 0.56_wp, 0.63_wp, 0.68_wp, 0.74_wp, &
+  0.83_wp, 0.94_wp, 1.15_wp, 1.34_wp, 1.43_wp, 1.54_wp, 1.69_wp, 1.89_wp, 2.19_wp, 2.46_wp, 0.41_wp, &
+  0.43_wp, 0.47_wp, 0.52_wp, 0.57_wp, 0.63_wp, 0.7_wp, 0.79_wp, 0.93_wp, 1.07_wp, 1.13_wp, 1.2_wp,&
+  1.28_wp, 1.41_wp, 1.53_wp, 1.59_wp, 0.76_wp, 0.85_wp, 0.9_wp, 0.95_wp, 1.01_wp, 1.09_wp, 1.2_wp,&
+  1.36_wp, 1.62_wp, 1.85_wp, 1.97_wp, 2.09_wp, 2.22_wp, 2.36_wp, 2.47_wp, 2.53_wp, 0.36_wp, 0.39_wp,&
+  0.43_wp, 0.49_wp, 0.56_wp, 0.62_wp, 0.69_wp, 0.77_wp, 0.91_wp, 1.04_wp, 1.1_wp, 1.16_wp, 1.24_wp,&
+  1.35_wp, 1.49_wp, 1.64_wp, 0.33_wp, 0.34_wp, 0.35_wp, 0.34_wp, 0.34_wp, 0.34_wp, 0.35_wp, 0.36_wp,&
+  0.4_wp, 0.43_wp, 0.45_wp, 0.46_wp, 0.47_wp, 0.49_wp, 0.5_wp, 0.5_wp, 0.38_wp, 0.42_wp, 0.46_wp,&
+  0.49_wp, 0.52_wp, 0.55_wp, 0.58_wp, 0.63_wp, 0.7_wp, 0.77_wp, 0.79_wp, 0.81_wp, 0.85_wp, 0.88_wp,&
+  0.93_wp, 0.95_wp, 0.37_wp, 0.38_wp, 0.39_wp, 0.4_wp, 0.41_wp, 0.43_wp, 0.46_wp, 0.5_wp, 0.58_wp,&
+  0.65_wp, 0.67_wp, 0.7_wp, 0.74_wp, 0.8_wp, 0.86_wp, 0.88_wp, 0.38_wp, 0.42_wp, 0.46_wp, 0.5_wp,&
+  0.55_wp, 0.59_wp, 0.65_wp, 0.74_wp, 0.88_wp, 1.01_wp, 1.07_wp, 1.14_wp, 1.21_wp, 1.31_wp, 1.44_wp,&
+  1.53_wp, 0.52_wp, 0.56_wp, 0.59_wp, 0.62_wp, 0.67_wp, 0.74_wp, 0.82_wp, 0.95_wp, 1.13_wp, 1.27_wp,&
+  1.33_wp, 1.4_wp, 1.49_wp, 1.59_wp, 1.71_wp, 1.77_wp, 0.59_wp, 0.65_wp, 0.69_wp, 0.73_wp, 0.78_wp,&
+  0.84_wp, 0.94_wp, 1.06_wp, 1.24_wp, 1.39_wp, 1.46_wp, 1.54_wp, 1.64_wp, 1.74_wp, 1.85_wp, 1.93_wp,&
+  0.28_wp, 0.32_wp, 0.36_wp, 0.39_wp, 0.42_wp, 0.46_wp, 0.51_wp, 0.58_wp, 0.7_wp, 0.81_wp, 0.85_wp,&
+  0.91_wp, 0.97_wp, 1.03_wp, 1.11_wp, 1.18_wp, 0.35_wp, 0.4_wp, 0.44_wp, 0.48_wp, 0.53_wp, 0.57_wp,&
+  0.62_wp, 0.69_wp, 0.77_wp, 0.82_wp, 0.83_wp, 0.83_wp, 0.81_wp, 0.83_wp, 0.88_wp, 0.91_wp, 0.69_wp,&
+  0.82_wp, 0.96_wp, 1.12_wp, 1.24_wp, 1.34_wp, 1.45_wp, 1.64_wp, 1.97_wp, 2.26_wp, 2.37_wp, 2.5_wp,&
+  2.67_wp, 2.89_wp, 3.04_wp, 3.1_wp, 0.22_wp, 0.25_wp, 0.27_wp, 0.28_wp, 0.3_wp, 0.32_wp, 0.34_wp,&
+  0.35_wp, 0.38_wp, 0.39_wp, 0.4_wp, 0.41_wp, 0.42_wp, 0.44_wp, 0.46_wp, 0.49_wp, 0.28_wp, 0.32_wp,&
+  0.36_wp, 0.39_wp, 0.43_wp, 0.47_wp, 0.52_wp, 0.6_wp, 0.72_wp, 0.83_wp, 0.87_wp, 0.93_wp, 1._wp,&
+  1.08_wp, 1.14_wp, 1.19_wp /)
+  real(wp) :: sigma = 0.7591194_wp
   !private
   public! :: network_type
 
@@ -21,9 +46,9 @@ module mod_network
     procedure, public, pass(self) :: init
     procedure, public, pass(self) :: load
     procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input, matrix-vector product
-    procedure, public, pass(self) :: output_sgemv_flatmodel                 ! Vector input, matrix-vector product using BLAS
     procedure, public, pass(self) :: output_matmul_flatmodel                ! Matrix input, matrix-matrix product
     procedure, public, pass(self) :: output_sgemm, output_sgemm_flatmodel   ! Matrix input, matrix-matrix product using BLAS
+    procedure, public, pass(self) :: output_sgemm_flatmodel_tau
     procedure, public, pass(self) :: save
     procedure, public, pass(self) :: set_activation
     !procedure, public, pass(self) :: sync
@@ -209,47 +234,6 @@ contains
     end associate
   end subroutine
 
-  subroutine output_sgemv_flatmodel(self, x, output)
-    ! Use forward propagation to compute the output of the network.
-    ! Using BLAS for the matmul operation (matrix-vector)
-    ! sgemv = single precision (wp=sp)
-    ! Explicit-shape intermediate array assuming equal number of neurons in each hidden layer
-    class(network_type),    intent(in) :: self
-    real(wp), dimension(:), intent(in)  :: x
-    real(wp), dimension(:), intent(out) :: output
-    ! Local variables
-    real(wp), dimension(size(self % layers(1) % w_transposed, 1)) :: a 
-    integer :: n, neurons, incx, incy
-    real(wp) :: alpha,beta
-    alpha = 1.0_wp
-    beta = 0.0_wp
-    incx = 1
-    incy = 1
-
-    neurons = size(self % layers(1) % w_transposed, 1)
-
-    associate(layers => self % layers)
-      call sgemv("N",neurons,size(x),alpha,layers(1) % w_transposed,neurons,x,incx,beta,a,incy)
-      a = a + layers(2) % b
-      call layers(2) % activation(a) 
-      ! INTERMEDIATE LAYERS
-      do n = 3, size(layers)-1
-        ! to avoid having to allocate another output array c (of size neurons, necessary because sgemv requires different input and output variables),
-        ! don't use sgemv here
-        a = matvecmul(layers(n-1) % w_transposed, a, neurons, neurons)
-        ! call sgemv("N",neurons,neurons,alpha,layers(n-1) % w_transposed,neurons,a,incx,beta,c,incy)'
-        a = a + layers(n) % b
-        ! a = c + layers(n) % b
-        call layers(n) % activation(a)
-      end do
-      ! LAST LAYER (LINEAR ACTIVATION = do nothing, just add biases)
-      call sgemv("N",size(output),neurons,alpha,layers(n-1) % w_transposed,size(output),a,incx,beta,output,incy)
-      output = output + layers(n) % b
-      call layers(n) % activation(output)
-    end associate
-  end subroutine
-
-
   subroutine output_matmul_flatmodel(self, x, output)
     ! Use forward propagation to compute the output of the network.
     ! In this version the inputs are a matrix/2D array, not 1D array (matrix-vector operations become matrix-matrix)
@@ -346,6 +330,7 @@ contains
     end associate
   end subroutine
 
+  
   subroutine output_sgemm_flatmodel(self, x, output)
     ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
     ! sgemm = single-precision (wp = sp)
@@ -353,7 +338,7 @@ contains
     real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
     real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
     ! Local variables
-    real(wp), dimension(size(self % layers(1) % w_transposed, 1), size(x,2))  :: a
+    real(wp), dimension(size(self % layers(1) % w_transposed, 1), size(x,2))  :: a,a_next
     real(wp)                :: alpha, beta
     integer                 :: n, num_sample, isample, neurons, num_inputs, ngpt
 
@@ -377,11 +362,13 @@ contains
 
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
-        call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a, neurons)
+        ! call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a, neurons)
+        call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a_next, neurons)
         do isample = 1, num_sample
-          a(:,isample) = a(:,isample ) + layers(n) % b
+          a_next(:,isample) = a_next(:,isample ) + layers(n) % b
         end do 
-        call layers(n) % activation_m(a)
+        call layers(n) % activation_m(a_next)
+        a = a_next
       end do
 
       call sgemm("N","N",ngpt, num_sample, neurons, alpha, layers(n-1) % w_transposed, ngpt, a, neurons, beta, output, ngpt)
@@ -389,6 +376,57 @@ contains
         output(:,isample) = output(:,isample ) + layers(n) % b
       end do
       call layers(n) % activation_m(output)
+
+      end associate
+  end subroutine
+
+  subroutine output_sgemm_flatmodel_tau(self, x, output)
+    ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
+    ! sgemm = single-precision (wp = sp)
+    class(network_type),      intent(in)    :: self
+    real(wp), dimension(:,:), intent(in)    :: x      ! (features, num_sample)
+    real(wp), dimension(:,:), intent(out)   :: output ! (outputs, num_sample)
+    ! Local variables
+    real(wp), dimension(size(self % layers(1) % w_transposed, 1), size(x,2))  :: a,a_next
+    real(wp)                :: alpha, beta
+    integer                 :: n, num_sample, isample, neurons, num_inputs, ngpt
+
+    a       = 0.0_wp
+    alpha   = 1.0_wp
+    beta    = 0.0_wp
+    output  = 0.0_wp
+
+    neurons = size(self % layers(1) % w_transposed, 1)
+    num_inputs  = size(x,1)
+    num_sample  = size(x,2)
+    ngpt        = size(output,1)
+
+    associate(layers => self % layers)
+
+      call sgemm("N","N",neurons, num_sample, num_inputs, alpha, layers(1) % w_transposed, neurons, x, num_inputs, beta, a, neurons)
+      do isample = 1, num_sample
+        a(:,isample) = a(:,isample ) + layers(2) % b
+      end do
+      call layers(2) % activation_m(a)
+
+      ! INTERMEDIATE LAYERS
+      do n = 3, size(layers)-1
+        ! call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a, neurons)
+        call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a_next, neurons)
+        do isample = 1, num_sample
+          a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+        end do 
+        call layers(n) % activation_m(a_next)
+        a = a_next
+      end do
+
+      call sgemm("N","N",ngpt, num_sample, neurons, alpha, layers(n-1) % w_transposed, ngpt, a, neurons, beta, output, ngpt)
+      do isample = 1, num_sample
+        output(:,isample) = output(:,isample ) + layers(n) % b
+        output(:,isample) = sigma*output(:,isample) + output_scaler_means
+      end do
+      call layers(n) % activation_m(output)
+
       
       end associate
   end subroutine

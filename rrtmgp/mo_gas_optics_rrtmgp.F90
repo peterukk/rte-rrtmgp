@@ -29,7 +29,7 @@ module mo_gas_optics_rrtmgp
   use mo_gas_optics_kernels, only: interpolation,                                                       &
                                    compute_tau_absorption, compute_tau_rayleigh, compute_Planck_source, &
                                    combine_and_reorder_2str, combine_and_reorder_nstr,  &
-                                   compute_Planck_source_nn, predict_nn_lw, predict_nn_lw_flattenall, predict_nn_lw_flattenlevs, &
+                                   compute_Planck_source_pfracin, predict_nn_lw, predict_nn_lw_blas, &
                                    gas_optical_depths_major
 
   use mo_rrtmgp_util_string, only: lower_case, string_in_array, string_loc_in_array
@@ -334,7 +334,7 @@ contains
     real(wp),    dimension(:,:,:),  intent(inout) :: nn_inputs
 
     !type(network_type), intent(inout)             :: net_tau_tropo, net_tau_strato, net_pfrac
-    type(network_type), dimension(:), intent(inout)  :: neural_nets
+    type(network_type), dimension(2), intent(inout)  :: neural_nets
 
     ! The neural neural networks are stored in an array, because the number of models can change:
     ! As a minimum, one model for predicting planck fractions and one for optical depths.
@@ -460,8 +460,6 @@ contains
     end if
     ! call system_clock(iTime2)
     !print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
-
-    print *, "heiho3"
 
 
 #ifdef USE_TIMING
@@ -1041,7 +1039,7 @@ contains
     ! call system_clock(iTime2)
     ! print *,'Elapsed time on reorder: ',real(iTime2-iTime1)/real(count_rate)
 
-    call compute_Planck_source_nn(ncol, nlay, nbnd, ngpt, &
+    call compute_Planck_source_pfracin(ncol, nlay, nbnd, ngpt, &
             this%get_ntemp(),this%get_nPlanckTemp(), &
             tlay, tlev_wk, tsfc, merge(1,nlay,play(1,1) > play(1,nlay)), &
             this%get_band_lims_gpoint(), &
@@ -1506,9 +1504,8 @@ function compute_interp_coeffs(this,                       &
 class(ty_gas_optics_rrtmgp), &
             intent(in   ) :: this
 integer,                          intent(in   ) :: ncol, nlay, ngpt, nband
-real(wp), dimension(:,:),         intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                             plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-                             tlay      ! layer temperatures [K]; (ncol,nlay)
+real(wp), dimension(ncol,nlay),   intent(in   ) :: play, tlay   ! layer pressures [Pa, mb] and temp (K); (ncol,nlay)
+real(wp), dimension(ncol,nlay+1), intent(in   ) :: plev   ! level pressures [Pa, mb]; (ncol,nlay+1)
 type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
 ! Interpolation coefficients for use in internal source function
 integer,     dimension(                       ncol, nlay), intent(  out)  :: jtemp, jpress
@@ -1519,7 +1516,7 @@ real(wp),    dimension(                       ncol, nlay), intent(  out)  :: pla
 character(len=128)                                         :: error_msg
 
 ! Optional inputs
-real(wp), dimension(:,:), intent(in   ), &
+real(wp), dimension(ncol,nlay), intent(in   ), &
  optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
  ! optional output
  real(wp), dimension(ngpt,nlay,ncol), intent(out   ), &
@@ -1698,15 +1695,18 @@ class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
 integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
 integer,  dimension(ncol,2),          intent(in   ) ::  itropo, istrato
 
-real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                                                        play_log, &
-                                                        plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-                                                        tlay      ! layer temperatures [K]; (ncol,nlay)
+! real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+!                                                         play_log, &
+!                                                         plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
+!                                                         tlay      ! layer temperatures [K]; (ncol,nlay)
+real(wp), dimension(ncol,nlay),       intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
+                                                        play_log, tlay
+real(wp), dimension(ncol,nlay+1),     intent(in   ) ::  plev                                                    
 
 type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
 class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
 
-type(network_type), dimension(:),     intent(inout) :: neural_nets
+type(network_type), dimension(2),     intent(inout) :: neural_nets
 
 real(wp), dimension(get_ngas(this),nlay,ncol), intent(out)   :: nn_inputs 
 !real(wp), dimension(:,:,:),           intent(out)   :: nn_inputs 
@@ -1715,7 +1715,7 @@ real(wp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac ! Planck fractions 
 character(len=128)                                  :: error_msg
 
 ! Optional inputs
-real(wp), dimension(:,:), intent(in   ), &
+real(wp), dimension(ncol,nlay), intent(in   ), &
    optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
 real(wp), dimension(ngpt,nlay,ncol), intent(in), optional :: tau_maj
 ! ----------------------------------------------------------
@@ -1734,17 +1734,6 @@ real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts fo
 integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
 ! ----------------------------------------------------------
 ! Neural network input scaling coefficients .. should probably be loaded from a file
-
-
-! real(wp), dimension(19) :: input_scaler_means = (/3.47212655E5_wp, 1.34472715E3_wp, 2.10885294E2_wp, 1.34087265E-1_wp, &
-! 1.10345914E-1_wp, 3.83904511E-2_wp, 5.73727873E-1_wp, 1.94999465E-5_wp, 5.62522302E-5_wp, 1.29234921E-4_wp, &
-! 5.32654220E-5_wp, 3.10007757E-5_wp, 4.07297133E-5_wp, 7.18303885E-6_wp, 1.93519903E-6_wp, 3.48821601E-5_wp, &
-! 2.56267690E-5_wp, 2.48434096E2_wp, 9.05813519_wp /)
-
-! real(wp), dimension(19) :: input_scaler_std = (/2.88192789E5_wp, 2.65166608E3_wp, 2.87030132E2_wp, 1.91521668E-1_wp,  &
-!     9.35021193E-2_wp, 3.65826341E-2_wp, 5.37845205E-1_wp, 2.36514336E-5_wp, 6.55783056E-5_wp, 1.45822425E-4_wp, &
-!     6.57981523E-5_wp, 1.02862892E-4_wp, 1.39463387E-4_wp, 7.77485444E-6_wp, 2.38989050E-6_wp, 6.06216452E-5_wp, &
-!     2.52634071E-5_wp,  2.89428695E1_wp, 2.47024725_wp /)
 
 real(wp), dimension(19) :: input_scaler_means = (/4.32155586E5_wp, 1.50567158E3_wp, 3.03431184E2_wp, 1.67521191E-1_wp, &
        1.35015806E-1_wp, 4.37451436E-2_wp, 6.80378326E-1_wp, 1.59224330E-5_wp, &
@@ -1767,12 +1756,13 @@ real(dp) :: doubleparam = 0.5001566410_dp
 integer :: flatten_dims
 ! If levs and cols are not flattened, use BLAS anyway for matrix-vector computations? (usually slower)
 ! If true, the hidden layers must have equal sizes (flat model)
-! logical :: use_blas
+logical :: use_blas
 
-! Flatten_dims = 0  for predicting one layer at a time, matrix-vector dot product
-!              = 1  for predicting all layers (or troposphere and stratosphere) at a time, matrix-matrix (SGEMM)
-!              = 2  for predicting all columns and layers at a time, matrix-matrix (SGEMM)
-flatten_dims   = 2
+! ! Flatten_dims = 0  for predicting one layer at a time, matrix-vector dot product
+! !              = 1  for predicting all layers (or troposphere and stratosphere) at a time, matrix-matrix (SGEMM)
+! !              = 2  for predicting all columns and layers at a time, matrix-matrix (SGEMM)
+! flatten_dims   = 2
+use_blas = .true.
 
 !
 ! Error checking
@@ -1856,9 +1846,9 @@ end do
 ! Prepare neural network INPUTS (standard-scaled col_gas + pay + tlay)
 ! These need to be normalized using standard scaling
 !
-print *, "pii"
 do ilay = 1, nlay
     ! 8th and 9th gases are constants (oxygen and nitrogen), exclude these. Note col_gas index starts from 0 (dry air)
+    
     do igas = 1, 7
       ! print *, this%gas_names(igas-1)
       nn_inputs(igas,ilay,:) = (1.0E-18*col_gas(:,ilay,igas-1) - input_scaler_means(igas)) / input_scaler_std(igas)
@@ -1873,7 +1863,6 @@ do ilay = 1, nlay
     nn_inputs(igas,ilay,:) = (play_log(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
 
 end do
-print *, "poo"
 
 ! do igas = 0,ngas
 !   print *, "max for gas", igas,":", maxval(col_gas(:,:,igas))
@@ -1898,14 +1887,8 @@ print *, "poo"
 ! igas = igas + 1
 ! print *, "nn_input:", igas, "is pressure"
 
-call system_clock(count_rate=count_rate)
-call system_clock(iTime1)   
-
 ! call zero_array(ngpt, nlay, ncol, tau)
 tau = 0.0_wp
-
-call system_clock(iTime2)
-print *,'Elapsed time on zero_array: ',real(iTime2-iTime1)/real(count_rate)
 
 ! ---- calculate gas optical depths ---- ------------------------------------------------------------------------
 
@@ -1934,36 +1917,21 @@ do inet = 1, size(neural_nets)
   neurons_last = size(neural_nets(inet) % layers(size(neural_nets(inet)%layers)-1) % w_transposed, 2)
   if (neurons_first == neurons_last) then
     print *, "Flat model"
-    
     call change_kernel(neural_nets(inet), output_opt_flatmodel, output_sgemm_flatmodel)
   end if
 end do
 
-print *, "joo"
-
-
-
-if (flatten_dims == 2) then
-  print *, "Flattening both levels and columns, using SGEMM for matrix-matrix computations"
-  call predict_nn_lw_flattenall(                  &
+if (use_blas) then
+  ! print *, "Flattening both levels and columns, using SGEMM for matrix-matrix computations"
+  call predict_nn_lw_blas(                  &
                         ncol,nlay,ngpt, ngas,     &  ! dimensions
                         nn_inputs,                &  ! data inputs
                         neural_nets,              &  ! NN models (input)
                         tau, pfrac)    ! outputs
 
-else if (flatten_dims == 1) then
-
-  print *, "Flattening levels,  using SGEMM for matrix-matrix computations"
-  call predict_nn_lw_flattenlevs(                     &
-                        ncol,nlay,ngpt, ngas,     &  ! dimensions
-                        itropo, istrato,          &
-                        nn_inputs,                &  ! data inputs
-                        neural_nets,              &  ! NN models (input)
-                        tau, pfrac)    ! outputs
-
-else
   print *, "Predicting one layer at a time"
 
+else
   call predict_nn_lw(                           &
                       ncol,nlay,ngpt, ngas,     &  ! dimensions
                       itropo, istrato,          &  ! data inputs
