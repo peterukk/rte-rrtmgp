@@ -25,7 +25,7 @@ module mo_rte_kind
   !
   ! Floating point working precision
   !
-  integer, parameter :: wp = dp
+  integer, parameter :: wp = sp
 
   !
   ! Logical - for use with kernels
