@@ -10,7 +10,7 @@
 !    BSD 3-clause license, see http://opensource.org/licenses/BSD-3-Clause
 ! -------------------------------------------------------------------------------------------------
 ! Encapsulates a collection of volume mixing ratios (concentrations) of gases.
-!   Each concentration is associated with a name, normally the chemical formula.
+!   Each concentration is allocated with a name, normally the chemical formula.
 !
 ! Values may be provided as scalars, 1-dimensional profiles (nlay), or 2-D fields (ncol,nlay).
 !   (nlay and ncol are determined from the input arrays; self-consistency is enforced)
@@ -37,7 +37,7 @@ module mo_gas_concentrations
   integer, parameter :: GAS_NOT_IN_LIST = -1
 
   type, private :: conc_field
-    real(wp), dimension(:,:), pointer :: conc => NULL()
+    real(wp), dimension(:,:), allocatable :: conc
   end type conc_field
 
   type, public :: ty_gas_concs
@@ -138,14 +138,13 @@ contains
     ! Deallocate anything existing -- could be more efficient to test if it's already the correct size
     !
     ! This cannot be made a function, because we need all the hierarchy for the correct OpenACC attach
-    if (associated(this%concs(igas)%conc)) then
+    if (allocated(this%concs(igas)%conc)) then
       if ( any(shape(this%concs(igas)%conc) /= [1, 1]) ) then
         !$acc exit data delete(this%concs(igas)%conc)
         deallocate(this%concs(igas)%conc)
-        nullify   (this%concs(igas)%conc)
       end if
     end if
-    if (.not. associated(this%concs(igas)%conc)) then
+    if (.not. allocated(this%concs(igas)%conc)) then
       allocate(this%concs(igas)%conc(1,1))
       !$acc enter data create(this%concs(igas)%conc)
     end if
@@ -186,14 +185,13 @@ contains
     ! Deallocate anything existing -- could be more efficient to test if it's already the correct size
     !
     ! This cannot be made a function, because we need all the hierarchy for the correct OpenACC attach
-    if (associated(this%concs(igas)%conc)) then
+    if (allocated(this%concs(igas)%conc)) then
       if ( any(shape(this%concs(igas)%conc) /= [1, this%nlay]) ) then
         !$acc exit data delete(this%concs(igas)%conc)
         deallocate(this%concs(igas)%conc)
-        nullify   (this%concs(igas)%conc)
       end if
     end if
-    if (.not. associated(this%concs(igas)%conc)) then
+    if (.not. allocated(this%concs(igas)%conc)) then
       allocate(this%concs(igas)%conc(1,this%nlay))
       !$acc enter data create(this%concs(igas)%conc)
     end if
@@ -243,14 +241,13 @@ contains
     ! Deallocate anything existing -- could be more efficient to test if it's already the correct size
     !
     ! This cannot be made a function, because we need all the hierarchy for the correct OpenACC attach
-    if (associated(this%concs(igas)%conc)) then
+    if (allocated(this%concs(igas)%conc)) then
       if ( any(shape(this%concs(igas)%conc) /= [this%ncol,this%nlay]) ) then
         !$acc exit data delete(this%concs(igas)%conc)
         deallocate(this%concs(igas)%conc)
-        nullify   (this%concs(igas)%conc)
       end if
     end if
-    if (.not. associated(this%concs(igas)%conc)) then
+    if (.not. allocated(this%concs(igas)%conc)) then
       allocate(this%concs(igas)%conc(this%ncol,this%nlay))
       !$acc enter data create(this%concs(igas)%conc)
     end if
@@ -280,7 +277,7 @@ contains
     igas = this%find_gas(gas)
     if (igas == GAS_NOT_IN_LIST) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
-    else if(.not. associated(this%concs(igas)%conc)) then
+    else if(.not. allocated(this%concs(igas)%conc)) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
     else if(size(this%concs(igas)%conc, 1) > 1) then ! Are we requesting a single profile when many are present?
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' requesting single profile but many are available'
@@ -321,7 +318,7 @@ contains
     igas = this%find_gas(gas)
     if (igas == GAS_NOT_IN_LIST) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
-    else if(.not. associated(this%concs(igas)%conc)) then
+    else if(.not. allocated(this%concs(igas)%conc)) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
     end if
     !
@@ -427,10 +424,9 @@ contains
     if(allocated(this%gas_name)) deallocate(this%gas_name)
     if (allocated(this%concs)) then
       do i = 1, size(this%concs)
-        if(associated(this%concs(i)%conc)) then
+        if(allocated(this%concs(i)%conc)) then
           !$acc exit data delete(this%concs(i)%conc)
           deallocate(this%concs(i)%conc)
-          nullify(this%concs(i)%conc)
         end if
       end do
       !$acc exit data delete(this%concs)
