@@ -444,6 +444,7 @@ contains
     if (allocated(gas_conc_temp_1d)) deallocate(gas_conc_temp_1d)
 
     ncid = nf90_close(ncid)
+
   end subroutine read_and_block_gases_ty
 
   !--------------------------------------------------------------------------------------------------------------------

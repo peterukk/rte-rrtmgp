@@ -165,7 +165,7 @@ program rrtmgp_rfmip_lw
 
   ! Where neural network model weights are located (required!)
 
-  modelfile_tau_tropo     = "../../neural/data/tau-lw-tropstrat-19-46-46-46-ynorm-pow8-2.txt"
+  modelfile_tau_tropo     = "../../neural/data/tau-lw-tropstrat-19-46-46-46-ynorm-pow8-3.txt"
   modelfile_tau_strato    = modelfile_tau_tropo
   modelfile_source        = "../../neural/data/pfrac-tropstrat-36-36-pow2.txt"
 
@@ -261,13 +261,16 @@ program rrtmgp_rfmip_lw
   !
   ! Read the gas concentrations and surface properties
   !
+
   call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_games, gas_conc_array)
+
   call read_and_block_lw_bc(rfmip_file, block_size, sfc_emis, sfc_t)
 
   !
   ! Read k-distribution information. load_and_init() reads data from netCDF and calls
   !   k_dist%init(); users might want to use their own reading methods
   !
+  
   call load_and_init(k_dist, trim(kdist_file), gas_conc_array(1))
   if(.not. k_dist%source_is_internal()) &
     stop "rrtmgp_rfmip_lw: k-distribution file isn't LW"
@@ -293,6 +296,7 @@ program rrtmgp_rfmip_lw
   !   gas optical properties, and source functions. The %alloc() routines carry along
   !   the spectral discretization from the k-distribution.
   !
+
   allocate(flux_up(    	block_size, nlay+1, nblocks), &
            flux_dn(    	block_size, nlay+1, nblocks))
   allocate(sfc_emis_spec(nbnd, block_size))
@@ -304,7 +308,6 @@ program rrtmgp_rfmip_lw
     planck_frac = 0.0_sp
   end if
   allocate(nn_inputs( 	ngas, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
-
   
   call stop_on_err(source%alloc            (block_size, nlay, k_dist))
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
@@ -354,6 +357,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
         sfc_emis_spec(ibnd,icol) = sfc_emis(icol,b)
       end do
     end do
+
     !
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
@@ -365,20 +369,21 @@ print *, "OpenMP processes available:", omp_get_num_procs()
     ! print *, "starting computations"
 
     if (use_nn) then
-      ! print *, "Using neural networks for predicting optical depths"
-      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),        &
-                                          p_lev(:,:,b),       &
-                                          t_lay(:,:,b),       &
-                                          sfc_t(:  ,b),       &
-                                          gas_conc_array(b),  &
-                                          optical_props,      &
-                                          source,             &
-                                          nn_inputs(:,:,:,b), &
-                                          neural_nets,        & !net_pfrac, net_tau_tropo, net_tau_strato
+      print *, "Using neural networks for predicting optical depths"
+
+      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),          &
+                                          p_lev(:,:,b),         &
+                                          t_lay(:,:,b),         &
+                                          sfc_t(:  ,b),         &
+                                          gas_conc_array(b),    &
+                                          optical_props,        &
+                                          source,               &
+                                          nn_inputs(:,:,:,b),   &
+                                          neural_nets,          & !net_pfrac, net_tau
                                           tlev = t_lev(:,:,b)))
     else 
       print *, "Using original code (interpolation routine) for predicting optical depths"
-      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
+      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
                                         sfc_t(:  ,b),       &

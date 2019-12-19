@@ -16,7 +16,8 @@
 
 module mo_gas_optics_kernels
   use mo_rte_kind,      only : wp, wl
-  use mod_network,      only: network_type, output_sgemm_flatmodel_tau
+  use mod_network,      only: network_type, output_sgemm_flatmodel_standardscaling
+  use, intrinsic :: ISO_C_BINDING
   implicit none
 contains
   ! --------------------------------------------------------------------------------------
@@ -431,136 +432,6 @@ contains
     end if
   end subroutine gas_optical_depths_minor
 
-    subroutine gas_optical_depths_minor2(ncol,nlay,ngpt,        &
-                                      ngas,nflav,ntemp,neta, &
-                                      nminor,nminork,        &
-                                      idx_h2o,               &
-                                      gpt_flv,               &
-                                      kminor,                &
-                                      minor_limits_gpt,      &
-                                      minor_scales_with_density,    &
-                                      scale_by_complement,   &
-                                      idx_minor, idx_minor_scaling, &
-                                      kminor_start,          &
-                                      play, tlay,            &
-                                      col_gas,fminor,jeta,   &
-                                      layer_limits,jtemp,    &
-                                      tau) bind(C, name="gas_optical_depths_minor2")
-    integer,                                     intent(in   ) :: ncol,nlay,ngpt
-    integer,                                     intent(in   ) :: ngas,nflav
-    integer,                                     intent(in   ) :: ntemp,neta,nminor,nminork
-    integer,                                     intent(in   ) :: idx_h2o
-    integer,     dimension(ngpt),                intent(in   ) :: gpt_flv
-    real(wp),    dimension(nminork,neta,ntemp),  intent(in   ) :: kminor
-    integer,     dimension(2,nminor),            intent(in   ) :: minor_limits_gpt
-    logical(wl), dimension(  nminor),            intent(in   ) :: minor_scales_with_density
-    logical(wl), dimension(  nminor),            intent(in   ) :: scale_by_complement
-    integer,     dimension(  nminor),            intent(in   ) :: kminor_start
-    integer,     dimension(  nminor),            intent(in   ) :: idx_minor, idx_minor_scaling
-    real(wp),    dimension(ncol,nlay),           intent(in   ) :: play, tlay
-    real(wp),    dimension(ncol,nlay,0:ngas),    intent(in   ) :: col_gas
-    real(wp),    dimension(2,2,nflav,ncol,nlay), intent(in   ) :: fminor
-    integer,     dimension(2,  nflav,ncol,nlay), intent(in   ) :: jeta
-    integer,     dimension(ncol, 2),             intent(in   ) :: layer_limits
-    integer,     dimension(ncol,nlay),           intent(in   ) :: jtemp
-    real(wp),    dimension(ngpt,nlay,ncol),      intent(inout) :: tau
-    ! -----------------
-    ! local variables
-    real(wp), parameter :: PaTohPa = 0.01
-    real(wp) :: vmr_fact, dry_fact             ! conversion from column abundance to dry vol. mixing ratio;
-    real(wp) :: scaling, kminor_loc            ! minor species absorption coefficient, optical depth
-    integer  :: icol, ilay, iflav, igpt, imnr
-    integer  :: gptS, gptE
-    real(wp), dimension(ngpt) :: tau_minor
-    ! -----------------
-    !
-    ! Guard against layer limits being 0 -- that means don't do anything i.e. there are no
-    !   layers with pressures in the upper or lower atmosphere respectively
-    ! First check skips the routine entirely if all columns are out of bounds...
-    !
-    if(any(layer_limits(:,1) > 0)) then
-      do imnr = 1, size(scale_by_complement,dim=1) ! loop over minor absorbers in each band
-        if (minor_scales_with_density(imnr)) then
-          do icol = 1, ncol
-            !
-            ! This check skips individual columns with no pressures in range
-            !
-            if(layer_limits(icol,1) > 0) then
-              do ilay = layer_limits(icol,1), layer_limits(icol,2)
-                !
-                ! Scaling of minor gas absortion coefficient begins with column amount of minor gas
-                !
-                scaling = col_gas(icol,ilay,idx_minor(imnr))
-                !
-                ! Density scaling (e.g. for h2o continuum, collision-induced absorption)
-                !
-                ! if (minor_scales_with_density(imnr)) then
-                  !
-                  ! NOTE: P needed in hPa to properly handle density scaling.
-                  !
-                  scaling = scaling * (PaTohPa*play(icol,ilay)/tlay(icol,ilay))
-                  if(idx_minor_scaling(imnr) > 0) then  ! there is a second gas that affects this gas's absorption
-                    vmr_fact = 1._wp / col_gas(icol,ilay,0)
-                    dry_fact = 1._wp / (1._wp + col_gas(icol,ilay,idx_h2o) * vmr_fact)
-                    ! scale by density of special gas
-                    if (scale_by_complement(imnr)) then ! scale by densities of all gases but the special one
-                      scaling = scaling * (1._wp - col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
-                    else
-                      scaling = scaling *          col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact
-                    endif
-                  endif
-                ! endif
-                !
-                ! Interpolation of absorption coefficient and calculation of optical depth
-                !
-                ! Which gpoint range does this minor gas affect?
-                gptS = minor_limits_gpt(1,imnr)
-                gptE = minor_limits_gpt(2,imnr)
-                iflav = gpt_flv(gptS)
-                tau_minor(gptS:gptE) = scaling *                   &
-                                        interpolate2D_byflav(fminor(:,:,iflav,icol,ilay), &
-                                                            kminor, &
-                                                            kminor_start(imnr), kminor_start(imnr)+(gptE-gptS), &
-                                                            jeta(:,iflav,icol,ilay), jtemp(icol,ilay))
-                tau(gptS:gptE,ilay,icol) = tau(gptS:gptE,ilay,icol) + tau_minor(gptS:gptE)
-              enddo
-            end if
-          enddo
-        else
-          do icol = 1, ncol
-            !
-            ! This check skips individual columns with no pressures in range
-            !
-            if(layer_limits(icol,1) > 0) then
-              do ilay = layer_limits(icol,1), layer_limits(icol,2)
-                !
-                ! Scaling of minor gas absortion coefficient begins with column amount of minor gas
-                !
-                scaling = col_gas(icol,ilay,idx_minor(imnr))
-                !
-                ! Density scaling (e.g. for h2o continuum, collision-induced absorption)
-                !
-              
-                !
-                ! Interpolation of absorption coefficient and calculation of optical depth
-                !
-                ! Which gpoint range does this minor gas affect?
-                gptS = minor_limits_gpt(1,imnr)
-                gptE = minor_limits_gpt(2,imnr)
-                iflav = gpt_flv(gptS)
-                tau_minor(gptS:gptE) = scaling *                   &
-                                        interpolate2D_byflav(fminor(:,:,iflav,icol,ilay), &
-                                                            kminor, &
-                                                            kminor_start(imnr), kminor_start(imnr)+(gptE-gptS), &
-                                                            jeta(:,iflav,icol,ilay), jtemp(icol,ilay))
-                tau(gptS:gptE,ilay,icol) = tau(gptS:gptE,ilay,icol) + tau_minor(gptS:gptE)
-              enddo
-            end if
-          enddo ! col
-        end if
-      enddo
-    end if
-  end subroutine gas_optical_depths_minor2
   ! ----------------------------------------------------------
   !
   ! compute Rayleigh scattering optical depths
@@ -880,39 +751,61 @@ contains
   end subroutine compute_Planck_source_pfracin
 
    ! ---------------------------------------------------------
-
+    ! Process all the data in a single neural network call (big matrix-matrix multiplication done by SGEMM)
+    ! This assumes the troposphere and stratosphere and predicted with the same neural network model
   subroutine predict_nn_lw(                 &
                     ncol, nlay, ngpt, ngas, & 
-                    itropo, istrato,        &
                     nn_inputs,              &
                     neural_nets,            &
                     tau, pfrac)
     ! inputs
-    integer,                                  intent(in)    :: ncol, nlay, ngpt, ngas
-    integer,  dimension(ncol,2),              intent(in)    :: itropo, istrato
+    integer,                                intent(in)    :: ncol, nlay, ngpt, ngas
     real(wp), dimension(ngas,nlay,ncol),    intent(in)    :: nn_inputs 
     ! neural network models
-    type(network_type), dimension(2),         intent(in)    :: neural_nets
+    type(network_type), dimension(2),       intent(in)    :: neural_nets
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out)   :: pfrac, tau
+    real(wp), dimension(ngpt,nlay,ncol),    intent(out)   :: pfrac, tau
 
     ! local
-    integer                                                 :: ilay, icol
+    integer                                               :: ilay, icol
 
-    real(wp) :: eps_neural = 0.005_wp 
-
+    real(wp), dimension(256) :: output_gpt_means = (/ 0.67_wp, 0.78_wp, 0.84_wp, 0.9_wp, &
+    0.96_wp, 1.04_wp, 1.15_wp, 1.3_wp, 1.53_wp, 1.74_wp, 1.82_wp, &
+    1.92_wp, 2.03_wp, 2.18_wp, 2.4_wp, 2.6_wp, 0.45_wp, 0.5_wp, 0.56_wp, 0.63_wp, 0.68_wp, 0.74_wp, &
+    0.83_wp, 0.94_wp, 1.15_wp, 1.34_wp, 1.43_wp, 1.54_wp, 1.69_wp, 1.89_wp, 2.19_wp, 2.46_wp, 0.41_wp, &
+    0.43_wp, 0.47_wp, 0.52_wp, 0.57_wp, 0.63_wp, 0.7_wp, 0.79_wp, 0.93_wp, 1.07_wp, 1.13_wp, 1.2_wp,&
+    1.28_wp, 1.41_wp, 1.53_wp, 1.59_wp, 0.76_wp, 0.85_wp, 0.9_wp, 0.95_wp, 1.01_wp, 1.09_wp, 1.2_wp,&
+    1.36_wp, 1.62_wp, 1.85_wp, 1.97_wp, 2.09_wp, 2.22_wp, 2.36_wp, 2.47_wp, 2.53_wp, 0.36_wp, 0.39_wp,&
+    0.43_wp, 0.49_wp, 0.56_wp, 0.62_wp, 0.69_wp, 0.77_wp, 0.91_wp, 1.04_wp, 1.1_wp, 1.16_wp, 1.24_wp,&
+    1.35_wp, 1.49_wp, 1.64_wp, 0.33_wp, 0.34_wp, 0.35_wp, 0.34_wp, 0.34_wp, 0.34_wp, 0.35_wp, 0.36_wp,&
+    0.4_wp, 0.43_wp, 0.45_wp, 0.46_wp, 0.47_wp, 0.49_wp, 0.5_wp, 0.5_wp, 0.38_wp, 0.42_wp, 0.46_wp,&
+    0.49_wp, 0.52_wp, 0.55_wp, 0.58_wp, 0.63_wp, 0.7_wp, 0.77_wp, 0.79_wp, 0.81_wp, 0.85_wp, 0.88_wp,&
+    0.93_wp, 0.95_wp, 0.37_wp, 0.38_wp, 0.39_wp, 0.4_wp, 0.41_wp, 0.43_wp, 0.46_wp, 0.5_wp, 0.58_wp,&
+    0.65_wp, 0.67_wp, 0.7_wp, 0.74_wp, 0.8_wp, 0.86_wp, 0.88_wp, 0.38_wp, 0.42_wp, 0.46_wp, 0.5_wp,&
+    0.55_wp, 0.59_wp, 0.65_wp, 0.74_wp, 0.88_wp, 1.01_wp, 1.07_wp, 1.14_wp, 1.21_wp, 1.31_wp, 1.44_wp,&
+    1.53_wp, 0.52_wp, 0.56_wp, 0.59_wp, 0.62_wp, 0.67_wp, 0.74_wp, 0.82_wp, 0.95_wp, 1.13_wp, 1.27_wp,&
+    1.33_wp, 1.4_wp, 1.49_wp, 1.59_wp, 1.71_wp, 1.77_wp, 0.59_wp, 0.65_wp, 0.69_wp, 0.73_wp, 0.78_wp,&
+    0.84_wp, 0.94_wp, 1.06_wp, 1.24_wp, 1.39_wp, 1.46_wp, 1.54_wp, 1.64_wp, 1.74_wp, 1.85_wp, 1.93_wp,&
+    0.28_wp, 0.32_wp, 0.36_wp, 0.39_wp, 0.42_wp, 0.46_wp, 0.51_wp, 0.58_wp, 0.7_wp, 0.81_wp, 0.85_wp,&
+    0.91_wp, 0.97_wp, 1.03_wp, 1.11_wp, 1.18_wp, 0.35_wp, 0.4_wp, 0.44_wp, 0.48_wp, 0.53_wp, 0.57_wp,&
+    0.62_wp, 0.69_wp, 0.77_wp, 0.82_wp, 0.83_wp, 0.83_wp, 0.81_wp, 0.83_wp, 0.88_wp, 0.91_wp, 0.69_wp,&
+    0.82_wp, 0.96_wp, 1.12_wp, 1.24_wp, 1.34_wp, 1.45_wp, 1.64_wp, 1.97_wp, 2.26_wp, 2.37_wp, 2.5_wp,&
+    2.67_wp, 2.89_wp, 3.04_wp, 3.1_wp, 0.22_wp, 0.25_wp, 0.27_wp, 0.28_wp, 0.3_wp, 0.32_wp, 0.34_wp,&
+    0.35_wp, 0.38_wp, 0.39_wp, 0.4_wp, 0.41_wp, 0.42_wp, 0.44_wp, 0.46_wp, 0.49_wp, 0.28_wp, 0.32_wp,&
+    0.36_wp, 0.39_wp, 0.43_wp, 0.47_wp, 0.52_wp, 0.6_wp, 0.72_wp, 0.83_wp, 0.87_wp, 0.93_wp, 1._wp,&
+    1.08_wp, 1.14_wp, 1.19_wp /)
+    real(wp) :: output_sigma = 0.7591194_wp
     do icol = 1, ncol
       do ilay = 1, nlay
-      ! do ilay = istrato(icol, 1), istrato(icol, 2)
         ! PREDICT PLANCK FRACTIONS
         call neural_nets(1) % nn_kernel(nn_inputs(:,ilay,icol), pfrac(:,ilay,icol))
-        pfrac(:,ilay,icol) =  max(0.0_wp,(pfrac(:,ilay,icol)**2))
+        pfrac(:,ilay,icol) =  pfrac(:,ilay,icol)**2
         ! PREDICT OPTICAL DEPTHS
         call neural_nets(2) % nn_kernel(nn_inputs(:,ilay,icol), tau(:,ilay,icol))
         ! Scaling
-        ! tau(:,ilay,icol) = exp(tau(:,ilay,icol)) - eps_neural
-        tau(:,ilay,icol)    = max(0.0_wp, (tau(:,ilay,icol)**8))
+        tau(:,ilay,icol) = output_sigma*tau(:,ilay,icol) + output_gpt_means(:)
+        tau(:,ilay,icol) = tau(:,ilay,icol)**8
       end do   ! layer
     end do ! column
     
@@ -931,26 +824,59 @@ contains
     type(network_type), dimension(2),         intent(in) :: neural_nets
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol),      intent(out) :: pfrac, tau
+    real(wp), dimension(ngpt,nlay,ncol), target,      intent(out) :: pfrac, tau
 
     ! local
-    real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
-    real(wp)                            :: sigma
+    !real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
+    real(wp), pointer :: tmp_output(:,:)
     integer                             :: ilay, icol
     
-    ! Process all the data in a single neural network call (big matrix-matrix multiplication done by SGEMM)
-    ! This assumes the troposphere and stratosphere and predicted with the same neural network model
+    real(wp), dimension(ngpt) :: output_gpt_means
+    real(wp) :: output_sigma 
+    
+    output_sigma = 0.7591194_wp
+    output_gpt_means = (/ 0.67_wp, 0.78_wp, 0.84_wp, 0.9_wp, &
+    0.96_wp, 1.04_wp, 1.15_wp, 1.3_wp, 1.53_wp, 1.74_wp, 1.82_wp, &
+    1.92_wp, 2.03_wp, 2.18_wp, 2.4_wp, 2.6_wp, 0.45_wp, 0.5_wp, 0.56_wp, 0.63_wp, 0.68_wp, 0.74_wp, &
+    0.83_wp, 0.94_wp, 1.15_wp, 1.34_wp, 1.43_wp, 1.54_wp, 1.69_wp, 1.89_wp, 2.19_wp, 2.46_wp, 0.41_wp, &
+    0.43_wp, 0.47_wp, 0.52_wp, 0.57_wp, 0.63_wp, 0.7_wp, 0.79_wp, 0.93_wp, 1.07_wp, 1.13_wp, 1.2_wp,&
+    1.28_wp, 1.41_wp, 1.53_wp, 1.59_wp, 0.76_wp, 0.85_wp, 0.9_wp, 0.95_wp, 1.01_wp, 1.09_wp, 1.2_wp,&
+    1.36_wp, 1.62_wp, 1.85_wp, 1.97_wp, 2.09_wp, 2.22_wp, 2.36_wp, 2.47_wp, 2.53_wp, 0.36_wp, 0.39_wp,&
+    0.43_wp, 0.49_wp, 0.56_wp, 0.62_wp, 0.69_wp, 0.77_wp, 0.91_wp, 1.04_wp, 1.1_wp, 1.16_wp, 1.24_wp,&
+    1.35_wp, 1.49_wp, 1.64_wp, 0.33_wp, 0.34_wp, 0.35_wp, 0.34_wp, 0.34_wp, 0.34_wp, 0.35_wp, 0.36_wp,&
+    0.4_wp, 0.43_wp, 0.45_wp, 0.46_wp, 0.47_wp, 0.49_wp, 0.5_wp, 0.5_wp, 0.38_wp, 0.42_wp, 0.46_wp,&
+    0.49_wp, 0.52_wp, 0.55_wp, 0.58_wp, 0.63_wp, 0.7_wp, 0.77_wp, 0.79_wp, 0.81_wp, 0.85_wp, 0.88_wp,&
+    0.93_wp, 0.95_wp, 0.37_wp, 0.38_wp, 0.39_wp, 0.4_wp, 0.41_wp, 0.43_wp, 0.46_wp, 0.5_wp, 0.58_wp,&
+    0.65_wp, 0.67_wp, 0.7_wp, 0.74_wp, 0.8_wp, 0.86_wp, 0.88_wp, 0.38_wp, 0.42_wp, 0.46_wp, 0.5_wp,&
+    0.55_wp, 0.59_wp, 0.65_wp, 0.74_wp, 0.88_wp, 1.01_wp, 1.07_wp, 1.14_wp, 1.21_wp, 1.31_wp, 1.44_wp,&
+    1.53_wp, 0.52_wp, 0.56_wp, 0.59_wp, 0.62_wp, 0.67_wp, 0.74_wp, 0.82_wp, 0.95_wp, 1.13_wp, 1.27_wp,&
+    1.33_wp, 1.4_wp, 1.49_wp, 1.59_wp, 1.71_wp, 1.77_wp, 0.59_wp, 0.65_wp, 0.69_wp, 0.73_wp, 0.78_wp,&
+    0.84_wp, 0.94_wp, 1.06_wp, 1.24_wp, 1.39_wp, 1.46_wp, 1.54_wp, 1.64_wp, 1.74_wp, 1.85_wp, 1.93_wp,&
+    0.28_wp, 0.32_wp, 0.36_wp, 0.39_wp, 0.42_wp, 0.46_wp, 0.51_wp, 0.58_wp, 0.7_wp, 0.81_wp, 0.85_wp,&
+    0.91_wp, 0.97_wp, 1.03_wp, 1.11_wp, 1.18_wp, 0.35_wp, 0.4_wp, 0.44_wp, 0.48_wp, 0.53_wp, 0.57_wp,&
+    0.62_wp, 0.69_wp, 0.77_wp, 0.82_wp, 0.83_wp, 0.83_wp, 0.81_wp, 0.83_wp, 0.88_wp, 0.91_wp, 0.69_wp,&
+    0.82_wp, 0.96_wp, 1.12_wp, 1.24_wp, 1.34_wp, 1.45_wp, 1.64_wp, 1.97_wp, 2.26_wp, 2.37_wp, 2.5_wp,&
+    2.67_wp, 2.89_wp, 3.04_wp, 3.1_wp, 0.22_wp, 0.25_wp, 0.27_wp, 0.28_wp, 0.3_wp, 0.32_wp, 0.34_wp,&
+    0.35_wp, 0.38_wp, 0.39_wp, 0.4_wp, 0.41_wp, 0.42_wp, 0.44_wp, 0.46_wp, 0.49_wp, 0.28_wp, 0.32_wp,&
+    0.36_wp, 0.39_wp, 0.43_wp, 0.47_wp, 0.52_wp, 0.6_wp, 0.72_wp, 0.83_wp, 0.87_wp, 0.93_wp, 1._wp,&
+    1.08_wp, 1.14_wp, 1.19_wp /)
+
 
     ! PREDICT PLANCK FRACTIONS
-    call neural_nets(1) % nn_kernel_m(reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output)
+    call C_F_POINTER (C_LOC(pfrac), tmp_output, [ngpt,nlay*ncol])
+    call neural_nets(1) % nn_kernel_m(ngas,ngpt,nlay*ncol,reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output)
+    !call neural_nets(1) % nn_kernel_m(ngas,ngpt,nlay*ncol,reshape(nn_inputs,(/ngas,nlay*ncol/)), pfrac)
     !Scaling
-    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
-    pfrac = max(0.0_wp, pfrac**2)
+    !pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
+    pfrac = pfrac**2
 
-    call neural_nets(2) % output_sgemm_flatmodel_tau(reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output )
+    !call neural_nets(2) % output_sgemm_flatmodel_tau(ngas,ngpt,nlay*ncol,reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output )
+    call C_F_POINTER (C_LOC(tau), tmp_output, [ngpt,nlay*ncol])
+    call neural_nets(2) % output_sgemm_flatmodel_standardscaling(ngas,ngpt,nlay*ncol,reshape(nn_inputs,(/ngas,nlay*ncol/)), tmp_output, output_gpt_means, output_sigma)
+    !call neural_nets(2) % output_sgemm_flatmodel_standardscaling(ngas,ngpt,nlay*ncol,reshape(nn_inputs,(/ngas,nlay*ncol/)), tau, output_gpt_means, output_sigma)
     !Scaling
-    tau = reshape(tmp_output,(/ngpt,nlay,ncol/))       
-    tau = max(0.0_wp, tau**8)
+    !tau = reshape(tmp_output,(/ngpt,nlay,ncol/))       
+    tau = tau**8
 
   end subroutine predict_nn_lw_blas
   

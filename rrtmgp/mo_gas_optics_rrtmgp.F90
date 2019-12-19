@@ -219,7 +219,7 @@ contains
   ! Compute gas optical depth and Planck source functions,
   !  given temperature, pressure, and composition
   !
-  function gas_optics_int(this,                             &
+ function gas_optics_int(this,                             &
                           play, plev, tlay, tsfc, gas_desc, &
                           optical_props, sources,           &
                           col_dry, tlev) result(error_msg)
@@ -318,13 +318,14 @@ contains
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
   end function gas_optics_int
 
-  function gas_optics_int_nn(this,                                  &
-                          play, plev, tlay, tsfc, gas_desc,         &
-                          optical_props, sources, nn_inputs,        &
-                          neural_nets,                              &
+  function gas_optics_int_nn(this,                              &
+                          play, plev, tlay, tsfc, gas_desc,     &
+                          optical_props, sources, nn_inputs,    &
+                          neural_nets,                          &
                           col_dry, tlev) result(error_msg)
 
   
+    ! inputs
     class(ty_gas_optics_rrtmgp),    intent(in)    :: this
     real(wp), dimension(:,:),       intent(in)    :: play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
                                                   plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
@@ -333,42 +334,32 @@ contains
     type(ty_gas_concs),             intent(in)    :: gas_desc  ! Gas volume mixing ratios
     real(wp),    dimension(:,:,:),  intent(inout) :: nn_inputs
 
-    !type(network_type), intent(inout)             :: net_tau_tropo, net_tau_strato, net_pfrac
-    type(network_type), dimension(2), intent(inout)  :: neural_nets
+    type(network_type), dimension(2), intent(inout) :: neural_nets ! Planck fraction model, optical depth model
 
-    ! The neural neural networks are stored in an array, because the number of models can change:
-    ! As a minimum, one model for predicting planck fractions and one for optical depths.
-    ! For Planck fracs, one model shrould be enough.  
-    ! For optical depths, the number of nets can be : 1 (tau), 2 (tau_trop, tau_strat), 
-    ! or 4 (tau_major_trop, tau_minor_trop, tau_major_trop,  tau_minor_strat)
-
-    class(ty_optical_props_arry),  &
-                              intent(inout) :: optical_props ! Optical properties
-    class(ty_source_func_lw    ),  &
-                              intent(inout) :: sources       ! Planck sources
-    character(len=128)                      :: error_msg
+    class(ty_optical_props_arry),   intent(inout)   :: optical_props ! Optical properties
+    class(ty_source_func_lw    ),   intent(inout)   :: sources       ! Planck sources
+    character(len=128)                              :: error_msg
     ! Optional inputs
     real(wp), dimension(:,:),   intent(in   ), &
                            optional, target :: col_dry, &  ! Column dry amount; dim(ncol,nlay)
                                                tlev        ! level temperatures [K]; (ncol,nlay+1)
-                                               
     ! ----------------------------------------------------------
     ! Local variables
     ! Interpolation coefficients for use in source function
                    
-    integer,     dimension(size(play,dim=1), size(play,dim=2))                        :: jtemp, jpress
-    logical(wl), dimension(size(play,dim=1), size(play,dim=2))                        :: tropo
-    real(wp),    dimension(2,2,2,get_nflav(this),size(play,dim=1), size(play,dim=2))  :: fmajor
-    integer,     dimension(2,    get_nflav(this),size(play,dim=1), size(play,dim=2))  :: jeta
-    integer,     dimension(size(play,dim=1),2)                                        :: itropo, istrato
-    real(wp),    dimension(size(play,dim=1), size(play,dim=2))                        :: play_log
-    real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: pfrac ! Planck fractions predicted by NN
-    real(wp), dimension(this%get_ngpt(),size(play,dim=2),size(play,dim=1))            :: tau_maj
+    !integer,     dimension(ncol,nlay)                           :: jtemp, jpress
+    !logical(wl), dimension(ncol,nlay)                           :: tropo
+    !real(wp),    dimension(2,2,2,get_nflav(this),ncol,nlay)     :: fmajor
+    !integer,     dimension(2,    get_nflav(this),ncol,nlay)     :: jeta
+    !integer,     dimension(ncol,2)                              :: itropo, istrato
+    !real(wp),    dimension(ncol,nlay)                           :: play_log
+    real(wp),     dimension(:,:,:),     allocatable              :: pfrac
+    !real(wp),    dimension(this%get_ngpt(),ncol,nlay)           :: tau_maj
+    !integer :: ngpt, nband, count_rate, iTime1, iTime2
     integer :: ncol, nlay, ngpt, nband, ngas, nflav, count_rate, iTime1, iTime2
-    logical :: original_source, top_at_1, interp_taumaj
+    logical :: original_source, top_at_1
 
-    original_source = .false.
-    interp_taumaj   = .false.
+    !original_source = .false.
     ! ----------------------------------------------------------
 
     ncol  = size(play,dim=1)
@@ -376,7 +367,8 @@ contains
     ngpt  = this%get_ngpt()
     nband = this%get_nband()
     ngas  = this%get_ngas()
-
+    
+    allocate(pfrac(ngpt,ncol,nlay))
     !
     ! Gas optics 
     !
@@ -387,77 +379,40 @@ contains
 
     ! call system_clock(count_rate=count_rate)
     ! call system_clock(iTime1)
-#ifdef USE_TIMING
-    ret =  gptlstart('interpolation')
-#endif
 
-    if (original_source) then ! use original kernels to get source functions
-    ! In this case the interpolation coefficients computed in compute_gas_taus are needed
-    ! Temporary solution...doing all the computations just to get the interpolation coefficients is redundant
-      error_msg = compute_interp_coeffs(this,                  &
-                                  ncol, nlay, ngpt, nband,    &
-                                  play, plev, tlay, gas_desc, &
-                                  jtemp, jpress, jeta, tropo, fmajor, play_log, &
-                                  col_dry)
-    else
-      play_log = log(play)
-      tropo    = play_log > this%press_ref_trop_log
-    end if
-#ifdef USE_TIMING
-    ret =  gptlstop('interpolation')
-#endif
+    !play_log = log(play)
+    !tropo    = play_log > this%press_ref_trop_log
 
-    ! call system_clock(iTime2)
-    ! print *,'Elapsed time on interpolation coefficients',real(iTime2-iTime1)/real(count_rate)
 
     ! Find the level (for each column) separating stratosphere and troposphere
 
-    top_at_1  = play(1,1) < play(1, nlay)
+  !  top_at_1  = play(1,1) < play(1, nlay)
 
     ! itropo_x(:,1) is the first index of the troposphere, (:,2) is the last index; same for istrato
-    if(top_at_1) then
-      itropo(:, 1) = minloc(play, dim=2, mask=tropo)  
-      itropo(:, 2) = nlay
-      istrato(:, 1) = 1
-      istrato(:, 2) = maxloc(play, dim=2, mask=(.not. tropo))
-    else
-      itropo(:, 1) = 1
-      itropo(:, 2) = minloc(play, dim=2, mask= tropo)
-      istrato(:, 1) = maxloc(play, dim=2, mask=(.not. tropo))
-      istrato(:, 2) = nlay
-    end if
+  !  if(top_at_1) then
+  !    itropo(:, 1) = minloc(play, dim=2, mask=tropo)  
+  !    itropo(:, 2) = nlay
+  !    istrato(:, 1) = 1
+  !    istrato(:, 2) = maxloc(play, dim=2, mask=(.not. tropo))
+  !  else
+  !    itropo(:, 1) = 1
+  !    itropo(:, 2) = minloc(play, dim=2, mask= tropo)
+  !    istrato(:, 1) = maxloc(play, dim=2, mask=(.not. tropo))
+  !    istrato(:, 2) = nlay
+  !  end if
 
 #ifdef USE_TIMING
     ret =  gptlstart('compute_taus_pfracs_nnlw')
 #endif
 
-    if(interp_taumaj) then
-
-    error_msg = compute_interp_coeffs(this,                  &
-                                ncol, nlay, ngpt, nband,    &
-                                play, plev, tlay, gas_desc, &
-                                jtemp, jpress, jeta, tropo, fmajor, play_log, &
-                                col_dry, tau_maj)
-
-    error_msg = compute_taus_pfracs_nnlw(this,              &
-                                 ncol, nlay, ngpt, nband,   &
-                                 itropo, istrato,           &
-                                 play, play_log, plev, tlay, gas_desc,&
-                                 optical_props, pfrac,                &
-                                 neural_nets, &
-                                 nn_inputs, col_dry, tau_maj) 
-
-    else  
-
     ! Predict g-point taus and planck fractions using neural networks
-    error_msg = compute_taus_pfracs_nnlw(this,              &
-                                 ncol, nlay, ngpt, nband,   &
-                                 itropo, istrato,           &
-                                 play, play_log, plev, tlay, gas_desc,&
-                                 optical_props, pfrac,                &
-                                 neural_nets, &
+    error_msg = compute_taus_pfracs_nnlw(this,                  &
+                                 ncol, nlay, ngas, ngpt, nband, &
+                                 play, plev, tlay, gas_desc,    &
+                                 optical_props, pfrac,          &
+                                 neural_nets,                   &
                                  nn_inputs, col_dry) 
-    end if
+    
     ! call system_clock(iTime2)
     !print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
@@ -497,18 +452,16 @@ contains
     ret =  gptlstart('Planck-source')
 #endif
 
-    if (original_source) then
+    !if (original_source) then
     ! Use original source computations, including planck fractions by interpolating
-    error_msg = source(this,                               &
-                       ncol, nlay, nband, ngpt,            &
-                       play, plev, tlay, tsfc,             &
-                       jtemp, jpress, jeta, tropo, fmajor, &
-                       sources,                            &
-                       tlev)
-    else
+    !error_msg = source(this,                               &
+    !                   ncol, nlay, nband, ngpt,            &
+    !                   play, plev, tlay, tsfc,             &
+    !                   jtemp, jpress, jeta, tropo, fmajor, &
+    !                   sources,                            &
+    !                   tlev)
+    !else
 
-    ! test alternative functions for computing sources, here planck fractions have already been computed by NN
-    !
     error_msg = source_nn(this,                     & !
                         ncol, nlay, nband, ngpt,    &
                         play, plev, tlay, tsfc,     &
@@ -516,12 +469,11 @@ contains
                         pfrac,                      & ! in
                         tlev)                         ! optional input
 
-    end if
+    !end if
 
 #ifdef USE_TIMING
     ret =  gptlstop('Planck-source')
 #endif
-    ! print *, 'Lay_source(1,1,1) :', sources%lay_source(1,1,1)
 
   end function gas_optics_int_nn
   !------------------------------------------------------------------------------------------
@@ -566,8 +518,6 @@ contains
     nflav = get_nflav(this)
     !
     ! Gas optics
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
 
     !
     !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
@@ -580,8 +530,6 @@ contains
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
     if(error_msg  /= '') return
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on gas optics: ',real(iTime2-iTime1)/real(count_rate)
 
     ! ----------------------------------------------------------
     !
@@ -784,8 +732,8 @@ contains
             tropo,        &
             jeta,jpress,play_log)
 
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
+    !call system_clock(count_rate=count_rate)
+    !call system_clock(iTime1)
 
     call compute_tau_absorption(                     &
             ncol,nlay,nband,ngpt,                    &  ! dimensions
@@ -815,8 +763,8 @@ contains
             play,tlay,col_gas,                       &
             jeta,jtemp,jpress,                       &
             tau)
-    call system_clock(iTime2)
-    print *,'Elapsed time on compute_tau_absorption ',real(iTime2-iTime1)/real(count_rate)
+    !call system_clock(iTime2)
+    !print *,'Elapsed time on compute_tau_absorption ',real(iTime2-iTime1)/real(count_rate)
 
     if (allocated(this%krayl)) then
       !$acc enter data attach(col_dry_wk) copyin(this%krayl)
@@ -984,6 +932,7 @@ contains
     character(len=128)                                 :: error_msg
     ! ----------------------------------------------------------
     integer                                      :: icol, ilay
+    integer, dimension(2, nbnd)                  :: band_lims_gpt
     real(wp), dimension(ncol,nlay,ngpt)          :: pfrac_reverse
     ! real(wp), dimension(ngpt,nlay,ncol)          :: lay_source_t, lev_source_inc_t, lev_source_dec_t
     ! real(wp), dimension(ngpt,     ncol)          :: sfc_source_t
@@ -1038,11 +987,11 @@ contains
 
     ! call system_clock(iTime2)
     ! print *,'Elapsed time on reorder: ',real(iTime2-iTime1)/real(count_rate)
-
+    band_lims_gpt = this%get_band_lims_gpoint()
     call compute_Planck_source_pfracin(ncol, nlay, nbnd, ngpt, &
             this%get_ntemp(),this%get_nPlanckTemp(), &
             tlay, tlev_wk, tsfc, merge(1,nlay,play(1,1) > play(1,nlay)), &
-            this%get_band_lims_gpoint(), &
+            band_lims_gpt, &
             this%temp_ref_min, this%totplnk_delta, this%totplnk, &
             sources%planck_frac, &
             sources%sfc_source, sources%lay_source, sources%lev_source_inc, &
@@ -1499,7 +1448,7 @@ function compute_interp_coeffs(this,                       &
   ncol, nlay, ngpt, nband,    &
   play, plev, tlay, gas_desc, &
   jtemp, jpress, jeta, tropo, fmajor, play_log, &
-  col_dry, tau_maj) result(error_msg)
+  col_dry) result(error_msg)
 
 class(ty_gas_optics_rrtmgp), &
             intent(in   ) :: this
@@ -1518,9 +1467,6 @@ character(len=128)                                         :: error_msg
 ! Optional inputs
 real(wp), dimension(ncol,nlay), intent(in   ), &
  optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
- ! optional output
- real(wp), dimension(ngpt,nlay,ncol), intent(out   ), &
- optional :: tau_maj ! Column dry amount; dim(ncol,nlay)
 ! ----------------------------------------------------------
 integer :: igas, idx_h2o ! index of some gases
 ! Number of molecules per cm^2
@@ -1660,18 +1606,6 @@ call interpolation(               &
 	tropo,        &
   jeta,jpress,play_log)
 
-  if(present(tau_maj))then
-    call gas_optical_depths_major(   &
-    ncol,nlay,this%get_nband(),this%get_ngpt(),       & ! dimensions
-    nflav,neta,npres,ntemp,    &
-    this%gpoint_flavor,             &
-    this%get_band_lims_gpoint(),             &
-    this%kmajor,                    &
-    col_mix,fmajor,            &
-    jeta,tropo,jtemp,jpress,   &
-    tau_maj)
-  endif
- 
 
 !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
 !$acc exit data delete(play, tlay, col_gas, col_mix, fminor)
@@ -1684,43 +1618,34 @@ end function compute_interp_coeffs
 ! Function for neural-network accelerated long-wave gas optics (optical depths and planck fractions).
 ! This function prepares the outputs for the neural network and then calls the kernel
 function compute_taus_pfracs_nnlw(this,                         &
-    ncol, nlay, ngpt, nband,                                    &
-    itropo, istrato,                                            &
-    play, play_log, plev, tlay, gas_desc,                       &
+    ncol, nlay, ngas, ngpt, nband,                                    &
+    play, plev, tlay, gas_desc,                                 &
     optical_props, pfrac,                                       &
     neural_nets,                                                &
-    nn_inputs, col_dry, tau_maj) result(error_msg)
+    nn_inputs, col_dry) result(error_msg)
 
 class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
-integer,                              intent(in   ) ::  ncol, nlay, ngpt, nband
-integer,  dimension(ncol,2),          intent(in   ) ::  itropo, istrato
-
-! real(wp), dimension(:,:),             intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-!                                                         play_log, &
-!                                                         plev, &   ! level pressures [Pa, mb]; (ncol,nlay+1)
-!                                                         tlay      ! layer temperatures [K]; (ncol,nlay)
+integer,                              intent(in   ) ::  ncol, nlay, ngas, ngpt, nband
 real(wp), dimension(ncol,nlay),       intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (ncol,nlay)
-                                                        play_log, tlay
+                                                        tlay
 real(wp), dimension(ncol,nlay+1),     intent(in   ) ::  plev                                                    
 
-type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios
+type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
 class(ty_optical_props_arry),         intent(inout) ::  optical_props !inout because components are allocated
 
 type(network_type), dimension(2),     intent(inout) :: neural_nets
 
-real(wp), dimension(get_ngas(this),nlay,ncol), intent(out)   :: nn_inputs 
-!real(wp), dimension(:,:,:),           intent(out)   :: nn_inputs 
-real(wp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac ! Planck fractions predicted by NN
+real(wp), dimension(ngas,nlay,ncol),    intent(out) :: nn_inputs 
+real(wp), dimension(ngpt,nlay,ncol),    intent(out) :: pfrac ! Planck fractions predicted by NN
 
 character(len=128)                                  :: error_msg
 
 ! Optional inputs
 real(wp), dimension(ncol,nlay), intent(in   ), &
    optional, target :: col_dry ! Column dry amount; dim(ncol,nlay)
-real(wp), dimension(ngpt,nlay,ncol), intent(in), optional :: tau_maj
 ! ----------------------------------------------------------
 ! Local variables
-real(wp), dimension(ngpt,nlay,ncol) :: tau, tau_rayleigh  ! absorption, Rayleigh scattering optical depths
+real(wp), dimension(ngpt,nlay,ncol) :: tau  ! absorption, Rayleigh scattering optical depths
 integer :: igas, ilay, idx_h2o, icol, inet ! index of some gases
 ! Number of molecules per cm^2
 real(wp), dimension(ncol,nlay), target  :: col_dry_arr
@@ -1729,9 +1654,9 @@ real(wp), dimension(:,:),       pointer :: col_dry_wk => NULL()
 ! Interpolation variables used in major gas but not elsewhere, so don't need exporting
 !
 
-real(wp), dimension(ncol,nlay,  this%get_ngas())  :: vmr     ! volume mixing ratios
-real(wp), dimension(ncol,nlay,0:this%get_ngas())  :: col_gas ! column amounts for each gas, plus col_dry
-integer                                           :: ngas, npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
+real(wp), dimension(ncol,nlay,  ngas)  :: vmr     ! volume mixing ratios
+real(wp), dimension(ncol,nlay,0:ngas)  :: col_gas ! column amounts for each gas, plus col_dry
+integer                                 :: npres, ntemp,  count_rate, iTime1, iTime2, neurons_first, neurons_last
 ! ----------------------------------------------------------
 ! Neural network input scaling coefficients .. should probably be loaded from a file
 
@@ -1758,10 +1683,8 @@ integer :: flatten_dims
 ! If true, the hidden layers must have equal sizes (flat model)
 logical :: use_blas
 
-! ! Flatten_dims = 0  for predicting one layer at a time, matrix-vector dot product
-! !              = 1  for predicting all layers (or troposphere and stratosphere) at a time, matrix-matrix (SGEMM)
-! !              = 2  for predicting all columns and layers at a time, matrix-matrix (SGEMM)
-! flatten_dims   = 2
+! Predict one layer at a time, where the neural network computations are matrix-vector dot products, 
+! or predict all columns and layers simultaenously, using BLAS for matrix-matrix computations? (usually faster)
 use_blas = .true.
 
 !
@@ -1807,11 +1730,10 @@ if(error_msg  /= '') return
 end if
 
 ! ----------------------------------------------------------
-ngas  = this%get_ngas()
 npres = this%get_npres()
 ntemp = this%get_ntemp()
 
-!
+
 ! Fill out the array of volume mixing ratios
 !
 do igas = 1, ngas
@@ -1860,7 +1782,7 @@ do ilay = 1, nlay
     ! Last two inputs are temperature and pressure
     nn_inputs(igas,ilay,:) = (tlay(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
     igas = igas + 1
-    nn_inputs(igas,ilay,:) = (play_log(:,ilay) - input_scaler_means(igas)) / input_scaler_std(igas)
+    nn_inputs(igas,ilay,:) = (log(play(:,ilay)) - input_scaler_means(igas)) / input_scaler_std(igas)
 
 end do
 
@@ -1916,37 +1838,29 @@ do inet = 1, size(neural_nets)
   neurons_first = size(neural_nets(inet) % layers(1) % w_transposed, 1)
   neurons_last = size(neural_nets(inet) % layers(size(neural_nets(inet)%layers)-1) % w_transposed, 2)
   if (neurons_first == neurons_last) then
-    print *, "Flat model"
+    ! print *, "Flat model"
     call change_kernel(neural_nets(inet), output_opt_flatmodel, output_sgemm_flatmodel)
   end if
 end do
 
 if (use_blas) then
-  ! print *, "Flattening both levels and columns, using SGEMM for matrix-matrix computations"
+  ! print *, "Using BLAS for matrix-matrix computations, predicting all layers and colums simultaenously"
   call predict_nn_lw_blas(                  &
                         ncol,nlay,ngpt, ngas,     &  ! dimensions
                         nn_inputs,                &  ! data inputs
                         neural_nets,              &  ! NN models (input)
                         tau, pfrac)    ! outputs
 
-  print *, "Predicting one layer at a time"
-
 else
+  ! print *, "Not using BLAS, predicting one layer at a time"
+
   call predict_nn_lw(                           &
                       ncol,nlay,ngpt, ngas,     &  ! dimensions
-                      itropo, istrato,          &  ! data inputs
                       nn_inputs,                &  ! data inputs
                       neural_nets,              &  ! NN models (input)
                       tau, pfrac)    ! outputs
 end if
 
-if(present(tau_maj))then
-  print *, "max of taumaj is", maxval(tau_maj)
-  print *, "min of taumaj is", minval(tau_maj)  
-  print *, "max of taumin is", maxval(tau)
-  print *, "min of taumin is", minval(tau)
-  tau = tau + tau_maj
-endif
 
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw')
@@ -1965,7 +1879,8 @@ call system_clock(count_rate=count_rate)
 call system_clock(iTime1)   
 
 ! Combine optical depths and reorder for radiative transfer solver.
-call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
+call reorder123x321(tau, optical_props%tau)
+!call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
 
 call system_clock(iTime2)
 print *,'Elapsed time on combine and reorder: ',real(iTime2-iTime1)/real(count_rate)
@@ -2143,6 +2058,14 @@ end function compute_taus_pfracs_nnlw
       rewrite_key_species_pair(:) = (/2,2/)
     end if
   end function
+  
+  subroutine rewrite_key_species_pair_sr(key_species_pair)
+      ! (0,0) becomes (2,2) -- because absorption coefficients for these g-points will be 0.
+    integer, dimension(2), intent(inout) :: key_species_pair
+    if (all(key_species_pair(:).eq.(/0,0/))) then
+      key_species_pair(:) = (/2,2/)
+    end if
+  end subroutine rewrite_key_species_pair_sr
 
   ! ---------------------------------------------------------------------------------------
   ! true is key_species_pair exists in key_species_list
@@ -2415,14 +2338,14 @@ end function compute_taus_pfracs_nnlw
     end do
     key_species_pair2flavor = -1
   end function key_species_pair2flavor
-
+    
   ! ---------------------------------------------------------------------------------------
   !
   ! create gpoint_flavor list
   !   a map pointing from each g-point to the corresponding entry in the "flavor list"
   !
   subroutine create_gpoint_flavor(key_species, gpt2band, flavor, gpoint_flavor)
-    integer, dimension(:,:,:), intent(in) :: key_species
+    integer, dimension(:,:,:), intent(inout) :: key_species
     integer, dimension(:), intent(in) :: gpt2band
     integer, dimension(:,:), intent(in) :: flavor
     integer, dimension(:,:), intent(out), allocatable :: gpoint_flavor
@@ -2431,10 +2354,10 @@ end function compute_taus_pfracs_nnlw
     allocate(gpoint_flavor(2,ngpt))
     do igpt=1,ngpt
       do iatm=1,2
-        gpoint_flavor(iatm,igpt) = key_species_pair2flavor( &
-          flavor, &
-          rewrite_key_species_pair(key_species(:,iatm,gpt2band(igpt))) &
-        )
+        call rewrite_key_species_pair_sr(key_species(:,iatm,gpt2band(igpt)))
+        gpoint_flavor(iatm,igpt) = key_species_pair2flavor( flavor, key_species(:,iatm,gpt2band(igpt)) )
+        ! gpoint_flavor(iatm,igpt) = key_species_pair2flavor( flavor, &
+        !    rewrite_key_species_pair(key_species(:,iatm,gpt2band(igpt))) )
       end do
     end do
   end subroutine create_gpoint_flavor

@@ -86,16 +86,16 @@ module mo_gas_optics
                                   intent(inout) :: optical_props ! Optical properties
       class(ty_source_func_lw    ),  &
                                   intent(inout) :: sources       ! Planck sources
-
       real(wp), dimension(:,:,:),           intent(inout) :: nn_inputs
       type(network_type), dimension(2),     intent(inout) :: neural_nets
-
       character(len=128)                      :: error_msg
       real(wp), dimension(:,:), intent(in   ), &
                             optional, target :: col_dry, &  ! Column dry amount; dim(ncol,nlay)
                                                    tlev        ! level temperatures [K]l (ncol,nlay+1)
 
     end function gas_optics_int_nn_abstract
+    
+    
 
     function gas_optics_int_abstract(this,                             &
                                      play, plev, tlay, tsfc, gas_desc, &
