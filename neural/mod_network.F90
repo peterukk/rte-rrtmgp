@@ -275,10 +275,10 @@ contains
       ! Add biases
       do isample = 1, num_sample
         a(:,isample) = a(:,isample ) + layers(2) % b
+        call layers(2) % activation(a(:,isample))
       end do
       ! a = a + transpose(spread( layers(2) % b, 1, num_sample ))
       ! Activation (2D array)
-      call layers(2) % activation_m(a)
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
         matsize = shape(layers(n-1) % w_transposed)
@@ -289,10 +289,10 @@ contains
         ! Add biases
         do isample = 1, num_sample
           a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+          call layers(n) % activation(a_next(:,isample))
         end do 
         ! a_next = a_next + transpose(spread( layers(n) % b, 1, num_sample ))
         ! Activation
-        call layers(n) % activation_m(a_next)
         a = a_next
         deallocate(a_next)
       end do
@@ -302,24 +302,27 @@ contains
       ! Add biases
       do isample = 1, num_sample
         output(:,isample) = output(:,isample ) + layers(n) % b
+        call layers(n) % activation(output(:,isample))
       end do
-      call layers(n) % activation_m(output)
       !  output = output + transpose(spread( layers(n) % b, 1, num_sample ))
     end associate
   end subroutine
 
   
-  subroutine output_sgemm_flatmodel(self, num_inputs,num_outputs,num_sample, x, output)
+  subroutine output_sgemm_flatmodel(self, num_inputs, num_outputs, num_sample, x, output)
     ! Use this routine for a 2D input data array to process all the samples simultaenously in a feed-forward network.
     ! sgemm = single-precision (wp = sp)
     class(network_type),      intent(in)    :: self
-    integer, intent(in) :: num_inputs,num_outputs,num_sample
-    real(wp), dimension(num_inputs, num_sample), intent(in)      :: x      ! (features, num_sample)
-    real(wp), dimension(num_outputs,num_sample), intent(out)     :: output ! (outputs, num_sample)
+    integer, intent(in)                     :: num_inputs, num_outputs, num_sample
+    real(wp), dimension(num_inputs, num_sample), &
+                              intent(in)    :: x      ! (features, num_sample)
+    real(wp), dimension(num_outputs,num_sample), &
+                              intent(out)   :: output ! (outputs, num_sample)
     ! Local variables
-    real(wp), dimension(size(self % layers(1) % w_transposed, 1), size(x,2))  :: a,a_next
-    real(wp)                :: alpha, beta
-    integer                 :: n, isample, neurons 
+    real(wp), dimension(size(self % layers(1) % w_transposed, 1), num_sample) &
+                                            :: a,a_next
+    real(wp)                                :: alpha, beta
+    integer                                 :: n, isample, neurons 
 
     a       = 0.0_wp
     alpha   = 1.0_wp
@@ -333,27 +336,42 @@ contains
       call sgemm("N","N",neurons, num_sample, num_inputs, alpha, layers(1) % w_transposed, neurons, x, num_inputs, beta, a, neurons)
       do isample = 1, num_sample
         a(:,isample) = a(:,isample ) + layers(2) % b
+        call softsignn(a(:,isample))
+        !call layers(2) % activation(a(:,isample))
       end do
-      call layers(2) % activation_m(a)
 
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
-        ! call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a, neurons)
         call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a_next, neurons)
         do isample = 1, num_sample
           a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+          call softsignn(a_next(:,isample))
+          !call layers(n) % activation(a_next(:,isample))
         end do 
-        call layers(n) % activation_m(a_next)
         a = a_next
       end do
 
       call sgemm("N","N",num_outputs, num_sample, neurons, alpha, layers(n-1) % w_transposed, num_outputs, a, neurons, beta, output, num_outputs)
       do isample = 1, num_sample
         output(:,isample) = output(:,isample ) + layers(n) % b
+        ! call layers(n) % activation(output(:,isample))
+        call reluu(output(:,isample))
       end do
-      call layers(n) % activation_m(output)
 
       end associate
+  end subroutine
+
+
+  elemental subroutine reluu(x) 
+    !! REctified Linear Unit (RELU) activation subroutine.
+    real(wp), intent(inout) :: x
+    x = max(0.0_wp, x)
+  end subroutine reluu
+
+    
+  elemental subroutine softsignn(x)
+    real(wp), intent(inout) :: x
+    x = x / (abs(x) + 1)
   end subroutine
 
   subroutine output_sgemm_flatmodel_standardscaling(self, num_inputs,num_outputs,num_sample, x, output, output_means, output_sigma)
@@ -367,7 +385,7 @@ contains
     real(wp), dimension(num_outputs),           intent(in)      :: output_means
     real(wp) ,                                  intent(in)      :: output_sigma 
     ! Local variables
-    real(wp), dimension(size(self % layers(1) % w_transposed, 1), size(x,2))  :: a,a_next
+    real(wp), dimension(size(self % layers(1) % w_transposed, 1), num_sample)  :: a,a_next
     real(wp)                :: alpha, beta
     integer                 :: n, isample, neurons 
 
@@ -377,17 +395,15 @@ contains
     output  = 0.0_wp
 
     neurons = size(self % layers(1) % w_transposed, 1)
-    !num_inputs  = size(x,1)
-    !num_sample  = size(x,2)
-    !num_outputs        = size(output,1)
 
     associate(layers => self % layers)
 
       call sgemm("N","N",neurons, num_sample, num_inputs, alpha, layers(1) % w_transposed, neurons, x, num_inputs, beta, a, neurons)
       do isample = 1, num_sample
         a(:,isample) = a(:,isample ) + layers(2) % b
+        !call layers(2) % activation(a(:,isample))
+        call softsignn(a(:,isample))
       end do
-      call layers(2) % activation_m(a)
 
       ! INTERMEDIATE LAYERS
       do n = 3, size(layers)-1
@@ -395,19 +411,18 @@ contains
         call sgemm("N","N",neurons,num_sample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a_next, neurons)
         do isample = 1, num_sample
           a_next(:,isample) = a_next(:,isample ) + layers(n) % b
+          !call layers(n) % activation(a_next(:,isample))
+          call softsignn(a_next(:,isample))
         end do 
-        call layers(n) % activation_m(a_next)
         a = a_next
       end do
 
       call sgemm("N","N",num_outputs, num_sample, neurons, alpha, layers(n-1) % w_transposed, num_outputs, a, neurons, beta, output, num_outputs)
       do isample = 1, num_sample
         output(:,isample) = output(:,isample ) + layers(n) % b
+        !call layers(n) % activation(output(:,isample))
         output(:,isample) = output_sigma*output(:,isample) + output_means
       end do
-
-      call layers(n) % activation_m(output)
-
       
       end associate
   end subroutine

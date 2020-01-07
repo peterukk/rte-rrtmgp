@@ -598,7 +598,72 @@ contains
 
   ! ----------------------------------------------------------
   ! Returns source functions as arrays which have g-points as first dimensions - could be useful in the future
-  subroutine compute_Planck_source_pfracin_gpfirst(                    &
+  subroutine compute_Planck_source_pfracin_gpfirst2(                    &
+                    ncol, nlay, nbnd, ngpt,               &
+                    ntemp, nPlanckTemp,                   &
+                    tlay, tlev, tsfc, sfc_lay,            &
+                    band_lims_gpt,                        &
+                    temp_ref_min, totplnk_delta, totplnk, &
+                    pfrac,                                &
+                    sfc_src, lay_src, lev_src_inc, lev_src_dec) bind(C, name="compute_Planck_pfracin_gpfirst2")
+    integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
+    integer,                                    intent(in) :: ntemp, nPlanckTemp
+    real(wp),    dimension(ncol,nlay  ),        intent(in) :: tlay
+    real(wp),    dimension(ncol,nlay+1),        intent(in) :: tlev
+    real(wp),    dimension(ncol       ),        intent(in) :: tsfc
+    integer,                                    intent(in) :: sfc_lay
+
+    integer, dimension(2, nbnd),                  intent(in) :: band_lims_gpt ! start and end g-point for each band
+    real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
+    real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
+    real(wp), dimension(ngpt,nlay,ncol),          intent(in) :: pfrac
+
+    real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_src
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lay_src
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lev_src_inc, lev_src_dec
+    ! -----------------
+    ! local
+    integer  :: ilay, icol, igpt, ibnd
+    integer  :: gptS, gptE
+    real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
+    real(wp), dimension(nbnd,nlay+1,ncol)     :: planck_function_lev
+    real(wp), dimension(nbnd,nlay,  ncol)     :: planck_function_lay
+    real(wp), dimension(nbnd,       ncol)     :: planck_function_sfc
+
+    do icol = 1, ncol
+      !
+      ! Planck function by band for the surface
+      ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
+      !
+      planck_function_sfc(1:nbnd, icol) = interpolate1D(tsfc(icol), temp_ref_min, totplnk_delta, totplnk)
+      do ibnd = 1, nbnd
+        gptS = band_lims_gpt(1, ibnd)
+        gptE = band_lims_gpt(2, ibnd)
+        do igpt = gptS, gptE
+          sfc_src(igpt, icol) = pfrac(igpt,sfc_lay,icol) * planck_function_sfc(ibnd, icol)
+        end do
+      end do
+      planck_function_lev(1:nbnd,1, icol)       = interpolate1D(tlev(icol, 1),      temp_ref_min, totplnk_delta, totplnk)
+      do ilay = 1, nlay
+        planck_function_lev(1:nbnd,ilay+1,icol) = interpolate1D(tlev(icol,ilay+1),  temp_ref_min, totplnk_delta, totplnk)
+        planck_function_lay(1:nbnd,ilay,icol)   = interpolate1D(tlay(icol,ilay),    temp_ref_min, totplnk_delta, totplnk)
+        do ibnd = 1, nbnd
+          gptS = band_lims_gpt(1, ibnd)
+          gptE = band_lims_gpt(2, ibnd)
+          do igpt = gptS, gptE
+            ! compute layer source irradiance for each g-point
+            lay_src(igpt,ilay,icol)     = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd,ilay,icol)
+            ! compute level source irradiance for each g-point, one each for upward and downward paths
+            lev_src_dec(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd,ilay,  icol)
+            lev_src_inc(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd,ilay+1,icol)
+          end do
+        end do
+      end do ! ilay
+    end do ! icol
+
+    end subroutine compute_Planck_source_pfracin_gpfirst2
+
+    subroutine compute_Planck_source_pfracin_gpfirst(                    &
                     ncol, nlay, nbnd, ngpt,               &
                     ntemp, nPlanckTemp,                   &
                     tlay, tlev, tsfc, sfc_lay,            &
@@ -824,11 +889,12 @@ contains
     type(network_type), dimension(2),         intent(in) :: neural_nets
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol), target,      intent(out) :: pfrac, tau
+    real(wp), dimension(ngpt,nlay,ncol), target, &
+                                              intent(out) :: pfrac, tau
 
     ! local
-    real(wp), pointer :: tmp_output(:,:)
-    integer                             :: ilay, icol
+    real(wp), pointer         :: tmp_output(:,:)
+    integer                   :: ilay, icol
     
     real(wp), dimension(ngpt) :: output_gpt_means
     real(wp) :: output_sigma 
