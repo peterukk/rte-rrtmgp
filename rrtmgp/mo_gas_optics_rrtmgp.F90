@@ -369,37 +369,6 @@ contains
     ngas  = this%get_ngas()
     
     allocate(pfrac(ngpt,ncol,nlay))
-    !
-    ! Gas optics 
-    !
-    !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
-
-    ! Compute optical depths and sources with neural networks
-    ! NN inputs are prepared inside the function from col_dry,tlay and play
-
-    ! call system_clock(count_rate=count_rate)
-    ! call system_clock(iTime1)
-
-    !play_log = log(play)
-    !tropo    = play_log > this%press_ref_trop_log
-
-
-    ! Find the level (for each column) separating stratosphere and troposphere
-
-  !  top_at_1  = play(1,1) < play(1, nlay)
-
-    ! itropo_x(:,1) is the first index of the troposphere, (:,2) is the last index; same for istrato
-  !  if(top_at_1) then
-  !    itropo(:, 1) = minloc(play, dim=2, mask=tropo)  
-  !    itropo(:, 2) = nlay
-  !    istrato(:, 1) = 1
-  !    istrato(:, 2) = maxloc(play, dim=2, mask=(.not. tropo))
-  !  else
-  !    itropo(:, 1) = 1
-  !    itropo(:, 2) = minloc(play, dim=2, mask= tropo)
-  !    istrato(:, 1) = maxloc(play, dim=2, mask=(.not. tropo))
-  !    istrato(:, 2) = nlay
-  !  end if
 
 #ifdef USE_TIMING
     ret =  gptlstart('compute_taus_pfracs_nnlw')
@@ -828,6 +797,7 @@ contains
     integer                                      :: icol, ilay, igpt
     integer                                      :: count_rate, iTime1, iTime2
     real(wp), dimension(ngpt,nlay,ncol)          :: lay_source_t, lev_source_inc_t, lev_source_dec_t, planck_frac_out
+    ! lay_source_t  - (ngot)
     real(wp), dimension(ngpt,     ncol)          :: sfc_source_t
     ! Variables for temperature at layer edges [K] (ncol, nlay+1)
     real(wp), dimension(   ncol,nlay+1), target  :: tlev_arr
