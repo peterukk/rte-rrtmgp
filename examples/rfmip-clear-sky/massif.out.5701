@@ -1,0 +1,1276 @@
+desc: (none)
+cmd: ./rrtmgp_rfmip_lw
+time_unit: i
+#-----------
+snapshot=0
+#-----------
+time=0
+mem_heap_B=0
+mem_heap_extra_B=0
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=1
+#-----------
+time=20268561
+mem_heap_B=31
+mem_heap_extra_B=9
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=2
+#-----------
+time=20299937
+mem_heap_B=17427
+mem_heap_extra_B=2565
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=3
+#-----------
+time=20318417
+mem_heap_B=27190
+mem_heap_extra_B=4106
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=4
+#-----------
+time=20349364
+mem_heap_B=43576
+mem_heap_extra_B=6680
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=5
+#-----------
+time=20368303
+mem_heap_B=53254
+mem_heap_extra_B=8290
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=6
+#-----------
+time=20405972
+mem_heap_B=73573
+mem_heap_extra_B=11403
+mem_stacks_B=0
+heap_tree=detailed
+n4: 73573 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 65360 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 65360 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 65360 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 65360 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 65360 0x4010731: _dl_init (dl-init.c:72)
+      n0: 65360 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 6864 0xA300747: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 6864 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 6864 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 6864 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 6864 0x4010731: _dl_init (dl-init.c:72)
+      n0: 6864 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1318 0xA300A4F: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 1318 0xA301CB0: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 1318 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 1318 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 1318 0x4010731: _dl_init (dl-init.c:72)
+      n0: 1318 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 31 in 1 place, below massif's threshold (1.00%)
+#-----------
+snapshot=7
+#-----------
+time=20437017
+mem_heap_B=90172
+mem_heap_extra_B=13868
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=8
+#-----------
+time=20613211
+mem_heap_B=91364
+mem_heap_extra_B=14044
+mem_stacks_B=0
+heap_tree=detailed
+n4: 91364 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 81320 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 81320 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 8560 0xA300747: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 8560 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 8560 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 8560 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 8560 0x4010731: _dl_init (dl-init.c:72)
+      n0: 8560 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1453 0xA300A4F: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 1453 0xA301CB0: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 1453 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 1453 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 1453 0x4010731: _dl_init (dl-init.c:72)
+      n0: 1453 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 31 in 1 place, below massif's threshold (1.00%)
+#-----------
+snapshot=9
+#-----------
+time=20652281
+mem_heap_B=95618
+mem_heap_extra_B=11622
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=10
+#-----------
+time=20668422
+mem_heap_B=96474
+mem_heap_extra_B=11750
+mem_stacks_B=0
+heap_tree=detailed
+n4: 96474 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1515 0xA300A4F: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 1515 0xA301CB0: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 1453 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 1453 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 1453 0x4010731: _dl_init (dl-init.c:72)
+      n0: 1453 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n0: 62 in 1 place, below massif's threshold (1.00%)
+ n1: 1296 0xA300747: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 1296 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 1296 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 1296 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 1296 0x4010731: _dl_init (dl-init.c:72)
+      n0: 1296 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n0: 0 in 1 place, below massif's threshold (1.00%)
+ n0: 31 in 1 place, below massif's threshold (1.00%)
+#-----------
+snapshot=11
+#-----------
+time=20696786
+mem_heap_B=136694
+mem_heap_extra_B=11314
+mem_stacks_B=0
+heap_tree=detailed
+n7: 136694 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 32816 0x5FCE9B4: opendir (opendir.c:216)
+  n1: 32816 0x600E460: get_nprocs_conf (getsysstats.c:242)
+   n1: 32816 0x5FD5D6F: sysconf (sysconf.c:628)
+    n1: 32816 0x6C497BD: ??? (in /usr/lib/x86_64-linux-gnu/libgomp.so.1.0.0)
+     n1: 32816 0x6C36CA3: ??? (in /usr/lib/x86_64-linux-gnu/libgomp.so.1.0.0)
+      n1: 32816 0x4010731: _dl_init (dl-init.c:72)
+       n0: 32816 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 2040 0x5F52FDD: register_printf_modifier (reg-modifier.c:69)
+  n1: 2040 0x6E667D9: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 2040 0x4010731: _dl_init (dl-init.c:72)
+    n0: 2040 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1984 0x5F5328D: register_printf_type (reg-type.c:43)
+  n1: 1984 0x6E667BE: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 1984 0x4010731: _dl_init (dl-init.c:72)
+    n0: 1984 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1515 0xA300A4F: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n1: 1515 0xA301CB0: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n0: 1515 in 2 places, all below massif's threshold (1.00%)
+ n0: 611 in 5 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=12
+#-----------
+time=20734189
+mem_heap_B=104630
+mem_heap_extra_B=11338
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=13
+#-----------
+time=20760363
+mem_heap_B=109260
+mem_heap_extra_B=11596
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=14
+#-----------
+time=20798956
+mem_heap_B=109265
+mem_heap_extra_B=11623
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=15
+#-----------
+time=20829741
+mem_heap_B=110413
+mem_heap_extra_B=12243
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=16
+#-----------
+time=20853232
+mem_heap_B=114044
+mem_heap_extra_B=14196
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=17
+#-----------
+time=20892791
+mem_heap_B=120830
+mem_heap_extra_B=17770
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=18
+#-----------
+time=20917141
+mem_heap_B=124936
+mem_heap_extra_B=19928
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=19
+#-----------
+time=20954206
+mem_heap_B=131053
+mem_heap_extra_B=23091
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=20
+#-----------
+time=20975833
+mem_heap_B=135795
+mem_heap_extra_B=25149
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=21
+#-----------
+time=21001443
+mem_heap_B=139943
+mem_heap_extra_B=26697
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=22
+#-----------
+time=21024019
+mem_heap_B=143793
+mem_heap_extra_B=28167
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=23
+#-----------
+time=21046800
+mem_heap_B=147765
+mem_heap_extra_B=29107
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=24
+#-----------
+time=21083349
+mem_heap_B=152778
+mem_heap_extra_B=31062
+mem_stacks_B=0
+heap_tree=detailed
+n9: 152778 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n5: 32432 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 13888 0x76CCCAC: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n3: 13888 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 9184 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 9184 in 159 places, all below massif's threshold (1.00%)
+    n1: 2912 0x769F6F7: H5P_create_id (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 2912 0x769FC74: H5P__init_package (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 2912 0x769FDF6: H5P_init (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 2912 0x751A8E8: H5_init_library (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 2912 0x751ADDF: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 2912 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 2912 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 2912 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+            n1: 2912 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 2912 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+              n1: 2912 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+               n1: 2912 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+                n1: 2912 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+                 n0: 2912 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 1792 in 1 place, below massif's threshold (1.00%)
+  n1: 5824 0x769E619: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 5824 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 5824 in 56 places, all below massif's threshold (1.00%)
+  n0: 4800 in 5 places, all below massif's threshold (1.00%)
+  n1: 4152 0x762F1D3: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 4152 in 161 places, all below massif's threshold (1.00%)
+  n1: 3768 0x7597D0A: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3768 in 157 places, all below massif's threshold (1.00%)
+ n0: 5827 in 25 places, all below massif's threshold (1.00%)
+ n2: 4647 0x764042A: H5MM_xstrdup (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 3620 0x7597D26: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3620 in 157 places, all below massif's threshold (1.00%)
+  n0: 1027 in 5 places, all below massif's threshold (1.00%)
+ n2: 4136 0x75DD051: H5FL_fac_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 2112 0x76CDB50: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 2112 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 2112 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 2112 in 77 places, all below massif's threshold (1.00%)
+  n0: 2024 in 5 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 3720 0x5908CD5: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n0: 3720 in 5 places, all below massif's threshold (1.00%)
+  n0: 264 in 1 place, below massif's threshold (1.00%)
+ n1: 2040 0x5F52FDD: register_printf_modifier (reg-modifier.c:69)
+  n1: 2040 0x6E667D9: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 2040 0x4010731: _dl_init (dl-init.c:72)
+    n0: 2040 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1984 0x5F5328D: register_printf_type (reg-type.c:43)
+  n1: 1984 0x6E667BE: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 1984 0x4010731: _dl_init (dl-init.c:72)
+    n0: 1984 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+#-----------
+snapshot=25
+#-----------
+time=21126062
+mem_heap_B=158777
+mem_heap_extra_B=32415
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=26
+#-----------
+time=21166724
+mem_heap_B=164861
+mem_heap_extra_B=34795
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=27
+#-----------
+time=21193416
+mem_heap_B=167199
+mem_heap_extra_B=35609
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=28
+#-----------
+time=21229677
+mem_heap_B=180036
+mem_heap_extra_B=37812
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=29
+#-----------
+time=21246796
+mem_heap_B=188724
+mem_heap_extra_B=38972
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=30
+#-----------
+time=21272400
+mem_heap_B=203356
+mem_heap_extra_B=40940
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=31
+#-----------
+time=21307227
+mem_heap_B=220597
+mem_heap_extra_B=42595
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=32
+#-----------
+time=21339073
+mem_heap_B=226261
+mem_heap_extra_B=42931
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=33
+#-----------
+time=21360195
+mem_heap_B=230037
+mem_heap_extra_B=43155
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=34
+#-----------
+time=21392772
+mem_heap_B=235701
+mem_heap_extra_B=43491
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=35
+#-----------
+time=21419307
+mem_heap_B=237589
+mem_heap_extra_B=43603
+mem_stacks_B=0
+heap_tree=detailed
+n8: 237589 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n9: 108840 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n3: 27456 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 14976 in 48 places, all below massif's threshold (1.00%)
+   n1: 6240 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 6240 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 6240 in 20 places, all below massif's threshold (1.00%)
+   n1: 6240 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 6240 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 6240 in 20 places, all below massif's threshold (1.00%)
+  n3: 24784 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 14352 0x76EA0DF: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 14352 in 46 places, all below massif's threshold (1.00%)
+   n0: 6016 in 7 places, all below massif's threshold (1.00%)
+   n1: 4416 0x76EA0A8: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 4416 in 46 places, all below massif's threshold (1.00%)
+  n1: 22680 0x76CCCAC: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n3: 22680 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14056 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14056 in 245 places, all below massif's threshold (1.00%)
+    n1: 5824 0x769F6F7: H5P_create_id (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 5824 0x769FC74: H5P__init_package (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 5824 0x769FDF6: H5P_init (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 5824 0x751A8E8: H5_init_library (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 5824 0x751ADDF: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 5824 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 5824 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 5824 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+            n1: 5824 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 5824 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+              n1: 5824 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+               n1: 5824 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+                n1: 5824 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+                 n0: 5824 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 2800 in 1 place, below massif's threshold (1.00%)
+  n1: 10192 0x769E619: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10192 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 10192 in 98 places, all below massif's threshold (1.00%)
+  n1: 8448 0x76EA901: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 8448 in 50 places, all below massif's threshold (1.00%)
+  n1: 6696 0x762F1D3: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 6696 in 248 places, all below massif's threshold (1.00%)
+  n1: 3768 0x7597D0A: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3768 in 157 places, all below massif's threshold (1.00%)
+  n1: 3080 0x76CECE8: H5SL_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3080 in 5 places, all below massif's threshold (1.00%)
+  n0: 1736 in 3 places, all below massif's threshold (1.00%)
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 10665 in 27 places, all below massif's threshold (1.00%)
+ n2: 6544 0x75DD051: H5FL_fac_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 3472 in 6 places, all below massif's threshold (1.00%)
+  n1: 3072 0x76CDB50: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 3072 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 3072 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 3072 in 110 places, all below massif's threshold (1.00%)
+ n2: 5396 0x764042A: H5MM_xstrdup (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 3620 0x7597D26: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3620 in 157 places, all below massif's threshold (1.00%)
+  n0: 1776 in 6 places, all below massif's threshold (1.00%)
+ n1: 4432 0x769E651: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 4432 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 4432 in 98 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 3720 0x5908CD5: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n0: 3720 in 5 places, all below massif's threshold (1.00%)
+  n0: 264 in 1 place, below massif's threshold (1.00%)
+#-----------
+snapshot=36
+#-----------
+time=21444552
+mem_heap_B=241365
+mem_heap_extra_B=43827
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=37
+#-----------
+time=21466717
+mem_heap_B=245141
+mem_heap_extra_B=44051
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=38
+#-----------
+time=21489149
+mem_heap_B=248917
+mem_heap_extra_B=44275
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=39
+#-----------
+time=21526386
+mem_heap_B=254581
+mem_heap_extra_B=44611
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=40
+#-----------
+time=21548970
+mem_heap_B=258357
+mem_heap_extra_B=44835
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=41
+#-----------
+time=21571848
+mem_heap_B=262133
+mem_heap_extra_B=45059
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=42
+#-----------
+time=21610534
+mem_heap_B=267797
+mem_heap_extra_B=45395
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=43
+#-----------
+time=21633848
+mem_heap_B=271573
+mem_heap_extra_B=45619
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=44
+#-----------
+time=21657522
+mem_heap_B=275349
+mem_heap_extra_B=45843
+mem_stacks_B=0
+heap_tree=detailed
+n8: 275349 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n8: 146600 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n3: 52416 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 18720 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 18720 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 18720 in 60 places, all below massif's threshold (1.00%)
+   n1: 18720 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 18720 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 18720 in 60 places, all below massif's threshold (1.00%)
+   n0: 14976 in 48 places, all below massif's threshold (1.00%)
+  n4: 29904 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 14352 0x76EA0DF: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 14352 in 46 places, all below massif's threshold (1.00%)
+   n1: 7808 0x76F4FE5: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 7808 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 7808 in 61 places, all below massif's threshold (1.00%)
+   n1: 4416 0x76EA0A8: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 4416 in 46 places, all below massif's threshold (1.00%)
+   n0: 3328 in 6 places, all below massif's threshold (1.00%)
+  n1: 22680 0x76CCCAC: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n3: 22680 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14056 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14056 in 245 places, all below massif's threshold (1.00%)
+    n1: 5824 0x769F6F7: H5P_create_id (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 5824 0x769FC74: H5P__init_package (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 5824 0x769FDF6: H5P_init (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 5824 0x751A8E8: H5_init_library (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 5824 0x751ADDF: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 5824 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 5824 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 5824 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+            n1: 5824 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 5824 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+              n1: 5824 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+               n1: 5824 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+                n1: 5824 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+                 n0: 5824 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 2800 in 1 place, below massif's threshold (1.00%)
+  n3: 16128 0x76EA901: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 5760 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 5760 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 5760 in 60 places, all below massif's threshold (1.00%)
+   n1: 5760 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 5760 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 5760 in 60 places, all below massif's threshold (1.00%)
+   n0: 4608 in 48 places, all below massif's threshold (1.00%)
+  n1: 10192 0x769E619: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10192 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 10192 in 98 places, all below massif's threshold (1.00%)
+  n1: 6696 0x762F1D3: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 6696 in 248 places, all below massif's threshold (1.00%)
+  n0: 4816 in 4 places, all below massif's threshold (1.00%)
+  n1: 3768 0x7597D0A: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3768 in 157 places, all below massif's threshold (1.00%)
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 10665 in 27 places, all below massif's threshold (1.00%)
+ n1: 6544 0x75DD051: H5FL_fac_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 6544 in 7 places, all below massif's threshold (1.00%)
+ n2: 5396 0x764042A: H5MM_xstrdup (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 3620 0x7597D26: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3620 in 157 places, all below massif's threshold (1.00%)
+  n0: 1776 in 6 places, all below massif's threshold (1.00%)
+ n1: 4432 0x769E651: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 4432 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 4432 in 98 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 3720 0x5908CD5: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n0: 3720 in 5 places, all below massif's threshold (1.00%)
+  n0: 264 in 1 place, below massif's threshold (1.00%)
+#-----------
+snapshot=45
+#-----------
+time=21681302
+mem_heap_B=279125
+mem_heap_extra_B=46067
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=46
+#-----------
+time=21716690
+mem_heap_B=284789
+mem_heap_extra_B=46403
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=47
+#-----------
+time=21740798
+mem_heap_B=288565
+mem_heap_extra_B=46627
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=48
+#-----------
+time=21764562
+mem_heap_B=292341
+mem_heap_extra_B=46851
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=49
+#-----------
+time=21800654
+mem_heap_B=298005
+mem_heap_extra_B=47187
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=50
+#-----------
+time=21822744
+mem_heap_B=299893
+mem_heap_extra_B=47299
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=51
+#-----------
+time=21840718
+mem_heap_B=302725
+mem_heap_extra_B=47467
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=52
+#-----------
+time=21859099
+mem_heap_B=305557
+mem_heap_extra_B=47635
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=53
+#-----------
+time=21877784
+mem_heap_B=308389
+mem_heap_extra_B=47803
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=54
+#-----------
+time=21896589
+mem_heap_B=311221
+mem_heap_extra_B=47971
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=55
+#-----------
+time=21915669
+mem_heap_B=314053
+mem_heap_extra_B=48139
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=56
+#-----------
+time=21934627
+mem_heap_B=316885
+mem_heap_extra_B=48307
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=57
+#-----------
+time=21954006
+mem_heap_B=319717
+mem_heap_extra_B=48475
+mem_stacks_B=0
+heap_tree=detailed
+n8: 319717 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n8: 190968 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n3: 81744 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 33384 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 33384 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 33384 in 107 places, all below massif's threshold (1.00%)
+   n1: 33384 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 33384 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 33384 in 107 places, all below massif's threshold (1.00%)
+   n0: 14976 in 48 places, all below massif's threshold (1.00%)
+  n4: 35920 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 14352 0x76EA0DF: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 14352 in 46 places, all below massif's threshold (1.00%)
+   n1: 13824 0x76F4FE5: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 13824 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 13824 in 108 places, all below massif's threshold (1.00%)
+   n1: 4416 0x76EA0A8: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 4416 in 46 places, all below massif's threshold (1.00%)
+   n0: 3328 in 6 places, all below massif's threshold (1.00%)
+  n3: 25152 0x76EA901: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10272 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 10272 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 10272 in 107 places, all below massif's threshold (1.00%)
+   n1: 10272 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 10272 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 10272 in 107 places, all below massif's threshold (1.00%)
+   n0: 4608 in 48 places, all below massif's threshold (1.00%)
+  n1: 22680 0x76CCCAC: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n3: 22680 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14056 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14056 in 245 places, all below massif's threshold (1.00%)
+    n1: 5824 0x769F6F7: H5P_create_id (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 5824 0x769FC74: H5P__init_package (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 5824 0x769FDF6: H5P_init (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 5824 0x751A8E8: H5_init_library (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 5824 0x751ADDF: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 5824 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 5824 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 5824 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+            n1: 5824 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 5824 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+              n1: 5824 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+               n1: 5824 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+                n1: 5824 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+                 n0: 5824 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 2800 in 1 place, below massif's threshold (1.00%)
+  n1: 10192 0x769E619: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10192 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 10192 in 98 places, all below massif's threshold (1.00%)
+  n1: 6696 0x762F1D3: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 6696 in 248 places, all below massif's threshold (1.00%)
+  n0: 4816 in 4 places, all below massif's threshold (1.00%)
+  n1: 3768 0x7597D0A: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3768 in 157 places, all below massif's threshold (1.00%)
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 10665 in 27 places, all below massif's threshold (1.00%)
+ n1: 6544 0x75DD051: H5FL_fac_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 6544 in 7 places, all below massif's threshold (1.00%)
+ n1: 5396 0x764042A: H5MM_xstrdup (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 5396 in 7 places, all below massif's threshold (1.00%)
+ n1: 4432 0x769E651: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 4432 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 4432 in 98 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 3720 0x5908CD5: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n0: 3720 in 5 places, all below massif's threshold (1.00%)
+  n0: 264 in 1 place, below massif's threshold (1.00%)
+#-----------
+snapshot=58
+#-----------
+time=21985217
+mem_heap_B=322461
+mem_heap_extra_B=48651
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=59
+#-----------
+time=21989669
+mem_heap_B=324509
+mem_heap_extra_B=48683
+mem_stacks_B=0
+heap_tree=peak
+n8: 324509 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n8: 193768 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n3: 83616 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 34320 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 34320 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 34320 in 110 places, all below massif's threshold (1.00%)
+   n1: 34320 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 34320 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 34320 in 110 places, all below massif's threshold (1.00%)
+   n0: 14976 in 48 places, all below massif's threshold (1.00%)
+  n4: 36216 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 14352 0x76EA0DF: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 14352 in 46 places, all below massif's threshold (1.00%)
+   n1: 14080 0x76F4FE5: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14080 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14080 in 110 places, all below massif's threshold (1.00%)
+   n1: 4416 0x76EA0A8: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 4416 in 46 places, all below massif's threshold (1.00%)
+   n0: 3368 in 6 places, all below massif's threshold (1.00%)
+  n3: 25728 0x76EA901: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10560 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 10560 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 10560 in 110 places, all below massif's threshold (1.00%)
+   n1: 10560 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 10560 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 10560 in 110 places, all below massif's threshold (1.00%)
+   n0: 4608 in 48 places, all below massif's threshold (1.00%)
+  n1: 22680 0x76CCCAC: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n3: 22680 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14056 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14056 in 245 places, all below massif's threshold (1.00%)
+    n1: 5824 0x769F6F7: H5P_create_id (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 5824 0x769FC74: H5P__init_package (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 5824 0x769FDF6: H5P_init (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 5824 0x751A8E8: H5_init_library (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 5824 0x751ADDF: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 5824 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 5824 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 5824 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+            n1: 5824 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 5824 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+              n1: 5824 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+               n1: 5824 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+                n1: 5824 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+                 n0: 5824 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 2800 in 1 place, below massif's threshold (1.00%)
+  n1: 10192 0x769E619: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10192 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 10192 in 98 places, all below massif's threshold (1.00%)
+  n1: 6696 0x762F1D3: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 6696 in 248 places, all below massif's threshold (1.00%)
+  n0: 4872 in 4 places, all below massif's threshold (1.00%)
+  n1: 3768 0x7597D0A: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3768 in 157 places, all below massif's threshold (1.00%)
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 12657 in 28 places, all below massif's threshold (1.00%)
+ n1: 6544 0x75DD051: H5FL_fac_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 6544 in 7 places, all below massif's threshold (1.00%)
+ n1: 5396 0x764042A: H5MM_xstrdup (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 5396 in 7 places, all below massif's threshold (1.00%)
+ n1: 4432 0x769E651: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 4432 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 4432 in 98 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n0: 3984 in 2 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=60
+#-----------
+time=22008039
+mem_heap_B=326431
+mem_heap_extra_B=48713
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=61
+#-----------
+time=22059314
+mem_heap_B=324097
+mem_heap_extra_B=48679
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=62
+#-----------
+time=22092239
+mem_heap_B=256016
+mem_heap_extra_B=45280
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=63
+#-----------
+time=22108609
+mem_heap_B=256080
+mem_heap_extra_B=45312
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=64
+#-----------
+time=22131986
+mem_heap_B=256080
+mem_heap_extra_B=45312
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=65
+#-----------
+time=22149321
+mem_heap_B=256064
+mem_heap_extra_B=45304
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=66
+#-----------
+time=22167153
+mem_heap_B=256064
+mem_heap_extra_B=45304
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=67
+#-----------
+time=22183382
+mem_heap_B=255338
+mem_heap_extra_B=44390
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=68
+#-----------
+time=22200031
+mem_heap_B=250138
+mem_heap_extra_B=42294
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=69
+#-----------
+time=22216822
+mem_heap_B=249593
+mem_heap_extra_B=41935
+mem_stacks_B=0
+heap_tree=detailed
+n7: 249593 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n9: 127992 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n4: 34968 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 14080 0x76F4FE5: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14080 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14080 in 110 places, all below massif's threshold (1.00%)
+   n1: 13104 0x76EA0DF: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 13104 in 46 places, all below massif's threshold (1.00%)
+   n1: 4416 0x76EA0A8: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 4416 in 46 places, all below massif's threshold (1.00%)
+   n0: 3368 in 6 places, all below massif's threshold (1.00%)
+  n3: 25728 0x76EA901: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10560 0x76F5086: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 10560 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 10560 in 110 places, all below massif's threshold (1.00%)
+   n1: 10560 0x76F55F1: H5T_path_find (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 10560 0x76EBF91: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 10560 in 110 places, all below massif's threshold (1.00%)
+   n0: 4608 in 48 places, all below massif's threshold (1.00%)
+  n1: 22680 0x76CCCAC: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n3: 22680 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 14056 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 14056 in 245 places, all below massif's threshold (1.00%)
+    n1: 5824 0x769F6F7: H5P_create_id (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 5824 0x769FC74: H5P__init_package (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 5824 0x769FDF6: H5P_init (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 5824 0x751A8E8: H5_init_library (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 5824 0x751ADDF: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 5824 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 5824 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 5824 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+            n1: 5824 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 5824 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+              n1: 5824 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+               n1: 5824 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+                n1: 5824 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+                 n0: 5824 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 2800 in 1 place, below massif's threshold (1.00%)
+  n1: 19032 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 19032 in 50 places, all below massif's threshold (1.00%)
+  n1: 10192 0x769E619: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 10192 0x76A111E: H5P_register_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n0: 10192 in 98 places, all below massif's threshold (1.00%)
+  n1: 6696 0x762F1D3: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 6696 in 248 places, all below massif's threshold (1.00%)
+  n1: 3768 0x7597D0A: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3768 in 157 places, all below massif's threshold (1.00%)
+  n1: 3192 0x76CECE8: H5SL_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3192 in 6 places, all below massif's threshold (1.00%)
+  n0: 1736 in 3 places, all below massif's threshold (1.00%)
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n0: 9701 in 35 places, all below massif's threshold (1.00%)
+ n2: 6544 0x75DD051: H5FL_fac_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 3472 in 6 places, all below massif's threshold (1.00%)
+  n1: 3072 0x76CDB50: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 3072 0x76CEF60: H5SL_insert (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 3072 0x762F227: H5I_register (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n0: 3072 in 110 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 3720 0x5908CD5: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n0: 3720 in 5 places, all below massif's threshold (1.00%)
+  n0: 264 in 1 place, below massif's threshold (1.00%)
+ n2: 3644 0x764042A: H5MM_xstrdup (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 3620 0x7597D26: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3620 in 157 places, all below massif's threshold (1.00%)
+  n0: 24 in 6 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=70
+#-----------
+time=22233590
+mem_heap_B=249215
+mem_heap_extra_B=41609
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=71
+#-----------
+time=22250222
+mem_heap_B=248780
+mem_heap_extra_B=41228
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=72
+#-----------
+time=22266826
+mem_heap_B=248177
+mem_heap_extra_B=40783
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=73
+#-----------
+time=22283576
+mem_heap_B=247447
+mem_heap_extra_B=40281
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=74
+#-----------
+time=22300129
+mem_heap_B=246592
+mem_heap_extra_B=39824
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=75
+#-----------
+time=22325207
+mem_heap_B=245941
+mem_heap_extra_B=39275
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=76
+#-----------
+time=22341366
+mem_heap_B=238989
+mem_heap_extra_B=33691
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=77
+#-----------
+time=22357528
+mem_heap_B=164901
+mem_heap_extra_B=28835
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=78
+#-----------
+time=22373677
+mem_heap_B=141477
+mem_heap_extra_B=21235
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=79
+#-----------
+time=22389839
+mem_heap_B=116069
+mem_heap_extra_B=13171
+mem_stacks_B=0
+heap_tree=detailed
+n10: 116069 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 4688 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 3192 0x76CECE8: H5SL_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 3192 in 6 places, all below massif's threshold (1.00%)
+  n0: 1496 in 10 places, all below massif's threshold (1.00%)
+ n1: 4096 0x5F50895: register_printf_specifier (reg-printf.c:57)
+  n1: 4096 0x6E66800: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 4096 0x4010731: _dl_init (dl-init.c:72)
+    n0: 4096 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 3984 0x578C891: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 3720 0x5908CD5: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n0: 3720 in 5 places, all below massif's threshold (1.00%)
+  n0: 264 in 1 place, below massif's threshold (1.00%)
+ n1: 2040 0x5F52FDD: register_printf_modifier (reg-modifier.c:69)
+  n1: 2040 0x6E667D9: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 2040 0x4010731: _dl_init (dl-init.c:72)
+    n0: 2040 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1984 0x5F5328D: register_printf_type (reg-type.c:43)
+  n1: 1984 0x6E667BE: ??? (in /usr/lib/x86_64-linux-gnu/libquadmath.so.0.0.0)
+   n1: 1984 0x4010731: _dl_init (dl-init.c:72)
+    n0: 1984 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n1: 1848 0x75A0120: H5E_get_stack (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n1: 1848 0x75A4D63: H5E_clear_stack (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 1848 0x751AD8B: H5get_libversion (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 1848 0x67711D7: NC4_hdf5get_libversion (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+     n1: 1848 0x6771381: NC4_fileinfo_init (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+      n1: 1848 0x6722F6A: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+       n1: 1848 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+        n1: 1848 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+         n1: 1848 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+          n1: 1848 0x11F536: __mo_rfmip_io_MOD_read_size (mo_rfmip_io.F90:51)
+           n1: 1848 0x10D192: MAIN__ (rrtmgp_rfmip_lw.F90:223)
+            n0: 1848 0x10C56D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 1515 0xA300A4F: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 1515 0xA301CB0: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 1453 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 1453 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 1453 0x4010731: _dl_init (dl-init.c:72)
+      n0: 1453 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n0: 62 in 1 place, below massif's threshold (1.00%)
+ n1: 1352 0x578C7F3: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n0: 1352 in 2 places, all below massif's threshold (1.00%)
+ n0: 930 in 32 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=80
+#-----------
+time=22479953
+mem_heap_B=110413
+mem_heap_extra_B=11635
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=81
+#-----------
+time=22496853
+mem_heap_B=105770
+mem_heap_extra_B=11390
+mem_stacks_B=0
+heap_tree=empty

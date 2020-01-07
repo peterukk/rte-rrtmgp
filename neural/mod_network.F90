@@ -141,7 +141,7 @@ contains
   !   end associate
   ! end function output
 
-  subroutine output_opt(self, x, output)
+  pure subroutine output_opt(self, x, output)
     class(network_type),    intent(in)  :: self
     !integer, dimension(:)   intent(in)  :: neurons
     real(wp), dimension(:), intent(in)  :: x
@@ -175,7 +175,7 @@ contains
     x = x
   end subroutine
 
-  subroutine output_opt_flatmodel(self, x, output)
+  pure subroutine output_opt_flatmodel(self, x, output)
     ! Use forward propagation to compute the output of the network.
     ! For computational efficiency, following changes are implemented:
     ! 1) Outputs are allocated outside of function, 
@@ -412,7 +412,7 @@ contains
       end associate
   end subroutine
 
-  function matvecmul(matA,vecB,nrow,ncol)
+  pure function matvecmul(matA,vecB,nrow,ncol)
         implicit none
         integer, intent(in) :: nrow,ncol
         real(wp), intent(in) :: matA(nrow,ncol)

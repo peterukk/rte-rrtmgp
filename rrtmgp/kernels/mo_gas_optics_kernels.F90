@@ -827,7 +827,6 @@ contains
     real(wp), dimension(ngpt,nlay,ncol), target,      intent(out) :: pfrac, tau
 
     ! local
-    !real(wp), dimension(ngpt,nlay*ncol) :: tmp_output
     real(wp), pointer :: tmp_output(:,:)
     integer                             :: ilay, icol
     
