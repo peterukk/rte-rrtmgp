@@ -1,0 +1,1512 @@
+desc: (none)
+cmd: ./rrtmgp_rfmip_lw
+time_unit: i
+#-----------
+snapshot=0
+#-----------
+time=0
+mem_heap_B=0
+mem_heap_extra_B=0
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=1
+#-----------
+time=40334008
+mem_heap_B=452218
+mem_heap_extra_B=11966
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=2
+#-----------
+time=91000569
+mem_heap_B=785306
+mem_heap_extra_B=12206
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=3
+#-----------
+time=135250272
+mem_heap_B=1102108
+mem_heap_extra_B=12436
+mem_stacks_B=0
+heap_tree=detailed
+n6: 1102108 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n2: 375120 0x184317: __mod_layer_MOD_constructor (mod_layer.F90:41)
+  n1: 368976 0x18009E: __mod_network_MOD_init (mod_network.F90:80)
+   n3: 368976 0x17F6A2: __mod_network_MOD_load (mod_network.F90:111)
+    n1: 142464 0x10D410: MAIN__ (rrtmgp_rfmip_lw.F90:191)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n1: 142464 0x10D47C: MAIN__ (rrtmgp_rfmip_lw.F90:194)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n1: 84048 0x10D4EF: MAIN__ (rrtmgp_rfmip_lw.F90:197)
+     n0: 84048 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 6144 in 1 place, below massif's threshold (1.00%)
+ n2: 375120 0x184347: __mod_layer_MOD_constructor (mod_layer.F90:42)
+  n1: 368976 0x18009E: __mod_network_MOD_init (mod_network.F90:80)
+   n3: 368976 0x17F6A2: __mod_network_MOD_load (mod_network.F90:111)
+    n1: 142464 0x10D410: MAIN__ (rrtmgp_rfmip_lw.F90:191)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n1: 142464 0x10D47C: MAIN__ (rrtmgp_rfmip_lw.F90:194)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n1: 84048 0x10D4EF: MAIN__ (rrtmgp_rfmip_lw.F90:197)
+     n0: 84048 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 6144 in 1 place, below massif's threshold (1.00%)
+ n1: 131072 0x578C8D3: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 131072 0x5911E0C: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n1: 131072 0x5912051: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+    n1: 131072 0x59120E8: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+     n2: 131072 0x58FEEB3: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+      n1: 131072 0x58FBBB9: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+       n1: 131072 0x58FDAD4: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+        n2: 131072 0x58FF0F8: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+         n2: 131072 0x17F8CA: __mod_network_MOD_load (mod_network.F90:117)
+          n1: 131072 0x10D4EF: MAIN__ (rrtmgp_rfmip_lw.F90:197)
+           n0: 131072 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+          n0: 0 in 2 places, all below massif's threshold (1.00%)
+         n0: 0 in 1 place, below massif's threshold (1.00%)
+      n0: 0 in 1 place, below massif's threshold (1.00%)
+ n1: 93632 0xA300735: ??? (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+  n2: 93632 0xA301C78: asn1_array2tree (in /usr/lib/x86_64-linux-gnu/libtasn1.so.6.5.5)
+   n1: 81320 0x8BC6C23: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 81320 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 81320 0x4010731: _dl_init (dl-init.c:72)
+      n0: 81320 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+   n1: 12312 0x8BC6D0B: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+    n1: 12312 0x8BA558F: ??? (in /usr/lib/x86_64-linux-gnu/libgnutls.so.30.14.10)
+     n1: 12312 0x4010731: _dl_init (dl-init.c:72)
+      n0: 12312 0x40010C8: ??? (in /lib/x86_64-linux-gnu/ld-2.27.so)
+ n2: 69632 0x17F9F5: __mod_network_MOD_load (mod_network.F90:118)
+  n1: 69632 0x10D4EF: MAIN__ (rrtmgp_rfmip_lw.F90:197)
+   n0: 69632 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 0 in 2 places, all below massif's threshold (1.00%)
+ n0: 57532 in 23 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=4
+#-----------
+time=192729698
+mem_heap_B=7277085
+mem_heap_extra_B=163251
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=5
+#-----------
+time=227593611
+mem_heap_B=10133373
+mem_heap_extra_B=246427
+mem_stacks_B=0
+heap_tree=detailed
+n16: 10133373 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n4: 2191184 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n5: 1249688 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 527088 0x7556FDF: H5C_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 527088 0x7537BBE: H5AC_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 527088 0x75B707F: H5F_new (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 527088 0x75B7ACA: H5F_open (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 527088 0x75AFD5B: H5Fopen (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 527088 0x6763B91: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+         n1: 527088 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 527088 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 527088 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+            n2: 527088 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+             n1: 527088 0x11FAD9: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:87)
+              n1: 527088 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+               n0: 527088 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+             n0: 0 in 1 place, below massif's threshold (1.00%)
+   n0: 251416 in 36 places, all below massif's threshold (1.00%)
+   n2: 177376 0x76501A1: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 168176 0x7670790: H5O_msg_iterate_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 168176 0x7531568: H5A_compact_build_table (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 168176 0x7653504: H5O_attr_iterate_real (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 168176 0x7653DC3: H5O_attr_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 168176 0x7527327: H5Aiterate2 (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 168176 0x72CA978: H5DSis_scale (in /usr/lib/x86_64-linux-gnu/libhdf5_serial_hl.so.100.0.0)
+          n1: 168176 0x6762F99: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 168176 0x75F5B29: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+            n1: 168176 0x75F7FA8: H5G__link_iterate_table (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+             n1: 168176 0x75EF554: H5G__dense_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+              n1: 168176 0x75FFD3C: H5G__obj_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+               n1: 168176 0x75F6D05: H5G_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                n1: 168176 0x7633D27: H5Literate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                 n1: 168176 0x67629CA: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                  n1: 168176 0x6763B1F: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                   n1: 168176 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                    n1: 168176 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                     n1: 168176 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                      n2: 168176 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                       n1: 104512 0x11FAD9: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:87)
+                        n1: 104512 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+                         n0: 104512 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+                       n0: 63664 in 1 place, below massif's threshold (1.00%)
+    n0: 9200 in 1 place, below massif's threshold (1.00%)
+   n2: 150384 0x76EA0DF: H5T__alloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 113256 0x7661A18: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 113256 0x7650161: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n0: 113256 in 2 places, all below massif's threshold (1.00%)
+    n0: 37128 in 48 places, all below massif's threshold (1.00%)
+   n1: 143424 0x766A9C0: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 143424 0x766F95A: H5O_msg_read_oh (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 143424 0x766FBF9: H5O_msg_read (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 143424 0x758BDB9: H5D__layout_oh_read (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 143424 0x7585F2D: H5D_open (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 143424 0x758CA39: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 143424 0x7644139: H5O_open_by_loc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+          n1: 143424 0x764493C: H5O_open_name (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+           n1: 143424 0x7644B2E: H5Oopen (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+            n1: 143424 0x6762E58: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+             n1: 143424 0x75F5B29: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+              n1: 143424 0x75F7FA8: H5G__link_iterate_table (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+               n1: 143424 0x75EF554: H5G__dense_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                n1: 143424 0x75FFD3C: H5G__obj_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                 n1: 143424 0x75F6D05: H5G_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                  n1: 143424 0x7633D27: H5Literate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                   n1: 143424 0x67629CA: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                    n1: 143424 0x6763B1F: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                     n1: 143424 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                      n1: 143424 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                       n1: 143424 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                        n2: 143424 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                         n1: 131472 0x11FAD9: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:87)
+                          n1: 131472 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+                           n0: 131472 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+                         n0: 11952 in 1 place, below massif's threshold (1.00%)
+  n1: 322608 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 322608 in 66 places, all below massif's threshold (1.00%)
+  n1: 317376 0x757FD39: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 317376 0x7585DF1: H5D_open (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 317376 0x758CA39: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 317376 0x7644139: H5O_open_by_loc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 317376 0x764493C: H5O_open_name (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 317376 0x7644B2E: H5Oopen (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 317376 0x6762E58: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+         n1: 317376 0x75F5B29: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+          n1: 317376 0x75F7FA8: H5G__link_iterate_table (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+           n1: 317376 0x75EF554: H5G__dense_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+            n1: 317376 0x75FFD3C: H5G__obj_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+             n1: 317376 0x75F6D05: H5G_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+              n1: 317376 0x7633D27: H5Literate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+               n1: 317376 0x67629CA: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                n1: 317376 0x6763B1F: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                 n1: 317376 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                  n1: 317376 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                   n1: 317376 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                    n2: 317376 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                     n1: 264480 0x11FAD9: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:87)
+                      n1: 264480 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+                       n0: 264480 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+                     n0: 52896 in 1 place, below massif's threshold (1.00%)
+  n0: 301512 in 26 places, all below massif's threshold (1.00%)
+ n3: 1728000 0x578C835: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 864000 0x58D9AC0: _gfortran_reshape_r8 (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n1: 864000 0x11FD2F: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:93)
+    n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+     n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n1: 864000 0x58EFB79: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n1: 864000 0x11FCA1: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:93)
+    n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+     n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 0 in 1 place, below massif's threshold (1.00%)
+ n1: 878400 0x11F92B: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 878400 0x11FA33: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 864000 0x11F725: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 864000 0x11F7CE: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 545507 in 156 places, all below massif's threshold (1.00%)
+ n1: 524288 0x673179D: add_to_NCList (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+  n1: 524288 0x6723068: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+   n1: 524288 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+    n1: 524288 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+     n2: 524288 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+      n1: 524288 0x11FAD9: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:87)
+       n1: 524288 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+        n0: 524288 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+      n0: 0 in 2 places, all below massif's threshold (1.00%)
+ n2: 375120 0x184317: __mod_layer_MOD_constructor (mod_layer.F90:41)
+  n1: 368976 0x18009E: __mod_network_MOD_init (mod_network.F90:80)
+   n3: 368976 0x17F6A2: __mod_network_MOD_load (mod_network.F90:111)
+    n1: 142464 0x10D410: MAIN__ (rrtmgp_rfmip_lw.F90:191)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n1: 142464 0x10D47C: MAIN__ (rrtmgp_rfmip_lw.F90:194)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 84048 in 1 place, below massif's threshold (1.00%)
+  n0: 6144 in 1 place, below massif's threshold (1.00%)
+ n2: 375120 0x184347: __mod_layer_MOD_constructor (mod_layer.F90:42)
+  n1: 368976 0x18009E: __mod_network_MOD_init (mod_network.F90:80)
+   n3: 368976 0x17F6A2: __mod_network_MOD_load (mod_network.F90:111)
+    n1: 142464 0x10D410: MAIN__ (rrtmgp_rfmip_lw.F90:191)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n1: 142464 0x10D47C: MAIN__ (rrtmgp_rfmip_lw.F90:194)
+     n0: 142464 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+    n0: 84048 in 1 place, below massif's threshold (1.00%)
+  n0: 6144 in 1 place, below massif's threshold (1.00%)
+ n1: 173970 0x75DCCCC: H5FL_blk_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 173970 in 21 places, all below massif's threshold (1.00%)
+ n2: 157336 0x769E4A9: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n2: 157336 0x769FF94: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n2: 157320 0x76A031C: H5P_copy_plist (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 157248 0x757FDB4: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 157248 0x7585DF1: H5D_open (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 157248 0x758CA39: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 157248 0x7644139: H5O_open_by_loc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 157248 0x764493C: H5O_open_name (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+         n1: 157248 0x7644B2E: H5Oopen (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+          n1: 157248 0x6762E58: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 157248 0x75F5B29: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+            n1: 157248 0x75F7FA8: H5G__link_iterate_table (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+             n1: 157248 0x75EF554: H5G__dense_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+              n1: 157248 0x75FFD3C: H5G__obj_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+               n1: 157248 0x75F6D05: H5G_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                n1: 157248 0x7633D27: H5Literate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+                 n1: 157248 0x67629CA: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                  n1: 157248 0x6763B1F: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                   n1: 157248 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                    n1: 157248 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                     n1: 157248 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                      n2: 157248 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                       n1: 157248 0x11FAD9: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:87)
+                        n1: 157248 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+                         n0: 157248 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+                       n0: 0 in 1 place, below massif's threshold (1.00%)
+    n0: 72 in 3 places, all below massif's threshold (1.00%)
+   n0: 16 in 1 place, below massif's threshold (1.00%)
+  n0: 0 in 1 place, below massif's threshold (1.00%)
+ n1: 144512 0x10DB1D: MAIN__ (rrtmgp_rfmip_lw.F90:200)
+  n0: 144512 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 144512 0x10DB73: MAIN__ (rrtmgp_rfmip_lw.F90:200)
+  n0: 144512 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 144512 0x10DF6D: MAIN__ (rrtmgp_rfmip_lw.F90:201)
+  n0: 144512 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 144512 0x10DFC3: MAIN__ (rrtmgp_rfmip_lw.F90:201)
+  n0: 144512 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+#-----------
+snapshot=6
+#-----------
+time=281347196
+mem_heap_B=8437254
+mem_heap_extra_B=246602
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=7
+#-----------
+time=318506717
+mem_heap_B=17518213
+mem_heap_extra_B=247979
+mem_stacks_B=0
+heap_tree=detailed
+n12: 17518213 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n3: 7992000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 6264000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 6264000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 6264000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n1: 864000 0x11AFE0: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:363)
+   n1: 864000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n1: 864000 0x11B646: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:369)
+   n1: 864000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n4: 2191248 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n2: 1249592 0x75DD41A: H5FL_reg_calloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 722504 in 39 places, all below massif's threshold (1.00%)
+   n1: 527088 0x7556FDF: H5C_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 527088 0x7537BBE: H5AC_create (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 527088 0x75B707F: H5F_new (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 527088 0x75B7ACA: H5F_open (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 527088 0x75AFD5B: H5Fopen (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 527088 0x6763B91: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+         n1: 527088 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+          n1: 527088 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+           n1: 527088 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+            n2: 527088 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+             n1: 527088 0x11A9E4: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:355)
+              n1: 527088 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+               n0: 527088 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+             n0: 0 in 2 places, all below massif's threshold (1.00%)
+  n1: 322608 0x76EA919: H5T_copy (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n0: 322608 in 66 places, all below massif's threshold (1.00%)
+  n1: 317376 0x757FD39: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+   n1: 317376 0x7585DF1: H5D_open (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+    n1: 317376 0x758CA39: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+     n1: 317376 0x7644139: H5O_open_by_loc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+      n1: 317376 0x764493C: H5O_open_name (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+       n1: 317376 0x7644B2E: H5Oopen (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+        n1: 317376 0x6762E58: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+         n1: 317376 0x75F5B29: ??? (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+          n1: 317376 0x75F7FA8: H5G__link_iterate_table (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+           n1: 317376 0x75EF554: H5G__dense_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+            n1: 317376 0x75FFD3C: H5G__obj_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+             n1: 317376 0x75F6D05: H5G_iterate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+              n1: 317376 0x7633D27: H5Literate (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+               n1: 317376 0x67629CA: ??? (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                n1: 317376 0x6763B1F: NC4_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                 n1: 317376 0x672308E: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                  n1: 317376 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+                   n1: 317376 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                    n2: 317376 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+                     n1: 264480 0x11A9E4: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:355)
+                      n1: 264480 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+                       n0: 264480 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+                     n0: 52896 in 2 places, all below massif's threshold (1.00%)
+  n0: 301672 in 26 places, all below massif's threshold (1.00%)
+ n0: 1289419 in 184 places, all below massif's threshold (1.00%)
+ n3: 1087200 0x578C835: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n2: 864000 0x58D9AC0: _gfortran_reshape_r8 (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n1: 864000 0x11B201: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:367)
+    n1: 864000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+     n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+   n0: 0 in 5 places, all below massif's threshold (1.00%)
+  n2: 216000 0x58EFB79: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n1: 216000 0x11BFC9: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+    n1: 216000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+     n0: 216000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+   n0: 0 in 2 places, all below massif's threshold (1.00%)
+  n0: 7200 in 3 places, all below massif's threshold (1.00%)
+ n1: 878400 0x11F92B: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 878400 0x11FA33: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 864000 0x11F725: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 864000 0x11F7CE: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 524288 0x673179D: add_to_NCList (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+  n1: 524288 0x6723068: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+   n1: 524288 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+    n1: 524288 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+     n2: 524288 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+      n1: 524288 0x11A9E4: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:355)
+       n1: 524288 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+        n0: 524288 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+      n0: 0 in 3 places, all below massif's threshold (1.00%)
+ n2: 375120 0x184317: __mod_layer_MOD_constructor (mod_layer.F90:41)
+  n1: 368976 0x18009E: __mod_network_MOD_init (mod_network.F90:80)
+   n1: 368976 0x17F6A2: __mod_network_MOD_load (mod_network.F90:111)
+    n0: 368976 in 3 places, all below massif's threshold (1.00%)
+  n0: 6144 in 1 place, below massif's threshold (1.00%)
+ n2: 375120 0x184347: __mod_layer_MOD_constructor (mod_layer.F90:42)
+  n1: 368976 0x18009E: __mod_network_MOD_init (mod_network.F90:80)
+   n1: 368976 0x17F6A2: __mod_network_MOD_load (mod_network.F90:111)
+    n0: 368976 in 3 places, all below massif's threshold (1.00%)
+  n0: 6144 in 1 place, below massif's threshold (1.00%)
+ n1: 199018 0x75DCCCC: H5FL_blk_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 199018 in 21 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=8
+#-----------
+time=376729862
+mem_heap_B=23405760
+mem_heap_extra_B=203336
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=9
+#-----------
+time=404511979
+mem_heap_B=39259055
+mem_heap_extra_B=155841
+mem_stacks_B=0
+heap_tree=detailed
+n11: 39259055 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n3: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n1: 864000 0x11AFE0: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:363)
+   n1: 864000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n1: 864000 0x11B646: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:369)
+   n1: 864000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x122C03: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:163)
+  n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+   n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 2022799 in 221 places, all below massif's threshold (1.00%)
+ n1: 967680 0x12179E: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:134)
+  n1: 967680 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+   n0: 967680 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 878400 0x11F92B: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 878400 0x11FA33: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 864000 0x11F725: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 864000 0x11F7CE: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 864000 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 864000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 676256 0x75DD2A0: H5FL_reg_malloc (in /usr/lib/x86_64-linux-gnu/libhdf5_serial.so.100.0.1)
+  n0: 676256 in 29 places, all below massif's threshold (1.00%)
+ n1: 548352 0x12186D: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:136)
+  n1: 548352 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+   n0: 548352 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 524288 0x673179D: add_to_NCList (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+  n1: 524288 0x6723068: NC_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+   n1: 524288 0x67231B2: nc_open (in /usr/lib/x86_64-linux-gnu/libnetcdf.so.13)
+    n1: 524288 0x50486D3: nf_open_ (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+     n2: 524288 0x509DF66: __netcdf_MOD_nf90_open (in /usr/lib/x86_64-linux-gnu/libnetcdff.so.6.1.1)
+      n1: 524288 0x120F14: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:100)
+       n1: 524288 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+        n0: 524288 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+      n0: 0 in 5 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=10
+#-----------
+time=459916534
+mem_heap_B=54767041
+mem_heap_extra_B=159863
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=11
+#-----------
+time=491338885
+mem_heap_B=87285713
+mem_heap_extra_B=168255
+mem_stacks_B=0
+heap_tree=detailed
+n10: 87285713 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x122C03: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:163)
+  n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+   n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x122E1E: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:179)
+  n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+   n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 5561681 in 255 places, all below massif's threshold (1.00%)
+ n2: 1516032 0x151FE5: __mo_gas_optics_rrtmgp_MOD_reduce_minor_arrays.constprop.10 (mo_gas_optics_rrtmgp.F90:2394)
+  n1: 967680 0x1561D4: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1368)
+   n1: 967680 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+    n1: 967680 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+     n1: 967680 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+      n0: 967680 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 548352 in 1 place, below massif's threshold (1.00%)
+ n1: 967680 0x12179E: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:134)
+  n1: 967680 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+   n0: 967680 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 878400 0x11F92B: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 878400 0x11FA33: __mo_rfmip_io_MOD_read_and_block_pt (mo_rfmip_io.F90:85)
+  n1: 878400 0x10E93B: MAIN__ (rrtmgp_rfmip_lw.F90:473)
+   n0: 878400 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+#-----------
+snapshot=12
+#-----------
+time=940732363
+mem_heap_B=514806707
+mem_heap_extra_B=164637
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=13
+#-----------
+time=949210701
+mem_heap_B=966989070
+mem_heap_extra_B=198306
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=14
+#-----------
+time=1042979386
+mem_heap_B=962885067
+mem_heap_extra_B=198277
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=15
+#-----------
+time=1125067872
+mem_heap_B=847976795
+mem_heap_extra_B=188981
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=16
+#-----------
+time=1167277594
+mem_heap_B=854946395
+mem_heap_extra_B=188997
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=17
+#-----------
+time=1222785230
+mem_heap_B=848428467
+mem_heap_extra_B=188925
+mem_stacks_B=0
+heap_tree=detailed
+n13: 848428467 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 221184000 0x10F210: MAIN__ (rrtmgp_rfmip_lw.F90:300)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 221184000 0x10F486: MAIN__ (rrtmgp_rfmip_lw.F90:302)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 56217600 0x134086: __mo_rte_lw_MOD_rte_lw (mo_rte_lw.F90:175)
+  n1: 56217600 0x1103B3: MAIN__ (rrtmgp_rfmip_lw.F90:404)
+   n0: 56217600 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 16416000 0x10F3C3: MAIN__ (rrtmgp_rfmip_lw.F90:301)
+  n0: 16416000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 10429107 in 291 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=18
+#-----------
+time=1871215895
+mem_heap_B=1019795667
+mem_heap_extra_B=201109
+mem_stacks_B=0
+heap_tree=detailed
+n16: 1019795667 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 221184000 0x10F210: MAIN__ (rrtmgp_rfmip_lw.F90:300)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 221184000 0x10F486: MAIN__ (rrtmgp_rfmip_lw.F90:302)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 56217600 0x134086: __mo_rte_lw_MOD_rte_lw (mo_rte_lw.F90:175)
+  n1: 56217600 0x1103B3: MAIN__ (rrtmgp_rfmip_lw.F90:404)
+   n0: 56217600 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 56217600 0x134196: __mo_rte_lw_MOD_rte_lw (mo_rte_lw.F90:175)
+  n1: 56217600 0x1103B3: MAIN__ (rrtmgp_rfmip_lw.F90:404)
+   n0: 56217600 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 56217600 0x14A54E: lw_solver_noscat_GaussQuad (mo_rte_solver_kernels.F90:170)
+  n1: 56217600 0x134AA4: __mo_rte_lw_MOD_rte_lw (mo_rte_lw.F90:210)
+   n1: 56217600 0x1103B3: MAIN__ (rrtmgp_rfmip_lw.F90:404)
+    n0: 56217600 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 56217600 0x14A559: lw_solver_noscat_GaussQuad (mo_rte_solver_kernels.F90:170)
+  n1: 56217600 0x134AA4: __mo_rte_lw_MOD_rte_lw (mo_rte_lw.F90:210)
+   n1: 56217600 0x1103B3: MAIN__ (rrtmgp_rfmip_lw.F90:404)
+    n0: 56217600 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 16416000 0x10F3C3: MAIN__ (rrtmgp_rfmip_lw.F90:301)
+  n0: 16416000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 13143507 in 301 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=19
+#-----------
+time=1943468033
+mem_heap_B=849350067
+mem_heap_extra_B=188933
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=20
+#-----------
+time=1963543615
+mem_heap_B=966989070
+mem_heap_extra_B=198306
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=21
+#-----------
+time=2057813184
+mem_heap_B=962885067
+mem_heap_extra_B=198277
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=22
+#-----------
+time=2058262285
+mem_heap_B=847976667
+mem_heap_extra_B=188973
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=23
+#-----------
+time=2139901670
+mem_heap_B=847976795
+mem_heap_extra_B=188981
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=24
+#-----------
+time=2182111392
+mem_heap_B=854946395
+mem_heap_extra_B=188997
+mem_stacks_B=0
+heap_tree=detailed
+n13: 854946395 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 221184000 0x10F210: MAIN__ (rrtmgp_rfmip_lw.F90:300)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 221184000 0x10F486: MAIN__ (rrtmgp_rfmip_lw.F90:302)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x164406: __mo_gas_optics_rrtmgp_MOD_gas_optics_int_nn (mo_gas_optics_rrtmgp.F90:365)
+  n1: 55296000 0x110336: MAIN__ (rrtmgp_rfmip_lw.F90:378)
+   n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 17868635 in 304 places, all below massif's threshold (1.00%)
+ n1: 16416000 0x10F3C3: MAIN__ (rrtmgp_rfmip_lw.F90:301)
+  n0: 16416000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+#-----------
+snapshot=25
+#-----------
+time=2239336585
+mem_heap_B=1018928067
+mem_heap_extra_B=201069
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=26
+#-----------
+time=2886049693
+mem_heap_B=1019579667
+mem_heap_extra_B=201101
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=27
+#-----------
+time=2958301831
+mem_heap_B=849350067
+mem_heap_extra_B=188933
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=28
+#-----------
+time=2981378510
+mem_heap_B=966989067
+mem_heap_extra_B=198285
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=29
+#-----------
+time=3072645236
+mem_heap_B=962885067
+mem_heap_extra_B=198277
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=30
+#-----------
+time=3073094337
+mem_heap_B=847976667
+mem_heap_extra_B=188973
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=31
+#-----------
+time=3154733722
+mem_heap_B=847976795
+mem_heap_extra_B=188981
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=32
+#-----------
+time=3196943444
+mem_heap_B=854946395
+mem_heap_extra_B=188997
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=33
+#-----------
+time=3254015079
+mem_heap_B=906489267
+mem_heap_extra_B=192981
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=34
+#-----------
+time=3900881745
+mem_heap_B=1019579667
+mem_heap_extra_B=201101
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=35
+#-----------
+time=3973133883
+mem_heap_B=849350067
+mem_heap_extra_B=188933
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=36
+#-----------
+time=3995769936
+mem_heap_B=966989070
+mem_heap_extra_B=198306
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=37
+#-----------
+time=4087477272
+mem_heap_B=962885067
+mem_heap_extra_B=198277
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=38
+#-----------
+time=4087926373
+mem_heap_B=847976667
+mem_heap_extra_B=188973
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=39
+#-----------
+time=4169565758
+mem_heap_B=847976795
+mem_heap_extra_B=188981
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=40
+#-----------
+time=4211775480
+mem_heap_B=854946395
+mem_heap_extra_B=188997
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=41
+#-----------
+time=4268847115
+mem_heap_B=906489267
+mem_heap_extra_B=192981
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=42
+#-----------
+time=4915713781
+mem_heap_B=1019579667
+mem_heap_extra_B=201101
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=43
+#-----------
+time=4917088000
+mem_heap_B=1018924467
+mem_heap_extra_B=201061
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=44
+#-----------
+time=4987965919
+mem_heap_B=849350067
+mem_heap_extra_B=188933
+mem_stacks_B=0
+heap_tree=detailed
+n13: 849350067 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 221184000 0x10F210: MAIN__ (rrtmgp_rfmip_lw.F90:300)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 221184000 0x10F486: MAIN__ (rrtmgp_rfmip_lw.F90:302)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 56217600 0x134196: __mo_rte_lw_MOD_rte_lw (mo_rte_lw.F90:175)
+  n1: 56217600 0x1103B3: MAIN__ (rrtmgp_rfmip_lw.F90:404)
+   n0: 56217600 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 16416000 0x10F3C3: MAIN__ (rrtmgp_rfmip_lw.F90:301)
+  n0: 16416000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 11350707 in 304 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=45
+#-----------
+time=5000081788
+mem_heap_B=792210883
+mem_heap_extra_B=184893
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=46
+#-----------
+time=5775169060
+mem_heap_B=1234570547
+mem_heap_extra_B=192861
+mem_stacks_B=0
+heap_tree=peak
+n14: 1234570547 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n2: 221212800 0x578C835: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+  n1: 221184000 0x5915F8E: ??? (in /usr/lib/x86_64-linux-gnu/libgfortran.so.4.0.0)
+   n1: 221184000 0x110963: MAIN__ (rrtmgp_rfmip_lw.F90:436)
+    n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 28800 in 7 places, all below massif's threshold (1.00%)
+ n1: 221184000 0x10F210: MAIN__ (rrtmgp_rfmip_lw.F90:300)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 221184000 0x10F486: MAIN__ (rrtmgp_rfmip_lw.F90:302)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 221184000 0x110916: MAIN__ (rrtmgp_rfmip_lw.F90:435)
+  n0: 221184000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 16416000 0x10F3C3: MAIN__ (rrtmgp_rfmip_lw.F90:301)
+  n0: 16416000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 10391987 in 306 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=47
+#-----------
+time=6162256851
+mem_heap_B=792202547
+mem_heap_extra_B=184781
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=48
+#-----------
+time=6214104623
+mem_heap_B=338096777
+mem_heap_extra_B=182927
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=49
+#-----------
+time=6239386454
+mem_heap_B=339500302
+mem_heap_extra_B=210586
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=50
+#-----------
+time=6239836895
+mem_heap_B=339531709
+mem_heap_extra_B=212019
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=51
+#-----------
+time=6240290861
+mem_heap_B=339548891
+mem_heap_extra_B=213261
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=52
+#-----------
+time=6240743996
+mem_heap_B=339564830
+mem_heap_extra_B=214466
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=53
+#-----------
+time=6241196532
+mem_heap_B=339573632
+mem_heap_extra_B=214728
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=54
+#-----------
+time=6241668548
+mem_heap_B=339582269
+mem_heap_extra_B=215755
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=55
+#-----------
+time=6242118499
+mem_heap_B=339595272
+mem_heap_extra_B=216960
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=56
+#-----------
+time=6242567660
+mem_heap_B=339610675
+mem_heap_extra_B=218117
+mem_stacks_B=0
+heap_tree=detailed
+n9: 339610675 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 16612915 in 326 places, all below massif's threshold (1.00%)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+#-----------
+snapshot=57
+#-----------
+time=6243039535
+mem_heap_B=339617051
+mem_heap_extra_B=218789
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=58
+#-----------
+time=6243488693
+mem_heap_B=339653335
+mem_heap_extra_B=220865
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=59
+#-----------
+time=6243938037
+mem_heap_B=339654067
+mem_heap_extra_B=221189
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=60
+#-----------
+time=6244389726
+mem_heap_B=339655133
+mem_heap_extra_B=221163
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=61
+#-----------
+time=6244841594
+mem_heap_B=339656217
+mem_heap_extra_B=221191
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=62
+#-----------
+time=6245294890
+mem_heap_B=339657431
+mem_heap_extra_B=221289
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=63
+#-----------
+time=6245748166
+mem_heap_B=339658983
+mem_heap_extra_B=221961
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=64
+#-----------
+time=6246198526
+mem_heap_B=339659776
+mem_heap_extra_B=221992
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=65
+#-----------
+time=6246650104
+mem_heap_B=339660907
+mem_heap_extra_B=222013
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=66
+#-----------
+time=6247108494
+mem_heap_B=339662128
+mem_heap_extra_B=222072
+mem_stacks_B=0
+heap_tree=detailed
+n9: 339662128 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 16664368 in 326 places, all below massif's threshold (1.00%)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+#-----------
+snapshot=67
+#-----------
+time=6247562058
+mem_heap_B=339663413
+mem_heap_extra_B=222259
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=68
+#-----------
+time=6248012668
+mem_heap_B=339665483
+mem_heap_extra_B=222861
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=69
+#-----------
+time=6248462216
+mem_heap_B=339666587
+mem_heap_extra_B=222837
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=70
+#-----------
+time=6248911701
+mem_heap_B=339669401
+mem_heap_extra_B=223151
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=71
+#-----------
+time=6249712102
+mem_heap_B=340108967
+mem_heap_extra_B=223209
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=72
+#-----------
+time=6250442050
+mem_heap_B=340108967
+mem_heap_extra_B=223209
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=73
+#-----------
+time=6250912247
+mem_heap_B=339767295
+mem_heap_extra_B=223145
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=74
+#-----------
+time=6251364324
+mem_heap_B=339767295
+mem_heap_extra_B=223145
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=75
+#-----------
+time=6251833474
+mem_heap_B=339767295
+mem_heap_extra_B=223145
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=76
+#-----------
+time=6252317280
+mem_heap_B=339767295
+mem_heap_extra_B=223145
+mem_stacks_B=0
+heap_tree=detailed
+n9: 339767295 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 16769535 in 327 places, all below massif's threshold (1.00%)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+#-----------
+snapshot=77
+#-----------
+time=6252769061
+mem_heap_B=334280872
+mem_heap_extra_B=219952
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=78
+#-----------
+time=6253382524
+mem_heap_B=333986107
+mem_heap_extra_B=207805
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=79
+#-----------
+time=6253840524
+mem_heap_B=333902763
+mem_heap_extra_B=200253
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=80
+#-----------
+time=6254328268
+mem_heap_B=333899505
+mem_heap_extra_B=199911
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=81
+#-----------
+time=6254788614
+mem_heap_B=333360398
+mem_heap_extra_B=199170
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=82
+#-----------
+time=6255495013
+mem_heap_B=333340695
+mem_heap_extra_B=197009
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=83
+#-----------
+time=6255982740
+mem_heap_B=333337437
+mem_heap_extra_B=196555
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=84
+#-----------
+time=6256449757
+mem_heap_B=332797572
+mem_heap_extra_B=195564
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=85
+#-----------
+time=6257249382
+mem_heap_B=332720248
+mem_heap_extra_B=192144
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=86
+#-----------
+time=6258036488
+mem_heap_B=332192096
+mem_heap_extra_B=191984
+mem_stacks_B=0
+heap_tree=detailed
+n9: 332192096 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 55296000 0x12BF82: __mo_optical_props_MOD_alloc_only_1scl (mo_optical_props.F90:335)
+  n1: 55296000 0x12E719: __mo_optical_props_MOD_copy_and_alloc_1scl (mo_optical_props.F90:453)
+   n1: 55296000 0x10F937: MAIN__ (rrtmgp_rfmip_lw.F90:310)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132023: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1320E3: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x132170: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 55296000 0x1321FD: __mo_source_functions_MOD_alloc_lw (mo_source_functions.F90:106)
+  n1: 55296000 0x131979: __mo_source_functions_MOD_copy_and_alloc_lw (mo_source_functions.F90:123)
+   n1: 55296000 0x10F8B9: MAIN__ (rrtmgp_rfmip_lw.F90:309)
+    n0: 55296000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n2: 15552000 0x14E33D: __mo_gas_concentrations_MOD_set_vmr_2d (mo_gas_concentrations.F90:254)
+  n1: 13824000 0x11BFFE: __mo_rfmip_io_MOD_read_and_block_gases_ty (mo_rfmip_io.F90:426)
+   n1: 13824000 0x10EA9D: MAIN__ (rrtmgp_rfmip_lw.F90:266)
+    n0: 13824000 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+  n0: 1728000 in 2 places, all below massif's threshold (1.00%)
+ n1: 15482880 0x156A58: __mo_gas_optics_rrtmgp_MOD_init_abs_coeffs.constprop.3 (mo_gas_optics_rrtmgp.F90:1389)
+  n1: 15482880 0x15B817: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1141)
+   n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+    n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+     n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n1: 15482880 0x15BB44: __mo_gas_optics_rrtmgp_MOD_load_int (mo_gas_optics_rrtmgp.F90:1145)
+  n1: 15482880 0x122F5F: __mo_load_coefficients_MOD_load_and_init (mo_load_coefficients.F90:203)
+   n1: 15482880 0x10EBAD: MAIN__ (rrtmgp_rfmip_lw.F90:273)
+    n0: 15482880 0x10C58D: main (rrtmgp_rfmip_lw.F90:50)
+ n0: 9194336 in 327 places, all below massif's threshold (1.00%)
+#-----------
+snapshot=87
+#-----------
+time=6258485617
+mem_heap_B=331590720
+mem_heap_extra_B=116824
+mem_stacks_B=0
+heap_tree=empty
