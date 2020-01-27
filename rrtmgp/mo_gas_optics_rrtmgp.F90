@@ -257,8 +257,6 @@ contains
     !
     ! Gas optics
     !
-    ! call system_clock(count_rate=count_rate)
-    ! call system_clock(iTime1)
 #ifdef USE_TIMING
     ret =  gptlstart('compute_gas_taus')
 #endif
@@ -275,8 +273,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('compute_gas_taus')
 #endif
-    ! call system_clock(iTime2)
-    ! print *,'Elapsed time on optical depths: ',real(iTime2-iTime1)/real(count_rate)
 
     ! ----------------------------------------------------------
     !
@@ -314,6 +310,8 @@ contains
                        jtemp, jpress, jeta, tropo, fmajor, &
                        sources,                            &
                        tlev)
+    ! print *, "max pfrac, tau", maxval(sources%planck_frac), maxval(optical_props%tau)
+
     !$acc exit data delete(tsfc,tlev)
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
   end function gas_optics_int
@@ -750,14 +748,14 @@ contains
     end if
     if (error_msg /= '') return
 
-    call system_clock(count_rate=count_rate)
-    call system_clock(iTime1)
+    ! call system_clock(count_rate=count_rate)
+    ! call system_clock(iTime1)
 
     ! Combine optical depths and reorder for radiative transfer solver.
     call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
 
-    call system_clock(iTime2)
-    print *,'Elapsed time on combine and reorder ',real(iTime2-iTime1)/real(count_rate)
+    ! call system_clock(iTime2)
+    ! print *,'Elapsed time on combine and reorder ',real(iTime2-iTime1)/real(count_rate)
     !$acc exit data delete(play, tlay, plev)
     !$acc exit data delete(tau, tau_rayleigh)
     !$acc exit data delete(col_dry_wk, col_dry_arr, col_gas, col_mix, fminor)
@@ -1836,8 +1834,6 @@ end if
     ret =  gptlstop('predict_nn_lw')
 #endif
 
-call system_clock(iTime2)
-print *,'Elapsed time on optical depth kernel: ',real(iTime2-iTime1)/real(count_rate)
 
 if (error_msg /= '') return
 
@@ -1851,9 +1847,6 @@ call system_clock(iTime1)
 ! Combine optical depths and reorder for radiative transfer solver.
 call reorder123x321(tau, optical_props%tau)
 !call combine_and_reorder(tau, tau_rayleigh, allocated(this%krayl), optical_props)
-
-call system_clock(iTime2)
-print *,'Elapsed time on combine and reorder: ',real(iTime2-iTime1)/real(count_rate)
 
 #ifdef USE_TIMING
     ret =  gptlstop('combine_and_reorder')

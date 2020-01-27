@@ -168,6 +168,7 @@ contains
     if(associated(this%flux_dn_dir)) &
       call sum_broadband(ncol, nlev, ngpt, gpt_flux_dn_dir, this%flux_dn_dir)
 
+
     if(associated(this%flux_net)) then
       !
       !  Reuse down and up results if possible

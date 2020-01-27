@@ -328,7 +328,7 @@ program rrtmgp_rfmip_lw
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
   ret = gptlinitialize()
 #endif
-#ifdef OMP
+#ifdef USE_OPENMP
 print *, "OpenMP processes available:", omp_get_num_procs()
 #endif
     call system_clock(count_rate=count_rate)
@@ -337,13 +337,13 @@ print *, "OpenMP processes available:", omp_get_num_procs()
   ! Loop over blocks
   !
 #ifdef USE_TIMING
-  do i = 1, 4
+  ! do i = 1, 4
 #endif
 
 !bo !$OMP PARALLEL DO
   do b = 1, nblocks
-#ifdef OMP
-    PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
+#ifdef USE_OPENMP
+    ! PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
 #endif
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
@@ -369,7 +369,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
     ! print *, "starting computations"
 
     if (use_nn) then
-      print *, "Using neural networks for predicting optical depths"
+      ! print *, "Using neural networks for predicting optical depths"
 
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),          &
                                           p_lev(:,:,b),         &
@@ -382,7 +382,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
                                           neural_nets,          & !net_pfrac, net_tau
                                           tlev = t_lev(:,:,b)))
     else 
-      print *, "Using original code (interpolation routine) for predicting optical depths"
+      ! print *, "Using original code (interpolation routine) for predicting optical depths"
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -392,7 +392,6 @@ print *, "OpenMP processes available:", omp_get_num_procs()
                                         source,             &
                                         tlev = t_lev(:,:,b)))
     end if
-
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
 #endif
@@ -400,6 +399,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
     !    via ty_fluxes_broadband
     !
+
 #ifdef USE_TIMING
     ret =  gptlstart('rte_lw')
 #endif
@@ -408,6 +408,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
                             source,          &
                             sfc_emis_spec,   &
                             fluxes, n_gauss_angles = n_quad_angles))
+                         
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
 #endif
@@ -425,7 +426,7 @@ print *, "OpenMP processes available:", omp_get_num_procs()
 
 !bo !$OMP END PARALLEL DO
 #ifdef USE_TIMING
-  end do
+  ! end do
   !
   ! End timers
   !

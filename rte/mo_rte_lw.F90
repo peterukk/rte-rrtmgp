@@ -228,11 +228,11 @@ contains
     end select
 
     if (error_msg /= '') return
-    !
     ! ...and reduce spectral fluxes to desired output quantities
     !
     error_msg = fluxes%reduce(gpt_flux_up, gpt_flux_dn, optical_props, top_at_1)
     deallocate(gpt_flux_up,gpt_flux_dn,sfc_emis_gpt)
+
     !$acc exit data delete(sources%lay_source, sources%lev_source_inc, sources%lev_source_dec, sources%sfc_source)
     !$acc exit data delete(sfc_emis_gpt, gauss_Ds, gauss_wts)
     !$acc exit data delete(gpt_flux_up,gpt_flux_dn)
