@@ -381,8 +381,10 @@ contains
     !   layers with pressures in the upper or lower atmosphere respectively
     ! First check skips the routine entirely if all columns are out of bounds...
     !
+
     if(any(layer_limits(:,1) > 0)) then
       do imnr = 1, size(scale_by_complement,dim=1) ! loop over minor absorbers in each band
+
         do icol = 1, ncol
           !
           ! This check skips individual columns with no pressures in range
@@ -401,6 +403,7 @@ contains
                 ! NOTE: P needed in hPa to properly handle density scaling.
                 !
                 scaling = scaling * (PaTohPa*play(icol,ilay)/tlay(icol,ilay))
+
                 if(idx_minor_scaling(imnr) > 0) then  ! there is a second gas that affects this gas's absorption
                   vmr_fact = 1._wp / col_gas(icol,ilay,0)
                   dry_fact = 1._wp / (1._wp + col_gas(icol,ilay,idx_h2o) * vmr_fact)

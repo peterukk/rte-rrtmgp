@@ -25,9 +25,13 @@ LIBS      += -lnetcdff -lnetcdf
 #
 # THIS IS SET UP IN THE MASTER MAKEFILE
 
+ifeq ($(USE_TIMING),yes)
+	USE_OPENMP=yes
+endif
 # Use OpenMP?
-ifeq ($(OMP),yes)
+ifeq ($(USE_OPENMP),yes)
 	OMPFLAG = -fopenmp
+	FCFLAGS += -DUSE_OPENMP
 endif
 
 # 
@@ -56,7 +60,6 @@ else ifeq ($(BLASLIB),mkl)
 endif
 
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
-
 ifeq ($(USE_TIMING),yes)
 	#
 	# Timing library
