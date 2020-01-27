@@ -133,12 +133,15 @@ contains
       call lw_transport_noscat(ncol, nlay, top_at_1,  &
                                tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
                                radn_up(:,:,igpt), radn_dn(:,:,igpt))
+
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
       radn_dn(:,:,igpt) = 2._wp * pi * weight * radn_dn(:,:,igpt)
       radn_up(:,:,igpt) = 2._wp * pi * weight * radn_up(:,:,igpt)
     end do  ! g point loop
+
+    
 
   end subroutine lw_solver_noscat
   ! -------------------------------------------------------------------------------------------------
@@ -176,10 +179,12 @@ contains
     ! For the first angle output arrays store total flux
     !
     Ds_ncol(:,:) = Ds(1)
+
     call lw_solver_noscat(ncol, nlay, ngpt, &
                           top_at_1, Ds_ncol, weights(1), tau, &
                           lay_source, lev_source_inc, lev_source_dec, sfc_emis, sfc_src, &
                           flux_up, flux_dn)
+
     !
     ! For more than one angle use local arrays
     !
@@ -417,6 +422,7 @@ contains
                               2._wp * fact * (lay_source(icol,ilay) - lev_source_up(icol,ilay))
       end do
     end do
+    
   end subroutine lw_source_noscat
   ! -------------------------------------------------------------------------------------------------
   !

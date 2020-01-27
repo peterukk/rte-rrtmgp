@@ -107,6 +107,7 @@ contains
     do b = 1, nblocks
       p_lev(:,:,b) = transpose(temp3d(:,:,b))
     end do
+
     temp3d = reshape(       read_field(ncid, "temp_level", nlay_l+1, ncol_l, nexp_l), &
                     shape = [nlay_l+1, blocksize, nblocks])
     do b = 1, nblocks
