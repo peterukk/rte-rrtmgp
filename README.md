@@ -2,7 +2,7 @@
 # Status 4.10.2019 #
 Currently only longwave implemented!!
 
-**How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle gas overlaps, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations. The model takes as input a single layer and so is agnostic to vertical discretization.  
+**How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "minor" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input a single layer and so is agnostic to vertical discretization.  
 
 **Speed**: The optical depth kernel is up to 3-4 times faster than the original on ifort+MKL when using single precision and a fairly complex neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). The fastest implementation (on intel compilers) uses BLAS/MKL to predict multiple levels (and optionally columns) at a time using matrix-matrix products (SGEMM), reducing the whole gas optics call to a few heavy matrix operations. 
 
