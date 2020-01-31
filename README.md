@@ -6,7 +6,7 @@ Currently only longwave implemented!!
 
 **Speed**: The optical depth kernel is up to 3-4 times faster than the original on ifort+MKL when using single precision and a fairly complex neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). The fastest implementation (on intel compilers) uses BLAS/MKL to predict multiple levels (and optionally columns) at a time using matrix-matrix products (SGEMM), reducing the whole gas optics call to a few heavy matrix operations. 
 
-**Accuracy**: The column mean RMS errors are around 0.3, 0.5 W/m2 for up- and downwelling fluxes respectively, but the downwelling long-wave fluxes have relatively large errors up to 5 W/m2 in the upper layers at some RFMIP test sites with high water vapour concentrations (more training data needed).  The mean absolute heating rate errors (for all sites) are below 0.1 K/day except for the top levels in the stratosphere. 
+**Accuracy**: The mean absolute and max vertical errors in the downwelling and up-welling fluxes are now comparable to the original scheme (<0.5 W/m2 for mean, 1-2 W/m2 for max vertical error) relative to an accurate line-by-line model. The upwelling fluxes are in some cases (surprisingly) even more accurate; however the heating rates still end up being somewhat less accurate overall due to being sensitive to flux errors in the stratosphere, where the neural network performs worse. These results are based on a pseudo-independent test set (where the temperature and humidity profiles are independent but not  the combination of gas concentrations).
 
 **how to use** 
 
