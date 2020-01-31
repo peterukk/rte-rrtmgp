@@ -1,6 +1,7 @@
 # This fork uses neural networks to accelerate the gas optics computational kernels
-# Status 4.10.2019 #
-Currently only longwave implemented!!
+Status 31.1.2020: RTE code rewritten to use g-points in the first dimension, and other optimizations which can lead to a 40% speedup overall (without neural networks). Coming soon!
+
+# Currently only longwave implemented!!
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "minor" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input a single layer and so is agnostic to vertical discretization.  
 
