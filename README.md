@@ -10,7 +10,7 @@ Status 31.1.2020: RTE code rewritten to use g-points in the first dimension, and
 **Accuracy**: The mean absolute and max vertical errors in the downwelling and up-welling fluxes are now comparable to the original scheme (<0.5 W/m2 for mean, 1-2 W/m2 for max vertical error) relative to an accurate line-by-line model. The upwelling fluxes are in some cases (surprisingly) even more accurate; however the heating rates still end up being somewhat less accurate overall due to being sensitive to flux errors in the stratosphere, where the neural network performs worse. These results are based on a pseudo-independent test set (where the temperature and humidity profiles are independent but not  the combination of gas concentrations) and are likely to be worse for truly independent data from e.g. a GCM.
 
 **how to use** 
-currently only works with the RFMIP profiles
+currently only works with the RFMIP profiles. Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
 
 **to-do**
 - "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)?
