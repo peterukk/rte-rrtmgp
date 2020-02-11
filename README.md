@@ -3,7 +3,7 @@ Status 31.1.2020: RTE code rewritten to use g-points in the first dimension, and
 
 # Currently only longwave implemented!!
 
-**How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "minor" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input a single layer and so is agnostic to vertical discretization.  
+**How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "minor" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input the gas column for a single atmospheric layer and so is agnostic to vertical discretization.  
 
 **Speed**: The optical depth kernel is up to 3 times faster than the original on ifort+MKL when using single precision and a 4-layer neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). Optical depths and planck fractions are predicted by separate models, which output all 256 g-points. The fastest implementation uses BLAS/MKL where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time (replacing the matrix-vector dot product of a feed-forward neural network with a matrix-matrix call).
 
