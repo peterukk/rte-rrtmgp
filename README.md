@@ -5,18 +5,19 @@ Status 31.1.2020: RTE code rewritten to use g-points in the first dimension, and
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "minor" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input a single layer and so is agnostic to vertical discretization.  
 
-**Speed**: The optical depth kernel is up to 3 times faster than the original on ifort+MKL when using single precision and a 4-layer neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). Optical depths and planck fractions are predicted by separate models, which output all 256 g-points. The fastest implementation uses BLAS/MKL where the data is packed into a matrix which is then fed to GEMM call to predict a block of data at a time (neural networks = vector/vector or matrix/matrix products).
+**Speed**: The optical depth kernel is up to 3 times faster than the original on ifort+MKL when using single precision and a 4-layer neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). Optical depths and planck fractions are predicted by separate models, which output all 256 g-points. The fastest implementation uses BLAS/MKL where the data is packed into a matrix which is then fed to GEMM call to predict a block of data at a time (replacing the matrix-vector dot product of a feed-forward neural network with a matrix-matrix call).
 
-**Accuracy**: The mean absolute and max vertical errors in the downwelling and up-welling fluxes are now comparable to the original scheme (<0.5 W/m2 for mean, 1-2 W/m2 for max vertical error) relative to an accurate line-by-line model. The upwelling fluxes are in some cases (surprisingly) even more accurate; however the heating rates still end up being somewhat less accurate overall due to being sensitive to flux errors in the stratosphere, where the neural network performs worse. These results are based on a pseudo-independent test set (where the temperature and humidity profiles are independent but not  the combination of gas concentrations).
+**Accuracy**: The mean absolute and max vertical errors in the downwelling and up-welling fluxes are now comparable to the original scheme (<0.5 W/m2 for mean, 1-2 W/m2 for max vertical error) relative to an accurate line-by-line model. The upwelling fluxes are in some cases (surprisingly) even more accurate; however the heating rates still end up being somewhat less accurate overall due to being sensitive to flux errors in the stratosphere, where the neural network performs worse. These results are based on a pseudo-independent test set (where the temperature and humidity profiles are independent but not  the combination of gas concentrations) and are likely to be worse for truly independent data from e.g. a GCM.
 
 **how to use** 
+currently only works with the RFMIP profiles
 
 **to-do**
 - "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)?
-- related to this, offer user choice regarding speed/accuracy (more accurate models are computationally slower)
+- related to this, offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate
 - implement for shortwave
-- GPU kernels
-- post-processing (scaling) coefficients should maybe be integrated into neural-fortran and loaded from the same files as the model weights
+- GPU kernels - should be easy and very fast with openacc_cublas
+- post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
 
 
 # RTE+RRTMGP
