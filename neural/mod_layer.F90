@@ -3,7 +3,7 @@ module mod_layer
   ! Defines the layer type and its methods.
 
   use mod_activation
-  use mo_rte_kind, only: wp
+  use mo_rte_kind, only: sp
   use mod_random, only: randn
 
   implicit none
@@ -12,11 +12,10 @@ module mod_layer
   public :: layer_type
 
   type :: layer_type
-    real(wp), allocatable :: a(:) ! activations
-    real(wp), allocatable :: b(:) ! biases
-    real(wp), allocatable :: w(:,:) ! weights
-    real(wp), allocatable :: w_transposed(:,:) ! weights
-    real(wp), allocatable :: z(:) ! arg. to activation function
+    real(sp), allocatable :: b(:) ! biases
+    real(sp), allocatable :: w(:,:) ! weights
+    real(sp), allocatable :: w_transposed(:,:) ! weights
+    !!  !$acc policy<copylayer> copyin(b, w, w_transposed)
     procedure(activation_vec),    pointer, nopass :: activation !=> null()
     procedure(activation_mat),    pointer, nopass :: activation_m
   contains
@@ -34,14 +33,9 @@ contains
     ! next_size is the number of neurons in the next layer, used to allocate
     ! the weights.
     integer, intent(in) :: this_size, next_size
-    allocate(layer % a(this_size))
-    allocate(layer % z(this_size))
-    layer % a = 0.0_wp
-    layer % z = 0.0_wp
     allocate(layer % w(this_size,next_size))
     allocate(layer % w_transposed(next_size,this_size))
-    !layer % w = randn(this_size, next_size) / this_size
-    ! layer % w_transposed = transpose(layer%w)
+    allocate(layer % b(this_size))
     layer % b = randn(this_size)
   end function constructor
 

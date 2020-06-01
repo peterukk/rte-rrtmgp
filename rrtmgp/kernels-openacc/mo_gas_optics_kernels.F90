@@ -15,24 +15,33 @@
 !   source functions.
 
 module mo_gas_optics_kernels
-  use mo_rte_kind,      only: wp, wl
+  use mo_rte_kind,      only: wp, wl, sp, dp
+  use mod_network,      only: network_type, output_sgemm_pfrac_acc, output_sgemm_tau_acc
+  use, intrinsic :: ISO_C_BINDING
+  
   implicit none
-  public
+
+  interface predict_nn_lw_blas
+    module procedure predict_nn_lw_blas_sp, predict_nn_lw_blas_mp
+  end interface predict_nn_lw_blas
+
+
 contains
+
   ! --------------------------------------------------------------------------------------
   ! Compute interpolation coefficients
   ! for calculations of major optical depths, minor optical depths, Rayleigh,
   ! and Planck fractions
   subroutine interpolation( &
-                ncol,nlay,ngas,nflav,neta, npres, ntemp, &
+                nlay,ncol,ngas,nflav,neta, npres, ntemp, &
                 flavor,                                  &
                 press_ref_log, temp_ref,press_ref_log_delta,    &
                 temp_ref_min,temp_ref_delta,press_ref_trop_log, &
                 vmr_ref,                                        &
                 play,tlay,col_gas,                              &
-                jtemp,fmajor,fminor,col_mix,tropo,jeta,jpress) bind(C, name="interpolation")
+                jtemp,fmajor,fminor,col_mix,tropo,jeta,jpress,play_log) bind(C, name="interpolation")
     ! input dimensions
-    integer,                            intent(in) :: ncol,nlay
+    integer,                            intent(in) :: nlay,ncol
     integer,                            intent(in) :: ngas,nflav,neta,npres,ntemp
     integer,     dimension(2,nflav),    intent(in) :: flavor
     real(wp),    dimension(npres),      intent(in) :: press_ref_log
@@ -43,19 +52,20 @@ contains
     real(wp),    dimension(2,0:ngas,ntemp), intent(in) :: vmr_ref
 
     ! inputs from profile or parent function
-    real(wp),    dimension(ncol,nlay),        intent(in) :: play, tlay
-    real(wp),    dimension(ncol,nlay,0:ngas), intent(in) :: col_gas
+    real(wp),    dimension(nlay,ncol),        intent(in) :: play, tlay
+    real(wp),    dimension(nlay,ncol,0:ngas), intent(in) :: col_gas
 
     ! outputs
-    integer,     dimension(ncol,nlay), intent(out) :: jtemp, jpress
-    logical(wl), dimension(ncol,nlay), intent(out) :: tropo
-    integer,     dimension(2,    nflav,ncol,nlay), intent(out) :: jeta
-    real(wp),    dimension(2,    nflav,ncol,nlay), intent(out) :: col_mix
-    real(wp),    dimension(2,2,2,nflav,ncol,nlay), intent(out) :: fmajor
-    real(wp),    dimension(2,2,  nflav,ncol,nlay), intent(out) :: fminor
+    integer,     dimension(nlay,ncol), intent(out) :: jtemp, jpress
+    logical(wl), dimension(nlay,ncol), intent(out) :: tropo
+    integer,     dimension(2,    nflav,nlay,ncol), intent(out) :: jeta
+    real(wp),    dimension(2,    nflav,nlay,ncol), intent(out) :: col_mix
+    real(wp),    dimension(2,2,2,nflav,nlay,ncol), intent(out) :: fmajor
+    real(wp),    dimension(2,2,  nflav,nlay,ncol), intent(out) :: fminor
+    real(wp),    dimension(nlay, ncol),            intent(out) :: play_log
     ! -----------------
     ! local
-    real(wp), dimension(ncol,nlay) :: ftemp, fpress ! interpolation fraction for temperature, pressure
+    real(wp), dimension(nlay,ncol) :: ftemp, fpress ! interpolation fraction for temperature, pressure
     real(wp) :: locpress ! needed to find location in pressure grid
     real(wp) :: ratio_eta_half ! ratio of vmrs of major species that defines eta=0.5
                                ! for given flavor and reference temperature level
@@ -64,27 +74,28 @@ contains
     real(wp) :: ftemp_term
     ! -----------------
     ! local indexes
-    integer :: icol, ilay, iflav, igases(2), itropo, itemp
+    integer :: ilay, icol, iflav, igases(2), itropo, itemp
 
     !$acc enter data copyin(flavor,press_ref_log,temp_ref,vmr_ref,play,tlay,col_gas)
     !$acc enter data create(jtemp,jpress,tropo,jeta,col_mix,fmajor,fminor)
     !$acc enter data create(ftemp,fpress)
 
     !$acc parallel loop gang vector collapse(2)
-    do ilay = 1, nlay
-      do icol = 1, ncol
+    do icol = 1, ncol
+      do ilay = 1, nlay
         ! index and factor for temperature interpolation
-        jtemp(icol,ilay) = int((tlay(icol,ilay) - (temp_ref_min - temp_ref_delta)) / temp_ref_delta)
-        jtemp(icol,ilay) = min(ntemp - 1, max(1, jtemp(icol,ilay))) ! limit the index range
-        ftemp(icol,ilay) = (tlay(icol,ilay) - temp_ref(jtemp(icol,ilay))) / temp_ref_delta
+        jtemp(ilay,icol) = int((tlay(ilay,icol) - (temp_ref_min - temp_ref_delta)) / temp_ref_delta)
+        jtemp(ilay,icol) = min(ntemp - 1, max(1, jtemp(ilay,icol))) ! limit the index range
+        ftemp(ilay,icol) = (tlay(ilay,icol) - temp_ref(jtemp(ilay,icol))) / temp_ref_delta
 
         ! index and factor for pressure interpolation
-        locpress = 1._wp + (log(play(icol,ilay)) - press_ref_log(1)) / press_ref_log_delta
-        jpress(icol,ilay) = min(npres-1, max(1, int(locpress)))
-        fpress(icol,ilay) = locpress - float(jpress(icol,ilay))
+        play_log(ilay,icol) = log(play(ilay,icol))
+        locpress = 1._wp + (play_log(ilay,icol) - press_ref_log(1)) / press_ref_log_delta
+        jpress(ilay,icol) = min(npres-1, max(1, int(locpress)))
+        fpress(ilay,icol) = locpress - float(jpress(ilay,icol))
 
         ! determine if in lower or upper part of atmosphere
-        tropo(icol,ilay) = log(play(icol,ilay)) > press_ref_trop_log
+        tropo(ilay,icol) = play_log(ilay,icol) > press_ref_trop_log
       end do
     end do
 
@@ -92,38 +103,38 @@ contains
     ! PGI BUG WORKAROUND: if present(vmr_ref) isn't there, OpenACC runtime
     ! thinks it isn't present.
     !$acc parallel loop gang vector collapse(4) private(igases) present(vmr_ref)
-    do ilay = 1, nlay
-      do icol = 1, ncol
+    do icol = 1, ncol
+      do ilay = 1, nlay
         ! loop over implemented combinations of major species
         do iflav = 1, nflav
           do itemp = 1, 2
             igases(:) = flavor(:,iflav)
             ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
-            itropo = merge(1,2,tropo(icol,ilay))
+            itropo = merge(1,2,tropo(ilay,icol))
             ! compute interpolation fractions needed for lower, then upper reference temperature level
             ! compute binary species parameter (eta) for flavor and temperature and
             !  associated interpolation index and factors
-            ratio_eta_half = vmr_ref(itropo,igases(1),(jtemp(icol,ilay)+itemp-1)) / &
-                             vmr_ref(itropo,igases(2),(jtemp(icol,ilay)+itemp-1))
-            col_mix(itemp,iflav,icol,ilay) = col_gas(icol,ilay,igases(1)) + ratio_eta_half * col_gas(icol,ilay,igases(2))
-            eta = merge(col_gas(icol,ilay,igases(1)) / col_mix(itemp,iflav,icol,ilay), 0.5_wp, &
-                        col_mix(itemp,iflav,icol,ilay) > 2._wp * tiny(col_mix))
+            ratio_eta_half = vmr_ref(itropo,igases(1),(jtemp(ilay,icol)+itemp-1)) / &
+                             vmr_ref(itropo,igases(2),(jtemp(ilay,icol)+itemp-1))
+            col_mix(itemp,iflav,ilay,icol) = col_gas(ilay,icol,igases(1)) + ratio_eta_half * col_gas(ilay,icol,igases(2))
+            eta = merge(col_gas(ilay,icol,igases(1)) / col_mix(itemp,iflav,ilay,icol), 0.5_wp, &
+                        col_mix(itemp,iflav,ilay,icol) > 2._wp * tiny(col_mix))
             loceta = eta * float(neta-1)
-            jeta(itemp,iflav,icol,ilay) = min(int(loceta)+1, neta-1)
+            jeta(itemp,iflav,ilay,icol) = min(int(loceta)+1, neta-1)
             feta = mod(loceta, 1.0_wp)
             ! compute interpolation fractions needed for minor species
-            ! ftemp_term = (1._wp-ftemp(icol,ilay)) for itemp = 1, ftemp(icol,ilay) for itemp=2
-            ftemp_term = (real(2-itemp, wp) + real(2*itemp-3, wp) * ftemp(icol,ilay))
-            fminor(1,itemp,iflav,icol,ilay) = (1._wp-feta) * ftemp_term
-            fminor(2,itemp,iflav,icol,ilay) =        feta  * ftemp_term
+            ! ftemp_term = (1._wp-ftemp(ilay,icol)) for itemp = 1, ftemp(ilay,icol) for itemp=2
+            ftemp_term = (real(2-itemp, wp) + real(2*itemp-3, wp) * ftemp(ilay,icol))
+            fminor(1,itemp,iflav,ilay,icol) = (1._wp-feta) * ftemp_term
+            fminor(2,itemp,iflav,ilay,icol) =        feta  * ftemp_term
             ! compute interpolation fractions needed for major species
-            fmajor(1,1,itemp,iflav,icol,ilay) = (1._wp-fpress(icol,ilay)) * fminor(1,itemp,iflav,icol,ilay)
-            fmajor(2,1,itemp,iflav,icol,ilay) = (1._wp-fpress(icol,ilay)) * fminor(2,itemp,iflav,icol,ilay)
-            fmajor(1,2,itemp,iflav,icol,ilay) =        fpress(icol,ilay)  * fminor(1,itemp,iflav,icol,ilay)
-            fmajor(2,2,itemp,iflav,icol,ilay) =        fpress(icol,ilay)  * fminor(2,itemp,iflav,icol,ilay)
+            fmajor(1,1,itemp,iflav,ilay,icol) = (1._wp-fpress(ilay,icol)) * fminor(1,itemp,iflav,ilay,icol)
+            fmajor(2,1,itemp,iflav,ilay,icol) = (1._wp-fpress(ilay,icol)) * fminor(2,itemp,iflav,ilay,icol)
+            fmajor(1,2,itemp,iflav,ilay,icol) =        fpress(ilay,icol)  * fminor(1,itemp,iflav,ilay,icol)
+            fmajor(2,2,itemp,iflav,ilay,icol) =        fpress(ilay,icol)  * fminor(2,itemp,iflav,ilay,icol)
           end do ! reference temperatures
         end do ! iflav
-      end do ! icol,ilay
+      end do ! ilay,icol
     end do
 
     !$acc exit data delete(flavor,press_ref_log,temp_ref,vmr_ref,play,tlay,col_gas)
@@ -131,6 +142,7 @@ contains
     !$acc exit data delete(ftemp,fpress)
 
   end subroutine interpolation
+  
   ! --------------------------------------------------------------------------------------
   !
   ! Compute minor and major species opitcal depth from pre-computed interpolation coefficients
@@ -531,26 +543,26 @@ contains
     end do
   end subroutine compute_tau_rayleigh
 
-  ! ----------------------------------------------------------
-  subroutine compute_Planck_source(                        &
+      ! ----------------------------------------------------------
+  subroutine compute_source_bybnd_pfrac_bygpt(             &
                     ncol, nlay, nbnd, ngpt,                &
                     nflav, neta, npres, ntemp, nPlanckTemp,&
                     tlay, tlev, tsfc, sfc_lay,             &
                     fmajor, jeta, tropo, jtemp, jpress,    &
                     gpoint_bands, band_lims_gpt,           &
-                    pfracin, temp_ref_min, totplnk_delta, totplnk, gpoint_flavor, &
-                    sfc_src, lay_src, lev_src_inc, lev_src_dec, sfc_source_Jac) bind(C, name="compute_Planck_source")
+                    temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
+                    sfc_source_bnd, lay_source_bnd, lev_source_bnd, pfrac) bind(C, name="compute_source_bybnd_pfrac_bygpt")
     integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
     integer,                                    intent(in) :: nflav, neta, npres, ntemp, nPlanckTemp
-    real(wp),    dimension(ncol,nlay  ),        intent(in) :: tlay
-    real(wp),    dimension(ncol,nlay+1),        intent(in) :: tlev
+    real(wp),    dimension(nlay, ncol  ),        intent(in) :: tlay
+    real(wp),    dimension(nlay+1, ncol),        intent(in) :: tlev
     real(wp),    dimension(ncol       ),        intent(in) :: tsfc
     integer,                                    intent(in) :: sfc_lay
     ! Interpolation variables
-    real(wp),    dimension(2,2,2,nflav,ncol,nlay), intent(in) :: fmajor
-    integer,     dimension(2,    nflav,ncol,nlay), intent(in) :: jeta
-    logical(wl), dimension(            ncol,nlay), intent(in) :: tropo
-    integer,     dimension(            ncol,nlay), intent(in) :: jtemp, jpress
+    real(wp),    dimension(2,2,2,nflav,nlay, ncol), intent(in) :: fmajor
+    integer,     dimension(2,    nflav,nlay, ncol), intent(in) :: jeta
+    logical(wl), dimension(            nlay, ncol), intent(in) :: tropo
+    integer,     dimension(            nlay, ncol), intent(in) :: jtemp, jpress
     ! Table-specific
     integer, dimension(ngpt),                     intent(in) :: gpoint_bands ! start and end g-point for each band
     integer, dimension(2, nbnd),                  intent(in) :: band_lims_gpt ! start and end g-point for each band
@@ -559,126 +571,197 @@ contains
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
     integer,  dimension(2,ngpt),                  intent(in) :: gpoint_flavor
 
-    real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_src
-    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lay_src
-    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lev_src_inc, lev_src_dec
-
-    real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_source_Jac
+    real(wp), dimension(nbnd,     ncol),          intent(inout) :: sfc_source_bnd
+    real(wp), dimension(nbnd,nlay,ncol),          intent(inout) :: lay_source_bnd
+    real(wp), dimension(nbnd,nlay+1,ncol),        intent(inout) :: lev_source_bnd
+    real(wp), dimension(ngpt,nlay,ncol),          intent(inout) :: pfrac
     ! -----------------
     ! local
-    real(wp), parameter                             :: delta_Tsurf = 1.0_wp
-
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
-    real(wp) :: pfrac          (ngpt,nlay,  ncol)
-    real(wp) :: planck_function(nbnd,nlay+1,ncol)
-    ! -----------------
-
-    !$acc enter data copyin(tlay,tlev,tsfc,fmajor,jeta,tropo,jtemp,jpress,gpoint_bands,pfracin,totplnk,gpoint_flavor)
-    !$acc enter data create(sfc_src,lay_src,lev_src_inc,lev_src_dec)
-    !$acc enter data create(pfrac,planck_function)
-    !$acc enter data create(sfc_source_Jac)
+    ! -----------------    
 
     ! Calculation of fraction of band's Planck irradiance associated with each g-point
-    !$acc parallel loop collapse(3)
+    !$acc kernels present(sfc_source_bnd,lev_source_bnd,lay_source_bnd,tsfc,tlay,tlev,temp_ref_min,totplnk_delta,totplnk)
+
     do icol = 1, ncol
+      !
+      ! Planck function by band for the surface
+      !
+      call interpolate1D(tsfc(icol),   temp_ref_min, totplnk_delta, totplnk, sfc_source_bnd(:,icol))
+      call interpolate1D(tlev(1,icol), temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,1, icol))
+
       do ilay = 1, nlay
+        call interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,1, icol))
+        call interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk, lay_source_bnd(:,ilay,icol))
+        ! Calculation of fraction of band's Planck irradiance associated with each g-point
+        ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
+        itropo = merge(1,2,tropo(ilay,icol))
         do igpt = 1, ngpt
-          ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
-          itropo = merge(1,2,tropo(icol,ilay))  !WS moved itropo inside loop for GPU
           iflav = gpoint_flavor(itropo, igpt) !eta interpolation depends on band's flavor
           pfrac(igpt,ilay,icol) = &
             ! interpolation in temperature, pressure, and eta
-            interpolate3D(one, fmajor(:,:,:,iflav,icol,ilay), pfracin, &
-                          igpt, jeta(:,iflav,icol,ilay), jtemp(icol,ilay),jpress(icol,ilay)+itropo)
-        end do ! igpt
-      end do   ! layer
-    end do     ! column
+            interpolate3D(one, fmajor(:,:,:,iflav,ilay,icol), pfracin, &
+                          igpt, jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)              
+        end do ! g-point
+      end do ! ilay
+    end do ! icol
+    !$acc end kernels
 
-    !
-    ! Planck function by band for the surface
-    ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
-    !
+
+  end subroutine compute_source_bybnd_pfrac_bygpt
+
+  subroutine compute_source_bybnd(                    &
+                    ncol, nlay, nbnd,                 &
+                    ntemp, nPlanckTemp,                   &
+                    tlay, tlev, tsfc, sfc_lay,            &
+                    temp_ref_min, totplnk_delta, totplnk, &
+                    sfc_source_bnd, lay_source_bnd, lev_source_bnd) bind(C, name="compute_Planck_bybnd")
+    integer,                                    intent(in) :: ncol, nlay, nbnd
+    integer,                                    intent(in) :: ntemp, nPlanckTemp
+    real(wp),    dimension(nlay,ncol  ),        intent(in) :: tlay
+    real(wp),    dimension(nlay+1,ncol),        intent(in) :: tlev
+    real(wp),    dimension(ncol       ),        intent(in) :: tsfc
+    integer,                                    intent(in) :: sfc_lay
+
+    real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
+    real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
+
+    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd
+    real(wp), dimension(nbnd,nlay,ncol),          intent(out) :: lay_source_bnd
+    real(wp), dimension(nbnd,nlay+1,ncol),        intent(out) :: lev_source_bnd
+    ! -----------------
+    ! local
+    integer  :: ilay, icol, ibnd
+
+    !$acc data present(sfc_source_bnd,lev_source_bnd,lay_source_bnd,tsfc,tlay,tlev,temp_ref_min,totplnk_delta,totplnk)
+    
     !$acc parallel loop
     do icol = 1, ncol
-      call interpolate1D(tsfc(icol)              , temp_ref_min, totplnk_delta, totplnk, planck_function(1:nbnd,1,icol))
-      call interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk, planck_function(1:nbnd,2,icol))
-    end do
-    !
-    ! Map to g-points
-    !
-    !$acc parallel loop collapse(2)
-    do igpt = 1, ngpt
-      do icol = 1, ncol
-        sfc_src       (igpt,icol) = pfrac(igpt,sfc_lay,icol) * planck_function(gpoint_bands(igpt),1,icol)
-        sfc_source_Jac(igpt,icol) = pfrac(igpt,sfc_lay,icol) * &
-                 (planck_function(gpoint_bands(igpt),2,icol) - planck_function(gpoint_bands(igpt),1,icol))
-      end do
+      !
+      ! Planck function by band for the surface
+      ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
+      !
+      call interpolate1D(tsfc(icol),   temp_ref_min, totplnk_delta, totplnk, sfc_source_bnd(:,icol))
+      call interpolate1D(tlev(1,icol), temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,1, icol))
     end do ! icol
 
     !$acc parallel loop collapse(2)
     do icol = 1, ncol
       do ilay = 1, nlay
-        ! Compute layer source irradiance for g-point, equals band irradiance x fraction for g-point
-        call interpolate1D(tlay(icol,ilay), temp_ref_min, totplnk_delta, totplnk, planck_function(1:nbnd,ilay,icol))
-      end do
-    end do
-    !
-    ! Map to g-points
-    !
-    ! Explicitly unroll a time-consuming loop here to increase instruction-level parallelism on a GPU
-    ! Helps to achieve higher bandwidth
-    !
-    !$acc parallel loop collapse(3)
-    do icol = 1, ncol, 2
-      do ilay = 1, nlay
-        do igpt = 1, ngpt
-          lay_src(igpt,ilay,icol  ) = pfrac(igpt,ilay,icol  ) * planck_function(gpoint_bands(igpt),ilay,icol)
-          if (icol < ncol) &
-          lay_src(igpt,ilay,icol+1) = pfrac(igpt,ilay,icol+1) * planck_function(gpoint_bands(igpt),ilay,icol+1)
-        end do
+        call interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk, lay_source_bnd(:,ilay,icol))
+        call interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,ilay+1,icol))
       end do ! ilay
     end do ! icol
 
-    ! compute level source irradiances for each g-point, one each for upward and downward paths
-    !$acc parallel loop
-    do icol = 1, ncol
-      call interpolate1D(tlev(icol,     1), temp_ref_min, totplnk_delta, totplnk, planck_function(1:nbnd,       1,icol))
-    end do
+    !$acc end data
 
-    !$acc parallel loop collapse(2)
-    do icol = 1, ncol
-      do ilay = 2, nlay+1
-        call interpolate1D(tlev(icol,ilay), temp_ref_min, totplnk_delta, totplnk, planck_function(1:nbnd,ilay,icol))
-      end do
-    end do
 
-    !
-    ! Map to g-points
-    !
-    ! Same unrolling as mentioned before
-    !
-    !$acc parallel loop collapse(3)
-    do icol = 1, ncol, 2
-      do ilay = 1, nlay
-        do igpt = 1, ngpt
-          lev_src_dec(igpt,ilay,icol  ) = pfrac(igpt,ilay,icol  ) * planck_function(gpoint_bands(igpt),ilay,  icol  )
-          lev_src_inc(igpt,ilay,icol  ) = pfrac(igpt,ilay,icol  ) * planck_function(gpoint_bands(igpt),ilay+1,icol  )
-          if (icol < ncol) then
-          lev_src_dec(igpt,ilay,icol+1) = pfrac(igpt,ilay,icol+1) * planck_function(gpoint_bands(igpt),ilay,  icol+1)
-          lev_src_inc(igpt,ilay,icol+1) = pfrac(igpt,ilay,icol+1) * planck_function(gpoint_bands(igpt),ilay+1,icol+1)
-          end if
-        end do
-      end do ! ilay
-    end do ! icol
 
-    !$acc exit data delete(tlay,tlev,tsfc,fmajor,jeta,tropo,jtemp,jpress,gpoint_bands,pfracin,totplnk,gpoint_flavor)
-    !$acc exit data delete(pfrac,planck_function)
-    !$acc exit data copyout(sfc_src,lay_src,lev_src_inc,lev_src_dec)
-    !$acc exit data copyout(sfc_source_Jac)
+  end subroutine compute_source_bybnd
 
-  end subroutine compute_Planck_source
+  ! --------------------------------------------------------------------------------------
+  !
+  ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as double precision
+  ! (does computations in single precision but has to use temporary output array)
+  !
+  subroutine predict_nn_lw_blas_mp(                  &
+                    ncol, nlay, ngpt, ninputs,       & 
+                    nn_inputs,                    &
+                    neural_nets,                  &
+                    tau, pfrac)
+    ! inputs
+    integer,                              intent(in)    :: ncol, nlay, ngpt, ninputs
+    real(sp), dimension(ninputs,nlay,ncol), target, &     
+                                          intent(in)    :: nn_inputs 
+    ! The neural network models
+    type(network_type), dimension(2),     intent(in)    :: neural_nets
+
+    real(dp), dimension(ngpt,nlay,ncol),  intent(inout) :: pfrac, tau
+    ! local
+    real(sp), dimension(:,:), contiguous, &
+                              pointer   :: input
+    real(sp), dimension(ngpt,nlay*ncol) :: tmp_output
+    integer                             :: nobs
+
+    nobs = nlay*ncol
+    call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
+    
+! #ifdef USE_TIMING
+!     ret =  gptlstart('tmp_init')
+! #endif
+!     tmp_output = 0.0_sp
+! #ifdef USE_TIMING
+!     ret =  gptlstop('tmp_init')
+! #endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('compute_pfrac')
+! #endif
+!     call neural_nets(1) % nn_kernel_m(ninputs, ngpt, nobs, input, tmp_output)
+!     pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
+
+! #ifdef USE_TIMING
+!     ret =  gptlstop('compute_pfrac')
+!     ret =  gptlstart('compute_tau')
+! #endif
+!     call neural_nets(2) % nn_kernel_m(ninputs, ngpt, nobs, input, tmp_output)
+! #ifdef USE_TIMING
+!     ret =  gptlstart('output_reshape')
+! #endif
+!     tau = reshape(tmp_output,(/ngpt,nlay,ncol/))  
+! #ifdef USE_TIMING
+!     ret =  gptlstop('output_reshape')
+! #endif
+! #ifdef USE_TIMING
+!     ret =  gptlstop('compute_tau')
+! #endif
+
+  end subroutine predict_nn_lw_blas_mp
+
+  ! --------------------------------------------------------------------------------------
+  !
+  ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as single precision
+  ! (avoids temporary output array, which is faster)
+  !
+  subroutine predict_nn_lw_blas_sp(               &
+                    ncol, nlay, ngpt, ninputs,       & 
+                    nn_inputs,                    &
+                    neural_nets,                  &
+                    tau, pfrac)
+    ! inputs
+    integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+    real(sp), dimension(ninputs,nlay,ncol), target, &     
+                                        intent(in)    :: nn_inputs 
+    ! The neural network models
+    type(network_type), dimension(2),   intent(in)    :: neural_nets
+
+    ! outputs
+    real(sp), dimension(ngpt,nlay,ncol), target, &
+                                        intent(inout) :: pfrac, tau
+    ! local
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    integer                                           :: ilay, icol, nobs
+
+    
+    ! PREDICT PLANCK FRACTIONS
+    nobs = nlay*ncol
+    call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
+
+    call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
+
+    call neural_nets(2) % output_sgemm_tau_acc(ninputs, ngpt, nobs, input, output)
+
+    !$acc exit data delete(output)
+
+    call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
+
+    call neural_nets(1) %  output_sgemm_pfrac_acc(ninputs,ngpt,nobs,input, output)
+
+    ! !$acc update self(output)
+
+  end subroutine predict_nn_lw_blas_sp
+
   ! ----------------------------------------------------------
   !
   ! One dimensional interpolation -- return all values along second table dimension
@@ -689,10 +772,10 @@ contains
     real(wp), intent(in) :: val,    & ! axis value at which to evaluate table
                             offset, & ! minimum of table axis
                             delta     ! step size of table axis
-    real(wp), dimension(:,:), &
+    real(wp), dimension(:,:), contiguous, &
               intent(in) :: table ! dimensions (axis, values)
     ! output
-    real(wp), intent(out) ,dimension(size(table,dim=2)) :: res
+    real(wp), intent(out), dimension(size(table,dim=2)) :: res
 
     ! local
     real(wp) :: val0 ! fraction index adjusted by offset and delta
@@ -753,93 +836,67 @@ contains
         fmajor(2,2,2) * k(igpt, jeta(2)+1, jpress  , jtemp+1) )
   end function interpolate3D
 
-  ! ----------------------------------------------------------
   !
   ! Combine absoprtion and Rayleigh optical depths for total tau, ssa, g
   !
-  subroutine combine_and_reorder_2str(ncol, nlay, ngpt, tau_abs, tau_rayleigh, tau, ssa, g) &
-      bind(C, name="combine_and_reorder_2str")
-    integer,                             intent(in) :: ncol, nlay, ngpt
-    real(wp), dimension(ngpt,nlay,ncol), intent(in   ) :: tau_abs, tau_rayleigh
-    real(wp), dimension(ncol,nlay,ngpt), intent(inout) :: tau, ssa, g ! inout because components are allocated
+  pure subroutine combine_2str(ncol, nlay, ngpt, tau_rayleigh, tau, ssa, g) &
+      bind(C, name="combine_2str")
+    integer,                                intent(in) :: ncol, nlay, ngpt
+    real(wp), dimension(ngpt,nlay, ncol),    intent(in   ) :: tau_rayleigh
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau, ssa, g ! inout because components are allocated
     ! -----------------------
-    integer  :: icol, ilay, igpt,  icol0, igpt0, icdiff, igdiff
+    integer  :: icol, ilay, igpt
     real(wp) :: t
-    integer, parameter :: tile = 32
     ! -----------------------
-    !$acc data copy(tau, ssa, g)                 &
-    !$acc      copyin(tau_rayleigh, tau_abs)
-
-    ! We are using blocking memory accesses here to improve performance
-    !  of the transpositions. See also comments in mo_rrtmgp_util_reorder_kernels.F90
-    !
-    !$acc parallel default(none) vector_length(tile*tile)
-    !$acc loop gang collapse(3)
+    do icol = 1, ncol
       do ilay = 1, nlay
-      do icol0 = 1, ncol, tile
-        do igpt0 = 1, ngpt, tile
-
-          !$acc loop vector collapse(2)
-          do igdiff = 0, tile-1
-            do icdiff = 0, tile-1
-              icol = icol0 + icdiff
-              igpt = igpt0 + igdiff
-              if (icol > ncol .or. igpt > ngpt) cycle
-
-           t = tau_abs(igpt,ilay,icol) + tau_rayleigh(igpt,ilay,icol)
-           tau(icol,ilay,igpt) = t
-           g  (icol,ilay,igpt) = 0._wp
-           if(t > 2._wp * tiny(t)) then
-             ssa(icol,ilay,igpt) = tau_rayleigh(igpt,ilay,icol) / t
+        do igpt = 1, ngpt
+          ! tau_tot = tau_abs + tau_rayleigh
+           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_rayleigh(igpt,ilay,icol)
+           g  (igpt,ilay,icol) = 0._wp
+           if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+            ! ssa = tau_rayleigh / tau_tot
+             ssa(igpt,ilay,icol) = tau_rayleigh(igpt,ilay,icol) / tau(igpt,ilay,icol)
            else
-             ssa(icol,ilay,igpt) = 0._wp
+             ssa(igpt,ilay,icol) = 0._wp
            end if
-
-            end do
-          end do
-
         end do
       end do
     end do
-    !$acc end parallel
-    !$acc end data
-  end subroutine combine_and_reorder_2str
+  end subroutine combine_2str
   ! ----------------------------------------------------------
   !
   ! Combine absoprtion and Rayleigh optical depths for total tau, ssa, p
   !   using Rayleigh scattering phase function
   !
-  subroutine combine_and_reorder_nstr(ncol, nlay, ngpt, nmom, tau_abs, tau_rayleigh, tau, ssa, p) &
-      bind(C, name="combine_and_reorder_nstr")
+  pure subroutine combine_nstr(ncol, nlay, ngpt, nmom, tau_rayleigh, tau, ssa, p) &
+      bind(C, name="combine_nstr")
     integer, intent(in) :: ncol, nlay, ngpt, nmom
-    real(wp), dimension(ngpt,nlay,ncol), intent(in ) :: tau_abs, tau_rayleigh
-    real(wp), dimension(ncol,nlay,ngpt), intent(inout) :: tau, ssa
-    real(wp), dimension(ncol,nlay,ngpt,nmom), &
+    real(wp), dimension(ngpt,nlay,ncol), intent(in ) :: tau_rayleigh
+    real(wp), dimension(ngpt, nlay, ncol), intent(inout) :: tau, ssa
+    real(wp), dimension(ngpt, nlay, ncol,nmom), &
                                          intent(inout) :: p
     ! -----------------------
     integer :: icol, ilay, igpt, imom
     real(wp) :: t
     ! -----------------------
-    !$acc parallel loop collapse(3) &
-    !$acc&     copy(tau, ssa, p) &
-    !$acc&     copyin(tau_rayleigh(:ngpt,:nlay,:ncol),tau_abs(:ngpt,:nlay,:ncol))
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-          t = tau_abs(igpt,ilay,icol) + tau_rayleigh(igpt,ilay,icol)
-          tau(icol,ilay,igpt) = t
-          if(t > 2._wp * tiny(t)) then
-            ssa(icol,ilay,igpt) = tau_rayleigh(igpt,ilay,icol) / t
+          ! tau_tot = tau_abs + tau_rayleigh
+          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_rayleigh(igpt,ilay,icol)
+          if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+            ssa(igpt,ilay,icol) = tau_rayleigh(igpt,ilay,icol) / tau(igpt,ilay,icol)
           else
-            ssa(icol,ilay,igpt) = 0._wp
+            ssa(igpt,ilay,icol) = 0._wp
           end if
           do imom = 1, nmom
-            p(imom,icol,ilay,igpt) = 0.0_wp
+            p(imom,igpt,ilay,icol) = 0.0_wp
           end do
-          if(nmom >= 2) p(2,icol,ilay,igpt) = 0.1_wp
+          if(nmom >= 2) p(2,igpt,ilay,icol) = 0.1_wp
         end do
       end do
     end do
-  end subroutine combine_and_reorder_nstr
-  ! ----------------------------------------------------------
+  end subroutine combine_nstr
+  
 end module mo_gas_optics_kernels
