@@ -34,3 +34,6 @@ Makefile.conf
 *.HTML
 *.html
 *.gif
+
+#Neural network Keras model weight files (not read by program)
+neural/data/*.h5
