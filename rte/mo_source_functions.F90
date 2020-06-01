@@ -24,16 +24,11 @@ module mo_source_functions
   !   spectral mapping in each direction separately, and at the surface
   !
   type, extends(ty_optical_props), public :: ty_source_func_lw
-    real(wp), allocatable, dimension(:,:,:) :: lay_source,     & ! Planck source at layer average temperature
-                                                                 ! [W/m2] (ncol, nlay, ngpt)
-                                               lev_source_inc, &  ! Planck source at layer edge,
-                                               lev_source_dec, &     ! [W/m2] (ncol, nlay, ngpt)
-                                                                  ! in increasing/decreasing ilay direction
-                                                                  ! Includes spectral weighting that accounts for state-dependent
-                                                                  ! frequency to g-space mapping
-                                               planck_frac       ! (ncol, nlay, ngpt)
-
-    real(wp), allocatable, dimension(:,:  ) :: sfc_source
+    real(wp), allocatable, dimension(:,:,:) :: lay_source_bnd,     & ! Planck sources by band (nbnd, nlay, ncol)
+                                               lev_source_bnd,  & 
+                                               planck_frac       ! PLanck fraction by gpoint (ngpt, nlay, ncol)
+    real(wp), allocatable, dimension(:,:  ) :: sfc_source_bnd
+    real(wp), allocatable, dimension(:,:  ) :: sfc_source_bnd_Jac ! surface source Jacobian 
   contains
     generic,   public :: alloc => alloc_lw, copy_and_alloc_lw
     procedure, private:: alloc_lw
@@ -77,7 +72,7 @@ contains
     logical                              :: is_allocated_lw
 
     is_allocated_lw = this%is_initialized() .and. &
-                      allocated(this%sfc_source)
+                      allocated(this%sfc_source_bnd)
   end function is_allocated_lw
   ! --------------------------------------------------------------
   function alloc_lw(this, ncol, nlay) result(err_message)
@@ -85,7 +80,7 @@ contains
     integer,                     intent(in   ) :: ncol, nlay
     character(len = 128)                       :: err_message
 
-    integer :: ngpt
+    integer :: ngpt, nbnd
 
     err_message = ""
     if(.not. this%is_initialized()) &
@@ -94,16 +89,23 @@ contains
       err_message = "source_func_lw%alloc: must provide positive extents for ncol, nlay"
     if (err_message /= "") return
 
-    if(allocated(this%sfc_source)) deallocate(this%sfc_source)
-    if(allocated(this%lay_source)) deallocate(this%lay_source)
-    if(allocated(this%lev_source_inc)) deallocate(this%lev_source_inc)
-    if(allocated(this%lev_source_dec)) deallocate(this%lev_source_dec)
+    !$acc enter data create(this)
+
+    if(allocated(this%sfc_source_bnd)) deallocate(this%sfc_source_bnd)
+    if(allocated(this%sfc_source_bnd_Jac)) deallocate(this%sfc_source_bnd_Jac)
+    if(allocated(this%lay_source_bnd)) deallocate(this%lay_source_bnd)
+    if(allocated(this%lev_source_bnd)) deallocate(this%lev_source_bnd)
     if(allocated(this%planck_frac)) deallocate(this%planck_frac)
 
     ngpt = this%get_ngpt()
-    allocate(this%sfc_source    (ncol,     ngpt), this%lay_source    (ncol,nlay,ngpt), &
-             this%lev_source_inc(ncol,nlay,ngpt), this%lev_source_dec(ncol,nlay,ngpt), &
-             this%planck_frac(ncol,nlay,ngpt))
+    nbnd  = this%get_nband()
+    allocate(this%sfc_source_bnd(nbnd , ncol), this%lay_source_bnd(nbnd,nlay,ncol), &
+             this%lev_source_bnd(nbnd,nlay+1,ncol), this%planck_frac(ngpt,nlay,ncol))
+    allocate(this%sfc_source_bnd_Jac(nbnd, ncol))
+
+    !$acc enter data create(this%sfc_source_bnd, this%sfc_source_bnd_Jac, this%lay_source_bnd, &
+    !$acc& this%lev_source_bnd, this%planck_frac)
+
   end function alloc_lw
   ! --------------------------------------------------------------
   function copy_and_alloc_lw(this, ncol, nlay, spectral_desc) result(err_message)
@@ -149,7 +151,9 @@ contains
 
     if(allocated(this%toa_source)) deallocate(this%toa_source)
 
-    allocate(this%toa_source(ncol, this%get_ngpt()))
+    allocate(this%toa_source(this%get_ngpt(),ncol))
+    !$acc enter data create(this)
+    !$acc enter data create(this%toa_source)
   end function alloc_sw
   ! --------------------------------------------------------------
   function copy_and_alloc_sw(this, ncol, spectral_desc) result(err_message)
@@ -175,18 +179,34 @@ contains
   subroutine finalize_lw(this)
     class(ty_source_func_lw),    intent(inout) :: this
 
-    if(allocated(this%lay_source    )) deallocate(this%lay_source)
-    if(allocated(this%lev_source_inc)) deallocate(this%lev_source_inc)
-    if(allocated(this%lev_source_dec)) deallocate(this%lev_source_dec)
-    if(allocated(this%sfc_source    )) deallocate(this%sfc_source)
-    if(allocated(this%planck_frac))    deallocate(this%planck_frac)
+    if(allocated(this%lay_source_bnd    )) then 
+      !$acc exit data delete(this%lay_source_bnd)
+      deallocate(this%lay_source_bnd)
+    end if
+    if(allocated(this%lev_source_bnd)) then
+      !$acc exit data delete(this%lev_source_bnd)
+      deallocate(this%lev_source_bnd)
+    end if
+    if(allocated(this%planck_frac)) then
+      !$acc exit data delete(this%planck_frac)
+      deallocate(this%planck_frac)
+    end if
+    if(allocated(this%sfc_source_bnd    )) then
+      !$acc exit data delete(this%sfc_source_bnd)
+      deallocate(this%sfc_source_bnd)
+    end if 
+
     call this%ty_optical_props%finalize()
   end subroutine finalize_lw
   ! --------------------------------------------------------------
   subroutine finalize_sw(this)
     class(ty_source_func_sw),    intent(inout) :: this
 
-    if(allocated(this%toa_source    )) deallocate(this%toa_source)
+    if(allocated(this%toa_source    )) then
+      !$acc exit data delete(this%toa_source)
+      deallocate(this%toa_source)
+    end if
+
     call this%ty_optical_props%finalize()
   end subroutine finalize_sw
   ! ------------------------------------------------------------------------------------------
@@ -199,7 +219,7 @@ contains
     integer :: get_ncol_lw
 
     if(this%is_allocated()) then
-      get_ncol_lw = size(this%lay_source,1)
+      get_ncol_lw = size(this%lay_source_bnd,3)
     else
       get_ncol_lw = 0
     end if
@@ -210,7 +230,7 @@ contains
     integer :: get_nlay_lw
 
     if(this%is_allocated()) then
-      get_nlay_lw = size(this%lay_source,2)
+      get_nlay_lw = size(this%lay_source_bnd,2)
     else
       get_nlay_lw = 0
     end if
@@ -252,11 +272,11 @@ contains
     if(subset%is_allocated()) call subset%finalize()
     err_message = subset%alloc(n, full%get_nlay(), full)
     if(err_message /= "") return
-    subset%sfc_source    (1:n,  :) = full%sfc_source    (start:start+n-1,  :)
-    subset%lay_source    (1:n,:,:) = full%lay_source    (start:start+n-1,:,:)
-    subset%lev_source_inc(1:n,:,:) = full%lev_source_inc(start:start+n-1,:,:)
-    subset%lev_source_dec(1:n,:,:) = full%lev_source_dec(start:start+n-1,:,:)
-    subset%planck_frac   (1:n,:,:) = full%planck_frac   (start:start+n-1,:,:)
+    subset%sfc_source_bnd(:,1:n)  = full%sfc_source_bnd    (:,start:start+n-1)
+    subset%sfc_source_bnd_Jac(:,1:n)  = full%sfc_source_bnd_Jac   (:,start:start+n-1)
+    subset%lay_source_bnd(:,:,1:n) = full%lay_source_bnd    (:,:,start:start+n-1)
+    subset%lev_source_bnd(:,:,1:n) = full%lev_source_bnd(:,:,start:start+n-1)
+    subset%planck_frac   (:,:,1:n) = full%planck_frac   (:,:,start:start+n-1)
   end function get_subset_range_lw
   ! ------------------------------------------------------------------------------------------
   function get_subset_range_sw(full, start, n, subset) result(err_message)
@@ -281,6 +301,6 @@ contains
     ! Seems like I should be able to call "alloc" generically but the compilers are complaining
     err_message = subset%copy_and_alloc_sw(n, full)
 
-    subset%toa_source(1:n,  :) = full%toa_source(start:start+n-1,  :)
+    subset%toa_source(:,1:n) = full%toa_source(:,start:start+n-1)
   end function get_subset_range_sw
 end module mo_source_functions

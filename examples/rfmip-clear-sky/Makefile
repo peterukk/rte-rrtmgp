@@ -1,23 +1,24 @@
 #
-# Here set variables RRTMGP_DIR, NCHOME, NFHOME, TIME_DIR (for GPTL)
+# Here set variables RRTMGP_BUILD, NCHOME, NFHOME, TIME_DIR (for GPTL)
 #   or have those variables set in the environment
 #
+RRTMGP_BUILD=$(RRTMGP_ROOT)/build
 -include Makefile.libs
--include $(RRTMGP_DIR)/Makefile.conf
+-include $(RRTMGP_BUILD)/Makefile.conf
 #
-# RRTMGP and NEURAL-FORTRAN libraries, module files
+# RRTMGP library, module files
 #
-LDFLAGS   += -L$(RRTMGP_DIR)
-LIBS      += -lrrtmgp -lrte -lneural
-FCINCLUDE += -I$(RRTMGP_DIR)
+LDFLAGS   += -L$(RRTMGP_BUILD)
+LIBS      += -lrrtmgp -lrte
+FCINCLUDE += -I$(RRTMGP_BUILD)
 
 #
 # netcdf library, module files
 # C and Fortran interfaces respectively
 #
 FCINCLUDE += -I$(NFHOME)/include
-LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib  -L/usr/local/lib 
-LIBS      += -lnetcdff -lnetcdf 
+LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
+LIBS      += -lnetcdff -lnetcdf
 
 #
 # Setting macro TIMING=yes uses routines from the General Purpose Timing Library
@@ -60,7 +61,8 @@ else ifeq ($(BLASLIB),mkl)
 endif
 
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
-ifeq ($(USE_TIMING),yes)
+#FCFLAGS += -fpp
+ifeq ($(TIMING),yes)
 	#
 	# Timing library
 	#
