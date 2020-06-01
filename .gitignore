@@ -13,8 +13,6 @@
 
 timing.*
 
-examples/rfmip-clear-sky/outp_lw_RFMIP_1f1_NN.nc 
-examples/rfmip-clear-sky/outp_lw_CAMS_1f1_NN.nc
 examples/rfmip-clear-sky/output/
 examples/rfmip-clear-sky/old/
 examples/rfmip-clear-sky/timings/
@@ -28,5 +26,11 @@ gprof*
 Makefile.libs
 Makefile.conf
 
-src/
-
+# Intel code coverage
+*.dyn
+*.dpi
+*.spi
+*.spl
+*.HTML
+*.html
+*.gif
