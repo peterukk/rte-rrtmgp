@@ -60,8 +60,8 @@ contains
     real(wp),    dimension(2,0:ngas,ntemp), intent(in) :: vmr_ref
 
     ! inputs from profile or parent function
-    real(wp),    dimension(ncol,nlay),        intent(in) :: play, tlay
-    real(wp),    dimension(ncol,nlay,0:ngas), intent(in) :: col_gas
+    real(wp),    dimension(nlay, ncol),        intent(in) :: play, tlay
+    real(wp),    dimension(nlay, ncol,0:ngas), intent(in) :: col_gas
 
     ! outputs
     integer,     dimension(nlay, ncol),             intent(out) :: jtemp, jpress
@@ -541,6 +541,7 @@ contains
     real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
     real(wp) :: pfrac          (ngpt,nlay,  ncol)
     real(wp) :: planck_function(nbnd,nlay+1,ncol)
+    real(wp), parameter               :: delta_Tsurf  = 1.0_wp
     ! -----------------
 
     ! Calculation of fraction of band's Planck irradiance associated with each g-point

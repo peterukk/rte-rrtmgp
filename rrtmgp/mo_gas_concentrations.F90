@@ -12,8 +12,8 @@
 ! Encapsulates a collection of volume mixing ratios (concentrations) of gases.
 !   Each concentration is allocated with a name, normally the chemical formula.
 !
-! Values may be provided as scalars, 1-dimensional profiles (nlay), or 2-D fields (ncol,nlay).
-!   (nlay and ncol are determined from the input arrays; self-consistency is enforced)
+! Values may be provided as scalars, 1-dimensional profiles (nlay), or 2-D fields (nlay,ncol).
+!   (ncol and nlay are determined from the input arrays; self-consistency is enforced)
 !   example:
 !   error_msg = gas_concs%set_vmr('h2o', values(:,:))
 !   error_msg = gas_concs%set_vmr('o3' , values(:)  )
@@ -34,8 +34,18 @@ module mo_gas_concentrations
   use mo_rte_config,         only: check_values
   use mo_rrtmgp_util_string, only: lower_case
   use mo_rte_util_array,     only: any_vals_outside
+#ifdef USE_TIMING
+  !
+  ! Timing library
+  !
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+                                   gptlpercent, gptloverhead
+#endif
   implicit none
   integer, parameter :: GAS_NOT_IN_LIST = -1
+#ifdef USE_TIMING
+  integer :: ret, i
+#endif
 
   type, private :: conc_field
     real(wp), dimension(:,:), allocatable :: conc
@@ -47,7 +57,7 @@ module mo_gas_concentrations
     !
     character(len=32), dimension(:), allocatable :: gas_name
     type(conc_field),  dimension(:), allocatable :: concs
-    integer :: ncol = 0, nlay = 0
+    integer :: nlay = 0, ncol = 0
     contains
       !
       ! Procedures
@@ -71,6 +81,7 @@ module mo_gas_concentrations
       generic,   public :: get_vmr => get_vmr_1d, &
                                       get_vmr_2d
       generic,   public :: get_subset => get_subset_range
+      procedure, public :: get_conc_field
       procedure, public :: get_num_gases
       procedure, public :: get_gas_names
   end type ty_gas_concs
@@ -150,9 +161,9 @@ contains
       !$acc enter data create(this%concs(igas)%conc)
     end if
 
-    !$acc kernels
     this%concs(igas)%conc(:,:) = w
-    !$acc end kernels
+    !$acc enter data copyin(this%concs(igas)%conc)
+    
   end function set_vmr_scalar
   ! -------------------------------------------------------------------------------------
   function set_vmr_1d(this, gas, w) result(error_msg)
@@ -169,7 +180,7 @@ contains
 
     if (check_values) then
       if (any_vals_outside(w, 0._wp, 1._wp)) &
-        error_msg = 'ty_gas_concs%set_vmr: concentrations should be >= 0, <= 1'
+        error_msg = 'ty_gas_concs%set_vmr_1d() (' // trim(gas) // '): concentrations should be >= 0, <= 1'
     end if
     if(this%nlay > 0) then
       if(size(w) /= this%nlay) error_msg = 'ty_gas_concs%set_vmr: different dimension (nlay)'
@@ -188,21 +199,20 @@ contains
     !
     ! This cannot be made a function, because we need all the hierarchy for the correct OpenACC attach
     if (allocated(this%concs(igas)%conc)) then
-      if ( any(shape(this%concs(igas)%conc) /= [1, this%nlay]) ) then
+      if ( any(shape(this%concs(igas)%conc) /= [this%nlay, 1]) ) then
         !$acc exit data delete(this%concs(igas)%conc)
         deallocate(this%concs(igas)%conc)
       end if
     end if
     if (.not. allocated(this%concs(igas)%conc)) then
-      allocate(this%concs(igas)%conc(1,this%nlay))
+      allocate(this%concs(igas)%conc(this%nlay,1))
       !$acc enter data create(this%concs(igas)%conc)
     end if
 
-    !$acc kernels copyin(w)
-    this%concs(igas)%conc(1,:) = w
-    !$acc end kernels
+    this%concs(igas)%conc(:,1) = w
+    !$acc enter data copyin(this%concs(igas)%conc)
 
-    !$acc exit data delete(w)
+
   end function set_vmr_1d
   ! -------------------------------------------------------------------------------------
   function set_vmr_2d(this, gas, w) result(error_msg)
@@ -213,25 +223,25 @@ contains
                          intent(in   ) :: w
     character(len=128)                 :: error_msg
     ! ---------
-    integer :: igas
+    integer :: igas, ilay, icol
     ! ---------
     error_msg = ''
 
-    if (check_values) then
-      if (any_vals_outside(w, 0._wp, 1._wp)) &
-        error_msg = 'ty_gas_concs%set_vmr: concentrations should be >= 0, <= 1'
-    end if
+    if (any_vals_outside(w, 0._wp, 1._wp)) then
+      print *, "max, min of ", trim(gas), ":", maxval(w), minval(w)
+      error_msg = 'ty_gas_concs%set_vmr_2d() (' // trim(gas) // '): concentrations should be >= 0, <= 1'
+    endif
 
-    if(this%ncol > 0 .and. size(w, 1) /= this%ncol) then
-      error_msg = 'ty_gas_concs%set_vmr: different dimension (ncol)'
-    else
-      this%ncol = size(w, 1)
-    end if
-
-    if(this%nlay > 0 .and. size(w, 2) /= this%nlay) then
+    if(this%nlay > 0 .and. size(w, 1) /= this%nlay) then
       error_msg = 'ty_gas_concs%set_vmr: different dimension (nlay)'
     else
-      this%nlay = size(w, 2)
+      this%nlay = size(w, 1)
+    end if
+
+    if(this%ncol > 0 .and. size(w, 2) /= this%ncol) then
+      error_msg = 'ty_gas_concs%set_vmr: different dimension (ncol)'
+    else
+      this%ncol = size(w, 2)
     end if
     if(error_msg /= "") return
 
@@ -245,19 +255,19 @@ contains
     !
     ! This cannot be made a function, because we need all the hierarchy for the correct OpenACC attach
     if (allocated(this%concs(igas)%conc)) then
-      if ( any(shape(this%concs(igas)%conc) /= [this%ncol,this%nlay]) ) then
+      if ( any(shape(this%concs(igas)%conc) /= [this%nlay,this%ncol]) ) then
         !$acc exit data delete(this%concs(igas)%conc)
         deallocate(this%concs(igas)%conc)
       end if
     end if
     if (.not. allocated(this%concs(igas)%conc)) then
-      allocate(this%concs(igas)%conc(this%ncol,this%nlay))
+      allocate(this%concs(igas)%conc(this%nlay,this%ncol))
       !$acc enter data create(this%concs(igas)%conc)
     end if
-
-    !$acc kernels copyin(w)
+    
     this%concs(igas)%conc(:,:) = w(:,:)
-    !$acc end kernels
+    !$acc enter data copyin(this%concs(igas)%conc)
+
   end function set_vmr_2d
   ! -------------------------------------------------------------------------------------
   !
@@ -292,9 +302,9 @@ contains
     if(error_msg /= "") return
 
     !$acc data copyout (array) present(this)
-    if(size(this%concs(igas)%conc, 2) > 1) then
+    if(size(this%concs(igas)%conc, 1) > 1) then
       !$acc kernels default(none)
-      array(:) = this%concs(igas)%conc(1,:)
+      array(:) = this%concs(igas)%conc(:,1)
       !$acc end kernels
     else
       !$acc kernels default(none)
@@ -314,7 +324,83 @@ contains
     real(wp), dimension(:,:), intent(out) :: array
     character(len=128)                    :: error_msg
     ! ---------------------
-    integer :: icol, ilay, igas
+    integer :: ilay, icol, igas
+    ! ---------------------
+    error_msg = ''
+#ifdef USE_TIMING
+    ret =  gptlstart('get_vmr_find')
+#endif
+    igas = this%find_gas(gas)
+    if (igas == GAS_NOT_IN_LIST) then
+      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
+    else if(.not. allocated(this%concs(igas)%conc)) then
+      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
+    end if
+#ifdef USE_TIMING
+    ret =  gptlstop('get_vmr_find')
+#endif
+    !
+    ! Is the requested array the correct size?
+    !
+#ifdef USE_TIMING
+    ret =  gptlstart('get_vmr_check')
+#endif
+    if(this%nlay > 0 .and. this%nlay /= size(array,1)) then
+      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (nlay)'
+    end if
+    if(this%ncol > 0 .and. this%ncol /= size(array,2)) then
+      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (ncol)'
+    end if
+    if(error_msg /= "") return
+#ifdef USE_TIMING
+    ret =  gptlstop('get_vmr_check')
+#endif
+    !$acc data copyout (array) present(this, this%concs)
+#ifdef USE_TIMING
+    ret =  gptlstart('get_vmr_loops')
+#endif
+    if(size(this%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
+      !$acc parallel loop collapse(2) default(none)
+      do icol = 1, size(array,2)
+        do ilay = 1, size(array,1)
+          !print *, (size(this%concs))
+          array(ilay,icol) = this%concs(igas)%conc(ilay,icol)
+        end do
+      end do
+    else if(size(this%concs(igas)%conc, 1) > 1) then ! Concentration stored as 1D
+      !$acc parallel loop collapse(2) default(none)
+      do icol = 1, size(array,2)
+        do ilay = 1, size(array,1)
+         array(ilay, icol) = this%concs(igas)%conc(ilay,1)
+        end do
+      end do
+    else                                             ! Concentration stored as scalar
+      !$acc parallel loop collapse(2) default(none)
+      do icol = 1, size(array,2)
+        do ilay = 1, size(array,1)
+          array(ilay,icol) = this%concs(igas)%conc(1,1)
+        end do
+      end do
+    end if
+#ifdef USE_TIMING
+    ret =  gptlstop('get_vmr_loops')
+#endif
+    !$acc end data
+
+  end function get_vmr_2d
+ 
+    ! -------------------------------------------------------------------------------------
+  !
+  ! 2D array (col, lay)
+  !
+  function get_conc_field(this, gas, array, dims) result(error_msg)
+    class(ty_gas_concs) :: this
+    character(len=*),         intent(in ) :: gas
+    real(wp), dimension(:,:)  :: array
+    integer,                  intent(out) :: dims
+    character(len=128)                    :: error_msg
+    ! ---------------------
+    integer :: ilay, icol, igas
     ! ---------------------
     error_msg = ''
 
@@ -324,44 +410,19 @@ contains
     else if(.not. allocated(this%concs(igas)%conc)) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
     end if
-    !
-    ! Is the requested array the correct size?
-    !
-    if(this%ncol > 0 .and. this%ncol /= size(array,1)) then
-      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (ncol)'
-    end if
-    if(this%nlay > 0 .and. this%nlay /= size(array,2)) then
-      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (nlay)'
-    end if
-    if(error_msg /= "") return
 
-    !$acc data copyout (array) present(this, this%concs)
-    if(size(this%concs(igas)%conc, 1) > 1) then      ! Concentration stored as 2D
-      !$acc parallel loop collapse(2) default(none)
-      do ilay = 1, size(array,2)
-        do icol = 1, size(array,1)
-          !print *, (size(this%concs))
-          array(icol,ilay) = this%concs(igas)%conc(icol,ilay)
-        end do
-      end do
-    else if(size(this%concs(igas)%conc, 2) > 1) then ! Concentration stored as 1D
-      !$acc parallel loop collapse(2) default(none)
-      do ilay = 1, size(array,2)
-        do icol = 1, size(array,1)
-         array(icol, ilay) = this%concs(igas)%conc(1,ilay)
-        end do
-      end do
-    else                                             ! Concentration stored as scalar
-      !$acc parallel loop collapse(2) default(none)
-      do ilay = 1, size(array,2)
-        do icol = 1, size(array,1)
-          array(icol,ilay) = this%concs(igas)%conc(1,1)
-        end do
-      end do
-    end if
-    !$acc end data
 
-  end function get_vmr_2d
+    if(size(this%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
+      dims = 2
+    else if(size(this%concs(igas)%conc, 1) > 1) then ! Concentration stored as 1D
+      dims = 1
+    else                              ! Concentration stored as scalar
+      dims = 0
+    end if
+
+    array = this%concs(igas)%conc
+
+  end function get_conc_field
   ! -------------------------------------------------------------------------------------
   !
   ! Extract a subset of n columns starting with column 'start'
@@ -397,12 +458,12 @@ contains
       ! Preserve scalar/1D/2D representation in subset,
       !   but need to ensure at least extent 1 in col dimension (ncol = 0 means no gas exploits this dimension)
       !
-      allocate(subset%concs(i)%conc(min(max(subset%ncol,1), size(this%concs(i)%conc, 1)), &
-                                    min(    subset%nlay,    size(this%concs(i)%conc, 2))))
+      allocate(subset%concs(i)%conc(min(    subset%nlay,    size(this%concs(i)%conc, 1)), &
+                                    min(max(subset%ncol,1), size(this%concs(i)%conc, 2)) ))  
       !$acc enter data create(subset%concs(i)%conc)
       if(size(this%concs(i)%conc, 1) > 1) then      ! Concentration stored as 2D
         !$acc kernels
-        subset%concs(i)%conc(:,:) = this%concs(i)%conc(start:(start+n-1),:)
+        subset%concs(i)%conc(:,:) = this%concs(i)%conc(:,start:(start+n-1))
         !$acc end kernels
       else
         !$acc kernels
@@ -422,8 +483,8 @@ contains
     ! -----------------
     integer :: i
     ! -----------------
-    this%nlay = 0
     this%ncol = 0
+    this%nlay = 0
     if(allocated(this%gas_name)) deallocate(this%gas_name)
     if (allocated(this%concs)) then
       do i = 1, size(this%concs)

@@ -99,7 +99,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
 
     real(wp), parameter :: pi = acos(-1._wp)
-    integer             :: ilev, icol, igpt, sfc_lay, top_level
+    integer             :: ilay, icol, igpt, sfc_lay, top_level
     ! ------------------------------------
     ! Which way is up?
     ! Level Planck sources for upward and downward radiation
@@ -128,7 +128,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       !
       ! Optical path and transmission, used in source function and transport calculations
       !
-      do ilev = 1, nlay
+      do ilay = 1, nlay
         do igpt = 1, ngpt
           tau_loc(igpt,ilay)  = tau(igpt,ilay,icol) * D(igpt,icol)
           trans(igpt,ilay)    = exp(-tau_loc(igpt,ilay)) 
@@ -708,7 +708,7 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
   ! Longwave no-scattering transport
   !
   ! -------------------------------------------------------------------------------------------------
-  subroutine lw_transport_noscat(ncol, nlay, top_at_1, &
+  subroutine lw_transport_noscat(ngpt, nlay, top_at_1, &
                                  tau, trans, sfc_albedo, source_dn, source_up, source_sfc, &
                                  radn_up, radn_dn, &
                                  source_sfcJac, radn_up_Jac) bind(C, name="lw_transport_noscat")
@@ -741,12 +741,12 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
 
       ! Surface reflection and emission
       radn_up   (:,nlay+1) = radn_dn(:,nlay+1)*sfc_albedo(:) + source_sfc   (:)
-      radn_upJac(:,nlay+1) = source_sfcJac(:)
+      radn_up_Jac(:,nlay+1) = source_sfcJac(:)
 
       ! Upward propagation
       do ilev = nlay, 1, -1
         radn_up   (:,ilev) = trans(:,ilev  )*radn_up   (:,ilev+1) + source_up(:,ilev)
-        radn_upJac(:,ilev) = trans(:,ilev  )*radn_upJac(:,ilev+1)
+        radn_up_Jac(:,ilev) = trans(:,ilev  )*radn_up_Jac(:,ilev+1)
       end do
     else
       !
@@ -759,12 +759,12 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
 
       ! Surface reflection and emission
       radn_up   (:, 1) = radn_dn(:,1)*sfc_albedo(:) + source_sfc   (:)
-      radn_upJac(:, 1) = source_sfcJac(:)
+      radn_up_Jac(:, 1) = source_sfcJac(:)
 
       ! Upward propagation
       do ilev = 2, nlay+1
         radn_up   (:,ilev) = trans(:,ilev-1) * radn_up   (:,ilev-1) +  source_up(:,ilev-1)
-        radn_upJac(:,ilev) = trans(:,ilev-1) * radn_upJac(:,ilev-1)
+        radn_up_Jac(:,ilev) = trans(:,ilev-1) * radn_up_Jac(:,ilev-1)
       end do
     end if
   end subroutine lw_transport_noscat
