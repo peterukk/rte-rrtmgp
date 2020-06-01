@@ -67,8 +67,8 @@ module mo_fluxes
       import ty_fluxes, ty_optical_props
       import wp
       class(ty_fluxes),                  intent(inout) :: this
-      real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_up ! Fluxes by gpoint [W/m2](ncol, nlay+1, ngpt)
-      real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_dn ! Fluxes by gpoint [W/m2](ncol, nlay+1, ngpt)
+      real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_up ! Fluxes by gpoint [W/m2](ngpt, nlay+1, ncol)
+      real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_dn ! Fluxes by gpoint [W/m2](ngpt, nlay+1, ncol)
       class(ty_optical_props),           intent(in   ) :: spectral_disc  !< derived type with spectral information
       logical,                           intent(in   ) :: top_at_1
       real(kind=wp), dimension(:,:,:), optional, &
@@ -95,20 +95,20 @@ contains
   ! --------------------------------------------------------------------------------------
   function reduce_broadband(this, gpt_flux_up, gpt_flux_dn, spectral_disc, top_at_1, gpt_flux_dn_dir) result(error_msg)
     class(ty_fluxes_broadband),        intent(inout) :: this
-    real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_up ! Fluxes by gpoint [W/m2](ncol, nlay+1, ngpt)
-    real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_dn ! Fluxes by gpoint [W/m2](ncol, nlay+1, ngpt)
+    real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_up ! Fluxes by gpoint [W/m2](ngpt, nlay+1, ncol)
+    real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_dn ! Fluxes by gpoint [W/m2](ngpt, nlay+1, ncol)
     class(ty_optical_props),           intent(in   ) :: spectral_disc  !< derived type with spectral information
     logical,                           intent(in   ) :: top_at_1
     real(kind=wp), dimension(:,:,:), optional, &
                                        intent(in   ) :: gpt_flux_dn_dir! Direct flux down
     character(len=128)                               :: error_msg
     ! ------
-    integer :: ncol, nlev, ngpt
+    integer :: ngpt, nlev, ncol
 
     ! ------
-    ncol = size(gpt_flux_up, DIM=1)
+    ngpt = size(gpt_flux_up, DIM=1)
     nlev = size(gpt_flux_up, DIM=2)
-    ngpt = size(gpt_flux_up, DIM=3)
+    ncol = size(gpt_flux_up, DIM=3)
     error_msg = ""
 
     if(check_extents) then
@@ -116,31 +116,37 @@ contains
       ! Check array sizes
       !  Input arrays
       !
-      if(.not. extents_are(gpt_flux_dn, ncol, nlev, ngpt)) &
+      if(.not. extents_are(gpt_flux_dn, ngpt, nlev, ncol)) then
         error_msg = "reduce: gpt_flux_dn array incorrectly sized"
-
+        return
+      end if
       if(present(gpt_flux_dn_dir)) then
-        if(.not. extents_are(gpt_flux_dn_dir, ncol, nlev, ngpt)) &
+        if(.not. extents_are(gpt_flux_dn_dir, ngpt, nlev, ncol)) then
           error_msg = "reduce: gpt_flux_dn_dir array incorrectly sized"
+        end if
       end if
       !
       ! Output arrays
       !
       if(associated(this%flux_up)) then
-        if(.not. extents_are(this%flux_up, ncol, nlev)) &
+        if(.not. extents_are(this%flux_up, nlev, ncol)) then
           error_msg = 'reduce: flux_up array incorrectly sized'
+        end if
       end if
       if(associated(this%flux_dn)) then
-        if(.not. extents_are(this%flux_dn, ncol, nlev)) &
+        if(.not. extents_are(this%flux_dn, nlev, ncol)) then
           error_msg = 'reduce: flux_dn array incorrectly sized'
+        end if
       end if
       if(associated(this%flux_net)) then
-        if(.not. extents_are(this%flux_net, ncol, nlev)) &
+        if(.not. extents_are(this%flux_net, nlev, ncol)) then
           error_msg = 'reduce: flux_net array incorrectly sized'
+        end if
       end if
       if(associated(this%flux_dn_dir)) then
-        if(.not. extents_are(this%flux_dn_dir, ncol, nlev)) &
+        if(.not. extents_are(this%flux_dn_dir, nlev, ncol)) then
           error_msg = 'reduce: flux_dn_dir array incorrectly sized'
+        end if
       end if
 
       if(error_msg /= "") return
@@ -157,21 +163,20 @@ contains
     ! Broadband fluxes - call the kernels
     !
     if(associated(this%flux_up    )) &
-      call sum_broadband(ncol, nlev, ngpt, gpt_flux_up,     this%flux_up)
+      call sum_broadband(ngpt, nlev, ncol, gpt_flux_up,     this%flux_up)
     if(associated(this%flux_dn    )) &
-      call sum_broadband(ncol, nlev, ngpt, gpt_flux_dn,     this%flux_dn)
+      call sum_broadband(ngpt, nlev, ncol, gpt_flux_dn,     this%flux_dn)
     if(associated(this%flux_dn_dir)) &
-      call sum_broadband(ncol, nlev, ngpt, gpt_flux_dn_dir, this%flux_dn_dir)
-
+      call sum_broadband(ngpt, nlev, ncol, gpt_flux_dn_dir, this%flux_dn_dir)
 
     if(associated(this%flux_net)) then
       !
       !  Reuse down and up results if possible
       !
       if(associated(this%flux_dn) .and. associated(this%flux_up)) then
-        call net_broadband(ncol, nlev,      this%flux_dn, this%flux_up, this%flux_net)
+        call net_broadband(nlev, ncol,      this%flux_dn, this%flux_up, this%flux_net)
       else
-        call net_broadband(ncol, nlev, ngpt, gpt_flux_dn,  gpt_flux_up, this%flux_net)
+        call net_broadband(ngpt, nlev, ncol, gpt_flux_dn,  gpt_flux_up, this%flux_net)
       end if
     end if
   end function reduce_broadband

@@ -18,7 +18,7 @@ module mo_fluxes_broadband_kernels
   use mo_rte_kind, only: wp
   implicit none
   private
-  public :: sum_broadband, net_broadband
+  public :: sum_broadband, sum_broadband_nocol, net_broadband
 
   interface net_broadband
     module procedure net_broadband_full, net_broadband_precalc
@@ -28,82 +28,58 @@ contains
     !
     ! Spectral reduction over all points
     !
-  pure subroutine sum_broadband(ncol, nlev, ngpt, spectral_flux, broadband_flux) bind(C, name="sum_broadband")
-    integer,                               intent(in ) :: ncol, nlev, ngpt
-    real(wp), dimension(ncol, nlev, ngpt), intent(in ) :: spectral_flux
-    real(wp), dimension(ncol, nlev),       intent(out) :: broadband_flux
+  pure subroutine sum_broadband(ngpt, nlev, ncol, spectral_flux, broadband_flux) bind(C, name="sum_broadband")
+    integer,                               intent(in ) :: ngpt, nlev, ncol
+    real(wp), dimension(ngpt, nlev, ncol), intent(in ) :: spectral_flux
+    real(wp), dimension(nlev, ncol),       intent(out) :: broadband_flux
 
-    integer  :: icol, ilev, igpt
-    real(wp) :: bb_flux_s ! local scalar version
+    broadband_flux  = sum(spectral_flux, 1)
 
-    !$acc enter data copyin(spectral_flux) create(broadband_flux)
-    !$acc parallel loop gang vector collapse(2)
-    do ilev = 1, nlev
-      do icol = 1, ncol
-
-        bb_flux_s = 0.0_wp
-
-        do igpt = 1, ngpt
-          bb_flux_s = bb_flux_s + spectral_flux(icol, ilev, igpt)
-        end do
-
-        broadband_flux(icol, ilev) = bb_flux_s
-      end do
-    end do
-    !$acc exit data delete(spectral_flux) copyout(broadband_flux)
   end subroutine sum_broadband
+
+  subroutine sum_broadband_nocol(ngpt, nlev, spectral_flux, broadband_flux) bind (C, name="sum_broadband_nocol")
+    integer,                         intent(in ) :: nlev, ngpt
+    real(wp), dimension(ngpt, nlev), intent(in ) :: spectral_flux
+    real(wp), dimension(nlev),       intent(out) :: broadband_flux
+    integer  :: igpt, ilev
+    real(wp) :: total
+
+    ! do ilev = 1, nlev
+    !   total = 0.0_wp
+    !   do igpt = 1, ngpt
+    !     total = total + spectral_flux(igpt, ilev)
+    !   end do
+    !   broadband_flux(ilev) = total
+    ! end do
+
+    broadband_flux  = sum(spectral_flux, 1)
+
+  end subroutine sum_broadband_nocol
   ! ----------------------------------------------------------------------------
   !
   ! Net flux: Spectral reduction over all points
   !
-  pure subroutine net_broadband_full(ncol, nlev, ngpt, spectral_flux_dn, spectral_flux_up, broadband_flux_net) &
+  pure subroutine net_broadband_full(ngpt, nlev, ncol, spectral_flux_dn, spectral_flux_up, broadband_flux_net) &
     bind(C, name="net_broadband_full")
-    integer,                               intent(in ) :: ncol, nlev, ngpt
-    real(wp), dimension(ncol, nlev, ngpt), intent(in ) :: spectral_flux_dn, spectral_flux_up
-    real(wp), dimension(ncol, nlev),       intent(out) :: broadband_flux_net
+    integer,                               intent(in ) :: ngpt, nlev, ncol
+    real(wp), dimension(ngpt, nlev, ncol), intent(in ) :: spectral_flux_dn, spectral_flux_up
+    real(wp), dimension(nlev, ncol),       intent(out) :: broadband_flux_net
 
-    integer  :: icol, ilev, igpt
-    real(wp) :: diff
-
-    !$acc enter data copyin(spectral_flux_dn, spectral_flux_up) create(broadband_flux_net)
-    !$acc parallel loop collapse(2)
-    do ilev = 1, nlev
-      do icol = 1, ncol
-        diff = spectral_flux_dn(icol, ilev, 1   ) - spectral_flux_up(icol, ilev,     1)
-        broadband_flux_net(icol, ilev) = diff
-      end do
-    end do
-    !$acc parallel loop collapse(3)
-    do igpt = 2, ngpt
-      do ilev = 1, nlev
-        do icol = 1, ncol
-          diff = spectral_flux_dn(icol, ilev, igpt) - spectral_flux_up(icol, ilev, igpt)
-          !$acc atomic update
-          broadband_flux_net(icol, ilev) = broadband_flux_net(icol, ilev) + diff
-        end do
-      end do
-    end do
-    !$acc exit data delete(spectral_flux_dn, spectral_flux_up) copyout(broadband_flux_net)
+    broadband_flux_net = sum((spectral_flux_dn-spectral_flux_up),1)
+      
   end subroutine net_broadband_full
   ! ----------------------------------------------------------------------------
   !
   ! Net flux when bradband flux up and down are already available
   !
-  pure subroutine net_broadband_precalc(ncol, nlev, flux_dn, flux_up, broadband_flux_net) &
+  pure subroutine net_broadband_precalc(nlev, ncol, flux_dn, flux_up, broadband_flux_net) &
     bind(C, name="net_broadband_precalc")
-    integer,                         intent(in ) :: ncol, nlev
-    real(wp), dimension(ncol, nlev), intent(in ) :: flux_dn, flux_up
-    real(wp), dimension(ncol, nlev), intent(out) :: broadband_flux_net
+    integer,                         intent(in ) :: nlev,  ncol
+    real(wp), dimension(nlev,  ncol), intent(in ) :: flux_dn, flux_up
+    real(wp), dimension(nlev,  ncol), intent(out) :: broadband_flux_net
 
-    integer  :: icol, ilev
-    !$acc enter data copyin(flux_dn, flux_up) create(broadband_flux_net)
-    !$acc parallel loop collapse(2)
-    do ilev = 1, nlev
-      do icol = 1, ncol
-         broadband_flux_net(icol,ilev) = flux_dn(icol,ilev) - flux_up(icol,ilev)
-       end do
-    end do
-    !$acc exit data delete(flux_dn, flux_up) copyout(broadband_flux_net)
+    broadband_flux_net = flux_dn - flux_up
+
   end subroutine net_broadband_precalc
   ! ----------------------------------------------------------------------------
 end module mo_fluxes_broadband_kernels
