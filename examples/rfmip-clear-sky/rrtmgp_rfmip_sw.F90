@@ -95,7 +95,7 @@ program rrtmgp_rfmip_sw
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flxdn_file, flxup_file
+  character(len=132) :: flx_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical            :: top_at_1
   integer            :: b, icol, ibnd, igpt
@@ -108,6 +108,8 @@ program rrtmgp_rfmip_sw
   real(wp), dimension(:,:  ),         allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
+  real(wp), dimension(:),             allocatable :: temparray
+
   !
   ! Classes used by rte+rrtmgp
   !
@@ -153,12 +155,16 @@ program rrtmgp_rfmip_sw
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_sw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
   print *, "Doing ",  nblocks, "blocks of size ", block_size
+  print *, "input file:", rfmip_file
+  print *, "ncol:", ncol
+  print *, "nexp:", nexp
+  print *, "nlay:", nlay
+
 
   read(forcing_index_char, '(i4)') forcing_index
   if(forcing_index < 1 .or. forcing_index > 3) &
     stop "Forcing index is invalid (must be 1,2 or 3)"
-  flxdn_file = 'rsd_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
-  flxup_file = 'rsu_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
+  flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
 
   !
   ! Identify the set of gases used in the calculation based on the forcing index
@@ -176,10 +182,11 @@ program rrtmgp_rfmip_sw
   ! Allocation on assignment within reading routines
   !
   call read_and_block_pt(rfmip_file, block_size, p_lay, p_lev, t_lay, t_lev)
+  print *, "shape t_lay, min, max", shape(t_lay), maxval(t_lay), minval(t_lay)
   !
   ! Are the arrays ordered in the vertical with 1 at the top or the bottom of the domain?
   !
-  top_at_1 = p_lay(1, 1, 1) < p_lay(1, nlay, 1)
+  top_at_1 = p_lay(1, 1, 1) < p_lay(nlay, 1, 1)
 
   !
   ! Read the gas concentrations and surface properties
@@ -196,7 +203,7 @@ program rrtmgp_rfmip_sw
   nbnd = k_dist%get_nband()
   ngpt = k_dist%get_ngpt()
 
-  allocate(toa_flux(block_size, k_dist%get_ngpt()), &
+  allocate(toa_flux(k_dist%get_ngpt(), block_size), &
            def_tsi(block_size), usecol(block_size,nblocks))
   !
   ! RRTMGP won't run with pressure less than its minimum. The top level in the RFMIP file
@@ -204,9 +211,9 @@ program rrtmgp_rfmip_sw
   !   This introduces an error but shows input sanitizing.
   !
   if(top_at_1) then
-    p_lev(:,1,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+    p_lev(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   else
-    p_lev(:,nlay+1,:) &
+    p_lev(nlay+1,:,:) &
                  = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
 
@@ -224,13 +231,19 @@ program rrtmgp_rfmip_sw
   !   gas optical properties, and source functions. The %alloc() routines carry along
   !   the spectral discretization from the k-distribution.
   !
-  allocate(flux_up(block_size, nlay+1, nblocks), &
-           flux_dn(block_size, nlay+1, nblocks))
+  ! allocate(flux_up(block_size, nlay+1, nblocks), &
+  !          flux_dn(block_size, nlay+1, nblocks))
+
+  allocate(flux_up(    	nlay+1, block_size, nblocks), &
+           flux_dn(    	nlay+1, block_size, nblocks))
+
   allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   call stop_on_err(optical_props%alloc_2str(block_size, nlay, k_dist))
   !$acc enter data create(optical_props, optical_props%tau, optical_props%ssa, optical_props%g)
   !$acc enter data create (toa_flux, def_tsi)
   !$acc enter data create (sfc_alb_spec, mu0)
+  print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
+
   ! --------------------------------------------------
 #ifdef USE_TIMING
   !
@@ -244,9 +257,12 @@ program rrtmgp_rfmip_sw
   ! Loop over blocks
   !
 #ifdef USE_TIMING
-  do i = 1, 32
+!  do i = 1, 32
 #endif
   do b = 1, nblocks
+    print *, b, "/", nblocks
+
+
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
     !
@@ -256,6 +272,7 @@ program rrtmgp_rfmip_sw
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (SW)')
 #endif
+
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                        p_lev(:,:,b),       &
                                        t_lay(:,:,b),       &
@@ -272,25 +289,25 @@ program rrtmgp_rfmip_sw
 #ifdef _OPENACC
     call zero_array(block_size, def_tsi)
     !$acc parallel loop collapse(2) copy(def_tsi) copyin(toa_flux)
-    do igpt = 1, ngpt
-      do icol = 1, block_size
+    do icol = 1, block_size
+      do igpt = 1, ngpt
         !$acc atomic update
-        def_tsi(icol) = def_tsi(icol) + toa_flux(icol, igpt)
+        def_tsi(icol) = def_tsi(icol) + toa_flux(igpt, icol)
       end do
     end do
 #else
     !
     ! More compactly...
     !
-    def_tsi(1:block_size) = sum(toa_flux, dim=2)
+    def_tsi(1:block_size) = sum(toa_flux, dim=1)
 #endif
     !
     ! Normalize incoming solar flux to match RFMIP specification
     !
     !$acc parallel loop collapse(2) copyin(total_solar_irradiance, def_tsi) copy(toa_flux)
-    do igpt = 1, ngpt
-      do icol = 1, block_size
-        toa_flux(icol,igpt) = toa_flux(icol,igpt) * total_solar_irradiance(icol,b)/def_tsi(icol)
+    do icol = 1, block_size
+      do igpt = 1, ngpt
+        toa_flux(igpt,icol) = toa_flux(igpt,icol) * total_solar_irradiance(icol,b)/def_tsi(icol)
       end do
     end do
     !
@@ -317,6 +334,7 @@ program rrtmgp_rfmip_sw
 #ifdef USE_TIMING
     ret =  gptlstart('rte_sw')
 #endif
+    ! print *, "sfc_alb_spec(ibnd=1,icol=1)", sfc_alb_spec(1,1)
     call stop_on_err(rte_sw(optical_props,   &
                             top_at_1,        &
                             mu0,             &
@@ -324,6 +342,7 @@ program rrtmgp_rfmip_sw
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
                             fluxes))
+                       
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
 #endif
@@ -332,23 +351,37 @@ program rrtmgp_rfmip_sw
     !
     do icol = 1, block_size
       if(.not. usecol(icol,b)) then
-        flux_up(icol,:,b)  = 0._wp
-        flux_dn(icol,:,b)  = 0._wp
+        flux_up(:,icol,b)  = 0._wp
+        flux_dn(:,icol,b)  = 0._wp
       end if
     end do
+
+    ! print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,b)), maxval(flux_dn(:,:,b))
+
+
   end do
+
+
   !
   ! End timers
   !
 #ifdef USE_TIMING
-  end do
+ ! end do
   ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
+  allocate(temparray(   block_size*(nlay+1)*nblocks)) 
+  temparray = pack(flux_dn(:,:,:),.true.)
+  print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)
+  temparray = pack(flux_up(:,:,:),.true.)
+  print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
+  deallocate(temparray)
+
   !$acc exit data delete(optical_props%tau, optical_props%ssa, optical_props%g, optical_props)
   !$acc exit data delete(sfc_alb_spec, mu0)
   !$acc exit data delete(toa_flux, def_tsi)
   ! --------------------------------------------------
-  call unblock_and_write(trim(flxup_file), 'rsu', flux_up)
-  call unblock_and_write(trim(flxdn_file), 'rsd', flux_dn)
+  call unblock_and_write(trim(flx_file), 'rsu', flux_up)
+  call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
+  print *, "Fluxes saved to ", flx_file
 end program rrtmgp_rfmip_sw

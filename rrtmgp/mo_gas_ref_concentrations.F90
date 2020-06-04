@@ -1,6 +1,6 @@
-! gas_ref_concs code is part of RRTM for GCM Applications - Parallel (RRTMGP)
+! gas_ref_concentrations code is part of RRTM for GCM Applications - Parallel - Neural Networks (RRTMGP-NN)
 !
-! Contacts: Robert Pincus and Eli Mlawer
+! Contacts: Peter Ukkonen, Robert Pincus and Eli Mlawer
 ! email:  rrtmgp@aer.com
 !
 ! Copyright 2015-2018,  Atmospheric and Environmental Research and
@@ -9,15 +9,9 @@
 ! Use and duplication is permitted under the terms of the
 !    BSD 3-clause license, see http://opensource.org/licenses/BSD-3-Clause
 ! -------------------------------------------------------------------------------------------------
-! Physical and mathematical constants used in gas optics calculation
-!   If the host model in which RRTGMP is embedded has defined these constants elsewhere
-!   the model definitions can be used instead by renaming. For example,
-! use  mo_model_constants, only k_boltz => boltzman_k, ...
-!   where the syntax is local_name => original_name
-!   and all the local names need to be defined
-!
-! "Constants" specific to the earth's atmosphere should also be made consistent with the
-!   host model but may be changed in a call to init_constants(), normally at initialization
+! Reference concentrations for RRTMGP long-wave gases which are used in the neural network code
+! if user has not provided them at runtime. Missing gases can either be set to zero, pre-industrial,
+! present-day or future concentration: or modify these tables for custom values.
 ! -------------------------------------------------------------------------------------------------
 module mo_gas_ref_concentrations
   use mo_rte_kind, only: wp

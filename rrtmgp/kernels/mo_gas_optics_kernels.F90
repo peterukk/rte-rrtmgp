@@ -980,6 +980,7 @@ contains
     integer  :: icol, ilay, igpt
     real(wp) :: t
     ! -----------------------
+
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
@@ -992,6 +993,8 @@ contains
            else
              ssa(igpt,ilay,icol) = 0._wp
            end if
+           ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+           ssa(igpt,ilay,icol) = min(ssa(igpt,ilay,icol), 1.0_wp)
         end do
       end do
     end do
