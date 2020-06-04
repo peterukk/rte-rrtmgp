@@ -1,13 +1,17 @@
 # This fork uses neural networks to accelerate the gas optics computational kernels
-Status 31.1.2020: RTE code rewritten to use g-points in the first dimension, and other optimizations which can lead to a 40% speedup overall (without neural networks). Coming soon!
+Status 4.6.2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper is being written. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been rewritten to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) lead to a roughly 40% speedup overall without any neural networks, while the whole code is at least twice as fast when neural networks are used. 
 
-# Currently only longwave implemented!!
+No neural network has been developed for the **shortwave** yet, and while the code runs using the original gas optics kernel, there are significant differences in fluxes (up to 1W/m2) due to some bug in the rewritten RTE shortwave code.
+
+The **cloud optics** extension is also still broken.
+
+**GPU** computations supported using openACC, but the RTE kernels are currently broken (fix coming soon). 
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "major" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input the gas column for a single atmospheric layer and so is agnostic to vertical discretization.  
 
 **Speed**: The optical depth kernel is up to 3 times faster than the original on ifort+MKL when using single precision and a 4-layer neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). Optical depths and planck fractions are predicted by separate models, which output all 256 g-points. The fastest implementation uses BLAS/MKL where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time (replacing the matrix-vector dot product of a feed-forward neural network with a matrix-matrix call).
 
-**Accuracy**: The mean absolute and max vertical errors in the downwelling and up-welling fluxes are now comparable to the original scheme (<0.5 W/m2 for mean, 1-2 W/m2 for max vertical error) relative to an accurate line-by-line model. The upwelling fluxes are in some cases (surprisingly) even more accurate than the reference code; however the heating rates still end up being somewhat less accurate overall due to being sensitive to flux errors in the stratosphere, where the neural network performs worse. These results are based on a pseudo-independent test set (where the temperature and humidity profiles are independent but not  the combination of gas concentrations) and are likely to be worse for truly independent data from e.g. a GCM.
+**Accuracy**: The errors in the downwelling and up-welling fluxes are similar to the original scheme in the tests done so far using RFMIP and GCM data. CKDMIP evaluation coming soon. 
 
 **how to use** 
 currently only works with the RFMIP profiles. Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
