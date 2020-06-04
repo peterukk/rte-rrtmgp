@@ -427,12 +427,12 @@ contains
 
     !
     !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
-    ! error_msg = compute_gas_taus(this,                       &
-    !                              ncol, nlay, ngpt, nband,    &
-    !                              play, plev, tlay, gas_desc, &
-    !                              optical_props,              &
-    !                              jtemp, jpress, jeta, tropo, fmajor, &
-    !                              col_dry)
+    error_msg = compute_gas_taus(this,                       &
+                                 ncol, nlay, ngpt, nband,    &
+                                 play, plev, tlay, gas_desc, &
+                                 optical_props,              &
+                                 jtemp, jpress, jeta, tropo, fmajor, &
+                                 col_dry)
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
     if(error_msg  /= '') return
 
@@ -1077,6 +1077,7 @@ contains
     idx_h2o = string_loc_in_array('h2o', this%gas_names)
 
     !$acc enter data create(optical_props%tau) 
+    optical_props%tau = 0.0_wp 
 
     !$acc enter data copyin(this%kmajor)
 
@@ -1295,7 +1296,6 @@ contains
     ! Planck function tables
     !
     ! ?????????? These allocations are unneeded ?????????????
-    !
     !  allocate(this%totplnk    (size(totplnk,    1), size(totplnk,   2)), &
     !           this%planck_frac_stored(size(planck_frac,1), size(planck_frac,2), size(planck_frac,3), size(planck_frac,4)), &
     !           this%optimal_angle_fit(size(optimal_angle_fit,    1), size(optimal_angle_fit,   2)))
