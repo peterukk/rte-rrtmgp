@@ -618,7 +618,6 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
     real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
     real(wp), dimension(ngpt,nlay) :: source_up, source_dn
     real(wp), dimension(ngpt     ) :: source_srf
-    !real(wp), dimension(ngpt*(nlay+1)*ncol) :: temparray
 
     ! ------------------------------------
 
@@ -635,24 +634,18 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
                           source_up, source_dn, source_srf, flux_dir(:,:,icol))
 
-      ! print *, "icol:", icol      
-      ! print *, "source_srf (igpt=1), flux_dir(igpt=1,20,icol=i)", source_srf(1), flux_dir(1,20,icol)
-      ! print *, "source_srf (igpt=2), flux_dir(igpt=2,20,icol=1)", source_srf(2), flux_dir(2,20,icol)
+
       !
       ! Transport
       !
       call adding(ngpt, nlay, top_at_1,            &
-                     sfc_alb_dif, Rdif, Tdif, &
+                     sfc_alb_dif(:,icol), Rdif, Tdif, &
                      source_dn, source_up, source_srf, flux_up(:,:,icol), flux_dn(:,:,icol))
       !
       ! adding computes only diffuse flux; flux_dn is total
       !
       flux_dn(:,:,icol) = flux_dn(:,:,icol) + flux_dir(:,:,icol)
     end do
- !   temparray = pack(flux_up(:,:,:),.true.)
- !   print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
- !   temparray = pack(flux_dn(:,:,:),.true.)
- !   print *, "mean of flux_dn is:", sum(temparray, dim=1)/size(temparray, dim=1)
 
   end subroutine sw_solver_2stream
   ! -------------------------------------------------------------------------------------------------
