@@ -14,11 +14,11 @@ The **cloud optics** extension is also still broken.
 **Accuracy**: The errors in the downwelling and up-welling fluxes are similar to the original scheme in the tests done so far using RFMIP and GCM data. CKDMIP evaluation coming soon. 
 
 **how to use** 
-currently only works with the RFMIP profiles. Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
+The code should work very similarly to the end-user as the original, but the neural network models need to be provided at runtime: see examples/rfmip-clear-sky . Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
 
 **to-do**
-- "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)?
-- related to this, offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate
+- "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)? **done**
+- related to this, offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate) **simpler models using less gases do not seem much faster, but the code now supports using less gases as input (CKDMIP-gases only with CFC11-eq) - these models need to be updated**
 - implement for shortwave
 - GPU kernels - should be easy and very fast with openacc_cublas
 - post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
