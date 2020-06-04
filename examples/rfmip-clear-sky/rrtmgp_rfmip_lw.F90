@@ -157,7 +157,7 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_nn      = .true.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
@@ -571,7 +571,7 @@ program rrtmgp_rfmip_lw
       bias(reshape(rlu_lbl(1,:,17), shape = [1*ncol]),    reshape(rlu_nn(1,:,17), shape = [1*ncol])), &
       bias(reshape(rlu_lbl(1,:,17), shape = [1*ncol]),    reshape(rlu_ref(1,:,17), shape = [1*ncol])) 
 
-    print *, "bias in upwelling flux of NN and RRTMGP, ALL EXPS, top-of-atm.:  ", &
+    print *, "bias in upwelling flux of NN and RRTMGP, ALL EXPS, top-of-atm.:   ", &
       bias(reshape(rlu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rlu_nn(1,:,:), shape = [nexp*ncol])), &
       bias(reshape(rlu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rlu_ref(1,:,:), shape = [nexp*ncol])) 
 
@@ -617,11 +617,11 @@ program rrtmgp_rfmip_lw
 
     print *, "---------"
 
-    print *, "RMSE in net fluxes of NN and RRTMGP, present-day, PBL     :    ", &
+    print *, "RMSE in net fluxes of NN and RRTMGP, present-day, PBL:         ", &
      rmse(reshape(rldu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rldu_nn(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)])), &
      rmse(reshape(rldu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rldu_ref(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]))
 
-    print *, "RMSE in net fluxes of NN and RRTMGP, present-day, SURFACE:    ", &
+    print *, "RMSE in net fluxes of NN and RRTMGP, present-day, SURFACE:     ", &
      rmse(reshape(rldu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,1), shape = [1*ncol])), &
      rmse(reshape(rldu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,1), shape = [1*ncol]))
 
