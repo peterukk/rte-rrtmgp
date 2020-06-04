@@ -5,7 +5,7 @@ No neural network has been developed for the **shortwave** yet, and while the co
 
 The **cloud optics** extension is also still broken.
 
-**GPU** computations supported using openACC, but the RTE kernels are currently broken (fix coming soon). 
+**GPU** computations are supported (openACC), which are extremely fast for RRTMGP-NN, but the RTE kernels are currently broken (fix coming soon). 
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "major" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for a set of atmospheric conditions and gas concentrations, which includes a large number of absorbing gases (17). The model takes as input the gas column for a single atmospheric layer and so is agnostic to vertical discretization.  
 
