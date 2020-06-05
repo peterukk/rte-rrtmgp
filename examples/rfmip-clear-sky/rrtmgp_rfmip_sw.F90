@@ -257,10 +257,10 @@ program rrtmgp_rfmip_sw
   ! Loop over blocks
   !
 #ifdef USE_TIMING
-!  do i = 1, 32
+do i = 1, 10
 #endif
   do b = 1, nblocks
-    print *, b, "/", nblocks
+    ! print *, b, "/", nblocks
 
 
     fluxes%flux_up => flux_up(:,:,b)
@@ -366,7 +366,7 @@ program rrtmgp_rfmip_sw
   ! End timers
   !
 #ifdef USE_TIMING
- ! end do
+ end do
   ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
