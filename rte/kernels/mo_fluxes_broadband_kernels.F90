@@ -37,7 +37,7 @@ contains
 
   end subroutine sum_broadband
 
-  subroutine sum_broadband_nocol(ngpt, nlev, spectral_flux, broadband_flux) bind (C, name="sum_broadband_nocol")
+  pure subroutine sum_broadband_nocol(ngpt, nlev, spectral_flux, broadband_flux) bind (C, name="sum_broadband_nocol")
     integer,                         intent(in ) :: nlev, ngpt
     real(wp), dimension(ngpt, nlev), intent(in ) :: spectral_flux
     real(wp), dimension(nlev),       intent(out) :: broadband_flux
