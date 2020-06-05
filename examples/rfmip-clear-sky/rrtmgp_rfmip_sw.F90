@@ -104,7 +104,7 @@ program rrtmgp_rfmip_sw
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_games
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
-  real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
+  real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
   real(wp), dimension(:,:  ),         allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
@@ -237,6 +237,8 @@ program rrtmgp_rfmip_sw
   allocate(flux_up(    	nlay+1, block_size, nblocks), &
            flux_dn(    	nlay+1, block_size, nblocks))
 
+  allocate(flux_dn_dir(    	nlay+1, block_size, nblocks))
+
   allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   call stop_on_err(optical_props%alloc_2str(block_size, nlay, k_dist))
   !$acc enter data create(optical_props, optical_props%tau, optical_props%ssa, optical_props%g)
@@ -265,6 +267,7 @@ program rrtmgp_rfmip_sw
 
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
+    fluxes%flux_dn_dir => flux_dn_dir(:,:,b)
     !
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
@@ -341,7 +344,7 @@ program rrtmgp_rfmip_sw
                             toa_flux,        &
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
-                            fluxes))
+                            fluxes, compute_gpoint_fluxes = .true.))
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
@@ -349,15 +352,13 @@ program rrtmgp_rfmip_sw
     !
     ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
     !
+
     do icol = 1, block_size
       if(.not. usecol(icol,b)) then
         flux_up(:,icol,b)  = 0._wp
         flux_dn(:,icol,b)  = 0._wp
       end if
     end do
-
-    ! print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,b)), maxval(flux_dn(:,:,b))
-
 
   end do
 
@@ -370,6 +371,8 @@ program rrtmgp_rfmip_sw
   ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
+  print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,:)), maxval(flux_dn(:,:,:))
+
   allocate(temparray(   block_size*(nlay+1)*nblocks)) 
   temparray = pack(flux_dn(:,:,:),.true.)
   print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)
