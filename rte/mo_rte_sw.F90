@@ -162,49 +162,56 @@ contains
       call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl),                gpt_flux_dn )
     end if
 
-    select type (atmos)
-      class is (ty_optical_props_1scl)
-        !
-        ! Direct beam only
-        !
-        !$acc enter data copyin(atmos%tau)
-        call sw_solver_noscat(ngpt, nlay, ncol, logical(top_at_1, wl), &
-                              atmos%tau, mu0,                          &
-                              gpt_flux_dir)
-        !
-        ! No diffuse flux
-        !
-        !gpt_flux_up = 0._wp
-        !gpt_flux_dn = 0._wp
-        !$acc exit data delete(atmos%tau)
-      class is (ty_optical_props_2str)
-        !
-        ! two-stream calculation with scattering
-        !
-        !$acc enter data copyin(atmos%tau, atmos%ssa, atmos%g)
-        call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
-                               atmos%tau, atmos%ssa, atmos%g, mu0,      &
-                               sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                               gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+    if (.not. computing_gpoint_fluxes) then
 
-        !$acc exit data delete(atmos%tau, atmos%ssa, atmos%g)
-        !$acc exit data delete(sfc_alb_dir_gpt, sfc_alb_dif_gpt)
-      class is (ty_optical_props_nstr)
-        !
-        ! n-stream calculation
-        !
-        ! not yet implemented so fail
-        !
-        error_msg = 'sw_solver(...ty_optical_props_nstr...) not yet implemented'
-    end select
+
+
+    else ! g-point fluxes ARE desired
+
+
+      select type (atmos)
+        class is (ty_optical_props_1scl)
+          !
+          ! Direct beam only
+          !
+          !$acc enter data copyin(atmos%tau)
+          call sw_solver_noscat(ngpt, nlay, ncol, logical(top_at_1, wl), &
+                                atmos%tau, mu0,                          &
+                                gpt_flux_dir)
+          !
+          ! No diffuse flux
+          !
+          !gpt_flux_up = 0._wp
+          !gpt_flux_dn = 0._wp
+          !$acc exit data delete(atmos%tau)
+        class is (ty_optical_props_2str)
+          !
+          ! two-stream calculation with scattering
+          !
+          !$acc enter data copyin(atmos%tau, atmos%ssa, atmos%g)
+          call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
+                                atmos%tau, atmos%ssa, atmos%g, mu0,      &
+                                sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
+                                gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+
+          !$acc exit data delete(atmos%tau, atmos%ssa, atmos%g)
+          !$acc exit data delete(sfc_alb_dir_gpt, sfc_alb_dif_gpt)
+        class is (ty_optical_props_nstr)
+          !
+          ! n-stream calculation
+          !
+          ! not yet implemented so fail
+          !
+          error_msg = 'sw_solver(...ty_optical_props_nstr...) not yet implemented'
+      end select
+
+    end if
+    
     if (error_msg /= '') return
     !
     ! ...and reduce spectral fluxes to desired output quantities
     !
     error_msg = fluxes%reduce(gpt_flux_up, gpt_flux_dn, atmos, top_at_1, gpt_flux_dir)
-
-    ! call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_up, fluxes%flux_up)
-    ! call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_dn, fluxes%flux_dn)
 
     !$acc exit data delete(mu0)
     !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)

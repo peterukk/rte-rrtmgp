@@ -157,7 +157,7 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .true.
+  use_nn      = .false.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
@@ -359,9 +359,14 @@ program rrtmgp_rfmip_lw
 !bo $OMP PARALLEL shared(neural_nets, k_dist) firstprivate(sfc_emis_spec,fluxes,optical_props,source)
 !bo $OMP DO 
 
+#ifdef USE_TIMING
+do i = 1, 10
+#endif
+
+
   do b = 1, nblocks
     
-    print *, b, "/", nblocks
+    ! print *, b, "/", nblocks
 #ifdef USE_OPENMP
     ! PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
     ! print *, "my t_lay(5,5,b) for b:",b,"  is", t_lay(5,5,b)
@@ -448,6 +453,11 @@ program rrtmgp_rfmip_lw
     end if
 
   end do ! blocks
+
+#ifdef USE_TIMING
+end do
+#endif
+
 !bo $OMP END DO
 !bo $OMP END PARALLEL
 !bo $OMP barrier
