@@ -61,8 +61,8 @@ contains
   function rte_lw(optical_props, top_at_1, &
                   sources, sfc_emis,       &
                   fluxes,                  &
-                  inc_flux, n_gauss_angles, use_2stream, compute_gpoint_fluxes, &
-                  lw_Ds, flux_up_Jac, flux_dn_Jac) result(error_msg)
+                  inc_flux, n_gauss_angles, use_2stream, &
+                  lw_Ds, flux_up_Jac, flux_dn_Jac, compute_gpoint_fluxes) result(error_msg)
     class(ty_optical_props_arry), intent(in   ) :: optical_props     ! Array of ty_optical_props. This type is abstract
                                                                      ! and needs to be made concrete, either as an array
                                                                      ! (class ty_optical_props_arry) or in some user-defined way
@@ -78,13 +78,14 @@ contains
                                                                 ! (no-scattering solution)
     logical,          optional, intent(in   ) :: use_2stream    ! When 2-stream parameters (tau/ssa/g) are provided, use 2-stream methods
                                                                 ! Default is to use re-scaled longwave transport
-    logical,          optional, intent(in   ) :: compute_gpoint_fluxes    ! Compute fluxes at g-points, not only broadband fluxes
     real(wp), dimension(:,:),   &
                       optional,   intent(in   ) :: lw_Ds          ! linear fit to column transmissivity (ngpts,ncol)
     real(wp), dimension(:,:),   &
                 target, optional, intent(inout) :: flux_up_Jac    ! surface temperature flux  Jacobian [W/m2/K] (nlev+1, ncol)
     real(wp), dimension(:,:),   &
                 target, optional, intent(inout) :: flux_dn_Jac    ! surface temperature flux  Jacobian [W/m2/K] (nlev+1, ncol)
+    logical,          optional, intent(in   ) :: compute_gpoint_fluxes    ! Compute fluxes at g-points, not only broadband fluxes
+
     character(len=128)                        :: error_msg   ! If empty, calculation was successful
     ! --------------------------------
     !
@@ -269,7 +270,6 @@ contains
       inc_flux_toa => inc_flux
     else
       allocate(inc_flux_zero(ngpt, ncol))
-      !$acc exit data delete(inc_flux_zero)
       !$acc enter data create(inc_flux_zero)
       !$acc parallel loop collapse(2)
       do icol = 1, ncol
@@ -341,6 +341,7 @@ contains
         !                          sfc_emis_gpt, sources%sfc_source,&
         !                          gpt_flux_up, gpt_flux_dn)
         endif
+        !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)
       class is (ty_optical_props_nstr)
         !
         ! n-stream calculation
@@ -356,8 +357,6 @@ contains
 
       ! Apply boundary condition
       call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl), inc_flux_toa, gpt_flux_dn)
-
-      !gpt_flux_dn(:,top_level,:) = inc_flux_toa
 
       select type (optical_props)
       class is (ty_optical_props_1scl)
@@ -413,7 +412,7 @@ contains
                                  sources%lev_source_bnd,  sources%sfc_source_bnd,  &
                                  sfc_emis_gpt, &
                                  gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac, gpt_flux_dnJac)
-
+        !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)
         endif
       class is (ty_optical_props_nstr)
         !
@@ -439,7 +438,8 @@ contains
 
           ! if (present(flux_dn_Jac)) Jac_fluxes%flux_dn => flux_dn_Jac
           ! error_msg = Jac_fluxes%reduce(gpt_flux_upJac, gpt_flux_dnJac, optical_props, top_at_1)
-          ! !$acc exit data delete(gpt_flux_dnJac)
+
+          !$acc exit data delete(gpt_flux_dnJac)
           deallocate(gpt_flux_dnJac)
         end if
 
@@ -447,14 +447,11 @@ contains
 
     end if 
     !$acc end data                
-
-    
+  
     
     if (error_msg /= '') return
 
-
-
-    !$acc exit data delete(sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd, optical_props%tau,  optical_props%ssa, optical_props%g)
+    !$acc exit data delete(sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd)
     !$acc exit data delete(sources, optical_props)
     !$acc exit data delete(inc_flux_zero)
     !$acc exit data delete(n_quad_angs, Ds, weights, top_at_1, gpoint_bands)

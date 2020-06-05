@@ -39,7 +39,8 @@ module mo_rte_solver_kernels
   public :: apply_BC, &
             lw_solver_noscat, lw_solver_noscat_GaussQuad, lw_solver_2stream,  &
             lw_solver_noscat_broadband, lw_solver_noscat_GaussQuad_broadband, &
-            sw_solver_noscat,                             sw_solver_2stream
+            sw_solver_noscat,                             sw_solver_2stream, &
+            sw_solver_noscat_broadband, sw_solver_2stream_broadband
 
   public :: lw_solver_1rescl_GaussQuad,  lw_solver_1rescl
 
@@ -634,6 +635,7 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
                           source_up, source_dn, source_srf, flux_dir(:,:,icol))
 
+      !  print *, "radn_up, dn, dir", flux_up(10,nlay+1, icol), flux_dn(10,nlay+1, icol), flux_dir(10,nlay+1, icol), flux_dir(10,1, icol)
 
       !
       ! Transport
@@ -648,6 +650,157 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
     end do
 
   end subroutine sw_solver_2stream
+    ! -------------------------------------------------------------------------------------------------
+  !
+  !   Top-level shortwave kernels, return broadband fluxes
+  !
+  ! -------------------------------------------------------------------------------------------------
+  !
+  !   Extinction-only i.e. solar direct beam
+  !
+  ! -------------------------------------------------------------------------------------------------
+pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
+                              top_at_1, inc_flux, tau, mu0, flux_dir) bind(C, name="sw_solver_noscat_broadband")
+    integer,                    intent( in) :: ngpt, nlay, ncol ! Number of columns, layers, g-points
+    logical(wl),                intent( in) :: top_at_1
+    real(wp), dimension(ngpt,ncol),         intent( in) :: inc_flux     ! incident flux at top of domain [W/m2] (ngpt, ncol)
+    real(wp), dimension(ngpt,nlay,  ncol),  intent( in) :: tau          ! Absorption optical thickness []
+    real(wp), dimension(ncol),              intent( in) :: mu0          ! cosine of solar zenith angle
+
+    ! real(wp), dimension(ngpt,nlay+1,ncol), intent(inout) :: flux_dir     ! Direct-beam flux, spectral [W/m2]
+                                                                       ! Top level must contain incident flux boundary condition
+    real(wp), dimension(nlay+1,ncol), intent(inout) :: flux_dir     ! Direct-beam flux, broadband [W/m2]
+
+    real(wp), dimension(ngpt,nlay+1)                :: radn_dir     ! Direct-beam flux, spectral [W/m2]
+
+    integer :: igpt, ilev, icol
+    real(wp), dimension(ncol) :: mu0_inv
+    ! ------------------------------------
+    mu0_inv = 1._wp/mu0
+    ! Indexing into arrays for upward and downward propagation depends on the vertical
+    !   orientation of the arrays (whether the domain top is at the first or last index)
+    ! We write the loops out explicitly so compilers will have no trouble optimizing them.
+    ! Downward propagation
+    if(top_at_1) then
+
+      do icol = 1, ncol
+    
+        ! Apply boundary condition
+        radn_dir(:,nlay+1) = inc_flux(:,icol)
+
+        ! For the flux at this level, what was the previous level, and which layer has the
+        !   radiation just passed through?
+        ! layer index = level index - 1
+        ! previous level is up (-1)
+        do ilev = 2, nlay+1
+          radn_dir(:,ilev) = radn_dir(:,ilev-1) * exp(-tau(:,ilev-1,icol)*mu0_inv(icol))
+        end do
+
+        ! Compute broadband fluxes
+        call sum_broadband_nocol(ngpt, nlay+1, radn_dir, flux_dir(:,icol) )
+
+      end do
+
+    else
+
+      ! Apply boundary condition
+      radn_dir(:,1) = inc_flux(:,icol)
+
+      do icol = 1, ncol
+
+        ! layer index = level index
+        ! previous level is up (+1)
+        do ilev = nlay, 1, -1
+          radn_dir(:,ilev) = radn_dir(:,ilev+1) * exp(-tau(:,ilev,icol)*mu0_inv(icol))
+        end do
+
+        ! Compute broadband fluxes
+        call sum_broadband_nocol(ngpt, nlay+1, radn_dir, flux_dir(:,icol) )
+
+      end do 
+
+    end if
+  end subroutine sw_solver_noscat_broadband
+  ! -------------------------------------------------------------------------------------------------
+  !
+  ! Shortwave two-stream calculation:
+  !   compute layer reflectance, transmittance
+  !   compute solar source function for diffuse radiation
+  !   transport
+  !
+  ! -------------------------------------------------------------------------------------------------
+  
+  subroutine sw_solver_2stream_broadband(ngpt, nlay, ncol, top_at_1, &
+                                 inc_flux, inc_flux_dif,     &
+                                 tau, ssa, g, mu0,           &
+                                 sfc_alb_dir, sfc_alb_dif,   &
+                                 flux_up, flux_dn, flux_dir) bind(C, name="sw_solver_2stream_broadband")
+    integer,                               intent(in   ) :: ngpt, nlay, ncol ! Number of columns, layers, g-points
+    logical(wl),                           intent(in   ) :: top_at_1
+    real(wp), dimension(ngpt,       ncol), intent(in   ) :: inc_flux, inc_flux_dif     ! incident flux at top of domain [W/m2] (ngpt, ncol)
+    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau, &  ! Optical thickness,
+                                                            ssa, &  ! single-scattering albedo,
+                                                            g       ! asymmetry parameter []
+    real(wp), dimension(ncol            ), intent(in   ) :: mu0     ! cosine of solar zenith angle
+    real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_alb_dir, sfc_alb_dif
+                                                                    ! Spectral albedo of surface to direct and diffuse radiation
+                                                            ! Broadband fluxes  [W/m2]
+    real(wp), dimension(nlay+1,ncol),      intent(inout) :: flux_up, flux_dn, flux_dir
+    ! -------------------------------------------
+    real(wp), dimension(ngpt,nlay+1) :: radn_up            ! Radiative fluxes [W/m2]
+    real(wp), dimension(ngpt,nlay+1) :: radn_dn, radn_dir  ! Downward fluxes get boundary conditions
+    integer :: icol, igpt
+    real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+    real(wp), dimension(ngpt,nlay) :: source_up, source_dn
+    real(wp), dimension(ngpt     ) :: source_srf
+
+    ! ------------------------------------
+
+    radn_up = 0.0_wp
+    radn_dn = 0.0_wp
+    radn_dir = 0.0_wp
+
+    do icol = 1, ncol
+
+      ! Apply boundary condition
+      radn_dir(:,nlay+1) = inc_flux_dif(:,icol)
+      radn_dn(:,nlay+1)  = inc_flux(:,icol)
+
+      ! print *, "Radn_dir(nlay+1), (nlay), radn_dn(nlay+1), radn_dn(nlay)", radn_dir(1, nlay+1), radn_dir(1,nlay), radn_dn(1,nlay+1), radn_dn(1,nlay)
+
+
+      !
+      ! Cell properties: transmittance and reflectance for direct and diffuse radiation
+      !
+      call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+                         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+                         Rdif, Tdif, Rdir, Tdir, Tnoscat)      
+      !
+      ! Direct-beam and source for diffuse radiation
+      !
+      call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
+                          source_up, source_dn, source_srf, radn_dir)
+
+      !  print *, "radn_up, dn, dir", radn_up(10,nlay+1), radn_dn(10,nlay+1), radn_dir(10,nlay+1), radn_dir(10,1)
+
+      !
+      ! Transport
+      !
+      call adding(ngpt, nlay, top_at_1,            &
+                     sfc_alb_dif(:,icol), Rdif, Tdif, &
+                     source_dn, source_up, source_srf, radn_up, radn_dn)
+      !
+      ! adding computes only diffuse flux; flux_dn is total
+      !
+      radn_dn = radn_dn + radn_dir
+
+      ! Compute broadband fluxes
+      call sum_broadband_nocol(ngpt, nlay+1, radn_dir, flux_dir(:,icol) )
+      call sum_broadband_nocol(ngpt, nlay+1, radn_up, flux_up(:,icol) )
+      call sum_broadband_nocol(ngpt, nlay+1, radn_dn, flux_dn(:,icol) )
+    end do
+
+  end subroutine sw_solver_2stream_broadband
   ! -------------------------------------------------------------------------------------------------
   !
   !   Lower-level longwave kernels
