@@ -239,6 +239,8 @@ program rrtmgp_rfmip_lw
   if(physics_index < 1 .or. physics_index > 2) &
     stop "Physics index is invalid (must be 1 or 2)"
   if(physics_index == 2) n_quad_angles = 3
+
+  n_quad_angles = 1
                 
   !
   ! Identify the set of gases used in the calculation based on the forcing index
