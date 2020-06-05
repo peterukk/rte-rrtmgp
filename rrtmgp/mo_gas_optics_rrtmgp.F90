@@ -720,7 +720,7 @@ contains
       ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
       !
       !$acc enter data create(col_dry_arr, gas_array)
-      !$acc enter data copyin(nn_gas_names, input_scaler_means, input_scaler_std)
+      !$acc enter data copyin(nn_gas_names, input_scaler_max, input_scaler_min)
       if(present(col_dry)) then
           if(.not. extents_are(col_dry, nlay, ncol)) &
           error_msg = "gas_optics(): array col_dry has wrong size"
@@ -736,7 +736,7 @@ contains
         col_dry_wk => col_dry_arr
       end if
 
-      !$acc kernels present(tlay,play)
+      !$acc kernels present(tlay,play,col_dry_wk)
 
       ! nn_inputs(1,:,:) =  tlay
       ! nn_inputs(2,:,:) = log(play)
@@ -751,7 +751,6 @@ contains
       do igas = 1, ninputs-3
         ! Get the 2D array with the gas concentration for this gas
         error_msg = gas_desc%get_vmr(nn_gas_names(igas), gas_array)
-        ! print *, nn_gas_names(igas), "min at sfc:", minval(gas_array(nlay,:))
 
         ! If not successful, the gas was not provided, and we need to use a reference concentration
         if (error_msg /= '') then 
@@ -769,12 +768,12 @@ contains
           end if 
         end if
 
-        !$acc kernels present(gas_array,col_dry_wk,input_scaler_means,input_scaler_std)
-        
 #ifdef USE_TIMING
     ret =  gptlstart('nn_inputs_write')
 #endif
 
+        !$acc kernels present(gas_array,col_dry_wk, input_scaler_max, input_scaler_min)
+        
         ! nn_inputs(igas+3,:,:) = gas_array(:,:)
 
         if ((nn_gas_names(igas) == 'h2o') .or. (nn_gas_names(igas) == 'o3')) then
@@ -788,11 +787,12 @@ contains
         !$acc end kernels
       end do
 
+      !$acc exit data delete(nn_gas_names, input_scaler_max, input_scaler_min, col_dry_arr, gas_array)
+
+
       ! do igas = 1, ninputs
       !   print *, "Neural network inputs:min, max of gas", igas, ":", minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
       ! end do
-
-      !$acc exit data delete(nn_gas_names, input_scaler_means, input_scaler_std, col_dry_arr, gas_array)
 
       ! vmr is 2D
       ! nn_inputs(igas,:,:) = vmr(:,:)
@@ -813,7 +813,6 @@ contains
       !     end do 
       !   end do
       ! end do
-
   end function compute_nn_inputs
 
   !------------------------------------------------------------------------------------------
