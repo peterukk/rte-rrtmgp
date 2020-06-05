@@ -1,8 +1,8 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics computations 
 
-Update 4.6.2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper is being written. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 3-7 by using neural networks, the solver (RTE) has been rewritten to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) lead to a roughly 2 speedup overall without any neural networks, while the whole code is up to 6 times as fast when neural networks are used. 
+Update 4.6.2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper is being written. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 3-7 by using neural networks, the solver (RTE) has been rewritten to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) lead to a roughly 50% speedup overall without any neural networks, while the whole code is up to 4 times as fast when neural networks are used. 
 
-No neural network has been developed for the **shortwave**, but also the SW code is roughly half as fast (when using single precision) due to the refactoring. 
+No neural network has been developed for the **shortwave**, but also the SW code is roughly half 50% faster (when using single precision) due to the refactoring. 
 
 The **cloud optics** extension is still broken.
 
