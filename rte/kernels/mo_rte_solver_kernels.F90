@@ -635,8 +635,6 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
                           source_up, source_dn, source_srf, flux_dir(:,:,icol))
 
-      !  print *, "radn_up, dn, dir", flux_up(10,nlay+1, icol), flux_dn(10,nlay+1, icol), flux_dir(10,nlay+1, icol), flux_dir(10,1, icol)
-
       !
       ! Transport
       !
@@ -749,25 +747,24 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     ! -------------------------------------------
     real(wp), dimension(ngpt,nlay+1) :: radn_up            ! Radiative fluxes [W/m2]
     real(wp), dimension(ngpt,nlay+1) :: radn_dn, radn_dir  ! Downward fluxes get boundary conditions
-    integer :: icol, igpt
+    integer :: icol, igpt, top_level
     real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
     real(wp), dimension(ngpt,nlay) :: source_up, source_dn
     real(wp), dimension(ngpt     ) :: source_srf
 
     ! ------------------------------------
 
-    radn_up = 0.0_wp
-    radn_dn = 0.0_wp
-    radn_dir = 0.0_wp
+    if(top_at_1) then
+      top_level = 1
+    else
+      top_level = nlay+1
+    end if
 
     do icol = 1, ncol
 
       ! Apply boundary condition
-      radn_dir(:,nlay+1) = inc_flux_dif(:,icol)
-      radn_dn(:,nlay+1)  = inc_flux(:,icol)
-
-      ! print *, "Radn_dir(nlay+1), (nlay), radn_dn(nlay+1), radn_dn(nlay)", radn_dir(1, nlay+1), radn_dir(1,nlay), radn_dn(1,nlay+1), radn_dn(1,nlay)
-
+      radn_dir(:,top_level) = inc_flux(:,icol) * mu0(icol)
+      radn_dn(:,top_level)  = inc_flux_dif(:,icol)
 
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
@@ -780,8 +777,6 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       !
       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
                           source_up, source_dn, source_srf, radn_dir)
-
-      !  print *, "radn_up, dn, dir", radn_up(10,nlay+1), radn_dn(10,nlay+1), radn_dir(10,nlay+1), radn_dir(10,1)
 
       !
       ! Transport

@@ -342,9 +342,6 @@ contains
     !
     ! Is the requested array the correct size?
     !
-#ifdef USE_TIMING
-    ret =  gptlstart('get_vmr_check')
-#endif
     if(this%nlay > 0 .and. this%nlay /= size(array,1)) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (nlay)'
     end if
@@ -352,9 +349,7 @@ contains
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (ncol)'
     end if
     if(error_msg /= "") return
-#ifdef USE_TIMING
-    ret =  gptlstop('get_vmr_check')
-#endif
+
     !$acc data copyout (array) present(this, this%concs)
 #ifdef USE_TIMING
     ret =  gptlstart('get_vmr_loops')

@@ -424,7 +424,9 @@ contains
 
     !
     ! Gas optics
-
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_gas_taus')
+#endif
     !
     !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
     error_msg = compute_gas_taus(this,                       &
@@ -433,6 +435,9 @@ contains
                                  optical_props,              &
                                  jtemp, jpress, jeta, tropo, fmajor, &
                                  col_dry)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_gas_taus')
+#endif
     !$acc exit data delete(jtemp, jpress, tropo, fmajor, jeta)
     if(error_msg  /= '') return
 
@@ -583,8 +588,6 @@ contains
 
     ret =  gptlstart('compute_nn_inputs')
 #endif
-
-
     allocate(nn_inputs(ninputs,nlay,ncol))
     !$acc enter data create(nn_inputs)
 
@@ -1027,9 +1030,7 @@ contains
     nminorkupper = size(this%kminor_upper, 1)
 
     ! prepare col_gas, array of input gases
-#ifdef USE_TIMING
-    ret =  gptlstart('prepare_col_gas')
-#endif
+
     error_msg = compute_col_gas(this,                       &
                     ncol, nlay, ngas, ngpt,                 &
                     play, plev, tlay, gas_desc,             &
@@ -1040,9 +1041,6 @@ contains
     !             play, plev, tlay, gas_desc,       &
     !             nn_inputs, col_gas(:,:,0))
 
-#ifdef USE_TIMING
-    ret =  gptlstop('prepare_col_gas')
-#endif
 
 
     !
@@ -1080,6 +1078,10 @@ contains
 
     !$acc enter data copyin(this%kmajor)
 
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau_kernel')
+#endif
+
     call compute_tau_absorption(                     &
             ncol,nlay,nband,ngpt,                    &  ! dimensions
             ngas,nflav,neta,npres,ntemp,             &
@@ -1111,8 +1113,15 @@ contains
 
     !$acc exit data delete(this%kmajor)
 
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_kernel')
+#endif
+
     if (allocated(this%krayl)) then
       allocate(tau_rayleigh(ngpt,nlay,ncol))
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau_ray_kernel')
+#endif
       !$acc enter data copyin(this%krayl) create(tau_rayleigh)
       call compute_tau_rayleigh(         & !Rayleigh scattering optical depths
             ncol,nlay,nband,ngpt,        &
@@ -1123,7 +1132,9 @@ contains
             idx_h2o, col_gas(:,:,0),col_gas, &
             fminor,jeta,tropo,jtemp,     & ! local input
             tau_rayleigh)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_ray_kernel')
+#endif
 
       ! Combine taus
       call combine(tau_rayleigh, allocated(this%krayl), optical_props)
