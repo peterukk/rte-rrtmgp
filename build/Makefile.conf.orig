@@ -3,13 +3,19 @@
 # export FC = gfortran
 # Fortran compiler flags
 #export FCFLAGS = -O3 -ffree-line-length-none -m64 -march=native -std=f2008 -fno-stack-arrays
+<<<<<<< HEAD
 #export FCFLAGS = -O3 -ffree-line-length-none -m64 -march=native -std=f2008 -pg
 
 # export FCFLAGS = -O3 -ffree-line-length-none -m64 -std=f2008 -march=native --fast-math -funroll-loops -ftree-loop-linear -fprefetch-loop-arrays
 # # # export FCFLAGS = -O1 -ffree-line-length-none -m64 -std=f2008 -march=native -fno-stack-arrays -fexternal-blas --fast-math
 # # #export FCFLAGS = -O3 -ffree-line-length-none -std=f2008 -pg -march=native --fast-math 
+=======
+export FCFLAGS = -O3 -ffree-line-length-none -m64 -std=f2018 -march=native --fast-math -funroll-loops -ftree-loop-linear -fprefetch-loop-arrays
+>>>>>>> 2fe7745908790749e73c2b249d17f72c6b047b23
 
+# DEBUGGING
 # export FCFLAGS = -ffree-line-length-none -m64 -std=f2008 -march=native          -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan
+
 
 # export TIME_DIR = /home/peter/gptl-gfortran/
 #export TIME_DIR = /data/puk/soft/gptl/
@@ -17,8 +23,15 @@
 
 # INTEL
 export FC = ifort
-# export FCFLAGS = -O1 -mkl=sequential -heap-arrays -I${MKLROOT}/include
-#export FCFLAGS = -O3 -mkl=sequential -heap-arrays -I${MKLROOT}/include
-export FCFLAGS = -O3 -mkl=sequential  -I${MKLROOT}/include
+export FCFLAGS = -O3 -mkl=sequential -I${MKLROOT}/include
+#export FCFLAGS = -O3 -mkl=sequential  -I${MKLROOT}/include
 #export FCFLAGS = -O0 -g -traceback -check all -warn interface -fp-stack-check -mkl -I${MKLROOT}/include
+<<<<<<< HEAD
 export TIME_DIR = /home/puk/gptl-ifort/
+=======
+# export TIME_DIR = /home/puk/gptl-ifort/
+
+# PGI GPU
+# export FC = pgfortran
+# export FCFLAGS = -O3 -g  -Mallocatable=03 -ta=tesla:cc60 -Minfo -Mpreprocess -Mcuda -Mcudalib=cublas
+>>>>>>> 2fe7745908790749e73c2b249d17f72c6b047b23
