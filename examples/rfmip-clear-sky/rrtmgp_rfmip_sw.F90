@@ -244,7 +244,6 @@ program rrtmgp_rfmip_sw
   !$acc enter data create(optical_props, optical_props%tau, optical_props%ssa, optical_props%g)
   !$acc enter data create (toa_flux, def_tsi)
   !$acc enter data create (sfc_alb_spec, mu0)
-  print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
 
   ! --------------------------------------------------
 #ifdef USE_TIMING
@@ -337,14 +336,13 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('rte_sw')
 #endif
-    ! print *, "sfc_alb_spec(ibnd=1,icol=1)", sfc_alb_spec(1,1)
     call stop_on_err(rte_sw(optical_props,   &
                             top_at_1,        &
                             mu0,             &
                             toa_flux,        &
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
-                            fluxes, compute_gpoint_fluxes = .true.))
+                            fluxes, compute_gpoint_fluxes = .false.))
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
