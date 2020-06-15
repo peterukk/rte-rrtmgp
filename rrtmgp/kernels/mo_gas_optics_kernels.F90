@@ -675,7 +675,7 @@ contains
       !
       sfc_source_bnd(:,icol)       = interpolate1D(tsfc(icol),                 temp_ref_min, totplnk_delta, totplnk)
       sfc_source_bnd_Jac(:,icol)   = interpolate1D(tsfc(icol) + delta_Tsurf,   temp_ref_min, totplnk_delta, totplnk)
-      lev_source_bnd(:, 1, icol)    = interpolate1D(tlev(1,icol),               temp_ref_min, totplnk_delta, totplnk)
+      lev_source_bnd(:, 1, icol)   = interpolate1D(tlev(1,icol),               temp_ref_min, totplnk_delta, totplnk)
       do ilay = 1, nlay
         lev_source_bnd(:,ilay+1,icol)  = interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk)
         lay_source_bnd(:,ilay,icol)    = interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk)
