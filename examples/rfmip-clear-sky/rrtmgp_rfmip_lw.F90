@@ -157,14 +157,14 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .true.
+  use_nn      = .false.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
-  compare_flux = .true.
+  compare_flux = .false.
 
   ! Where neural network model weights are located (required!)
   ! Planck model
@@ -174,22 +174,18 @@ program rrtmgp_rfmip_lw
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'
-
   
   ! FOR NN MODEL DEVELOPMENT 
   ! Where to save neural network inputs (using NN code) and target outputs (planck fractions and optical depths, using reference code)
 
   ninputs = 19
-  inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_CKDMIP-MM-2.0_1f1.nc"
+  ! inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_CKDMIP-MM-2.0_1f1.nc"
   ! inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_RFMIP-Halton-rnd-0.4-2.0_1f1.nc"
 
   ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
 
-#ifdef USE_TIMING
-    ret =  gptlstart('load_nn_model')
-#endif
   if (use_nn) then
-    !$acc enter data create(neural_nets)
+  !   !$acc enter data create(neural_nets)
 
 	  print *, 'loading planck fraction model from ', modelfile_source
     call neural_nets(1) % load(modelfile_source)
@@ -203,11 +199,12 @@ program rrtmgp_rfmip_lw
     call change_kernel(neural_nets(1),  output_opt_flatmodel, output_sgemm_pfrac) ! custom pfrac kernel (outputs are post-processed inside kernel)
     call change_kernel(neural_nets(2),  output_opt_flatmodel, output_sgemm_tau)   ! custom tau kernel 
 
-  end if  
-#ifdef USE_TIMING
-    ret =  gptlstop('load_nn_model')
-#endif
+     !  !$acc enter data copyin(neural_nets)
 
+  end if  
+
+
+  
   !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
   nargs = command_argument_count()
@@ -249,7 +246,7 @@ program rrtmgp_rfmip_lw
   !
   call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
   print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  print *, "OOOOOOOO"
+  print *, "-----------------"
   print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
 
   ! --------------------------------------------------
@@ -274,7 +271,7 @@ program rrtmgp_rfmip_lw
   call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_names, gas_conc_array)
 
   call read_and_block_lw_bc(rfmip_file, block_size, sfc_emis, sfc_t)
-
+  
   !
   ! Read k-distribution information. load_and_init() reads data from netCDF and calls
   !   k_dist%init(); users might want to use their own reading methods
@@ -326,8 +323,7 @@ program rrtmgp_rfmip_lw
     allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
   end if
 
-      ! call stop_on_err(source%alloc            (block_size, nlay, k_dist))   
-    ! Initialize sources inside gas_optics procedure instead
+  call stop_on_err(source%alloc            (block_size, nlay, k_dist))   
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
 
   !
@@ -336,9 +332,7 @@ program rrtmgp_rfmip_lw
   ! bug related to the use of Fortran classes on the GPU.
   !
   !$acc enter data create(sfc_emis_spec)
-  !x !$acc enter data create(optical_props, optical_props%tau)
-
-  !$acc enter data copyin(neural_nets)
+  !$acc enter data create(optical_props, optical_props%tau)
 
   ! already created in constructor?
   ! ! $acc enter data create(source, source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
@@ -396,9 +390,8 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (LW)')
 #endif
-
+optical_props%tau = 0.0
     if (use_nn) then
-      ! print *, "Using neural networks for predicting optical depths"
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),          &
                                           p_lev(:,:,b),         &
                                           t_lay(:,:,b),         &
@@ -410,7 +403,6 @@ do i = 1, 10
                                          tlev = t_lev(:,:,b)))
 
     else 
-      ! print *, "Using original code (interpolation routine) for predicting optical depths"
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -421,11 +413,12 @@ do i = 1, 10
                                         tlev = t_lev(:,:,b)))!, nn_inputs= nn_input(:,:,:,b)))
     end if
 
-    ! !$acc update self(optical_props%tau)
-    ! !$acc update self(source%lay_source_bnd, source%planck_frac)  
+  !  !$acc update self(optical_props%tau)
+  !   print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
 
+  !! !$acc update self(source%planck_frac)  
     ! print *," max, min (pfrac)", maxval(source%planck_frac), minval(source%planck_frac)
-    ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
+
 
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
@@ -437,14 +430,14 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('rte_lw')
 #endif
-    ! $acc enter data create(fluxes)
-    ! $acc enter data create(fluxes%flux_up,fluxes%flux_dn)
+   ! !$acc enter data create(fluxes)
+   ! !$acc enter data create(fluxes%flux_up,fluxes%flux_dn)
     call stop_on_err(rte_lw(optical_props,   &
                             top_at_1,        &
                             source,          &
                             sfc_emis_spec,   &
                             fluxes, n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .false.))
-    ! print *," MAX FLUX UP", maxval(fluxes%flux_up)
+
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
 #endif
@@ -464,13 +457,13 @@ end do
 !bo $OMP END PARALLEL
 !bo $OMP barrier
 
+call source%finalize()
+!$acc exit data delete(source)
+
   !$acc exit data delete(sfc_emis_spec)
   !$acc exit data delete(optical_props%tau, optical_props)
-  !bo !$acc exit data delete(source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
-  !$acc exit data delete(source)
 
-  deallocate(sfc_emis_spec, gas_conc_array, optical_props%tau, & 
-  source%planck_frac, source%lay_source_bnd, source%lev_source_bnd,source%sfc_source_bnd)
+  ! deallocate(sfc_emis_spec, gas_conc_array, optical_props%tau, source%planck_frac, source%lay_source_bnd, source%lev_source_bnd,source%sfc_source_bnd)
 
 #ifdef USE_TIMING
   ! End timers

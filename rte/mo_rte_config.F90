@@ -19,8 +19,8 @@ module mo_rte_config
   implicit none
   private
 
-  logical(wl), protected, public :: check_extents = .true.
-  logical(wl), protected, public :: check_values  = .true.
+  logical(wl), protected, public :: check_extents = .false.
+  logical(wl), protected, public :: check_values  = .false.
 
   interface rte_config_checks
     module procedure rte_config_checks_each, rte_config_checks_all

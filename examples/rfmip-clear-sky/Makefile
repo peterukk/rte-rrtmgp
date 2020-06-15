@@ -40,22 +40,18 @@ endif
 # 
 # Choose BLAS library: e.g. "blis", "openblas", "mkl"
 # 
-BLASLIB=blis
+# BLASLIB=blis-amd
 
 ifeq ($(FC),ifort)
 	BLASLIB=mkl
 endif
 
 ifeq ($(BLASLIB),blis)
-	# BLIS_PREFIX 	= /usr/local
-	# BLIS_INCLUDE 	= $(BLIS_PREFIX)/include/blis
-	# BLIS_LIB   	= $(BLIS_PREFIX)/lib
-	# FCINCLUDE 	+= -I$(BLIS_INCLUDE)
-	# LDFLAGS   	+= -L$(BLIS_LIB) 
-	# LIBS      	+= -lm -lpthread -lblis
-
-	# assuming the libraries are installed in standard locations
-	LIBS 		+= -lblis
+	FCINCLUDE   += -I$(BLAS_DIR)/include/blis
+	LIBS      	+= $(BLAS_DIR)/lib/libblis.a -lm -lpthread 
+else ifeq ($(BLASLIB),blis-amd)
+	FCINCLUDE   += -I$(BLAS_DIR)/include/blis
+	LIBS      	+= $(BLAS_DIR)/lib/libblis-mt.a -lm -lpthread 
 else ifeq ($(BLASLIB),openblas)
 	LIBS 		+= -lopenblas 
 else ifeq ($(BLASLIB),mkl)

@@ -1,26 +1,33 @@
 #!/bin/make
 RTE_DIR = ../rte
 RRTMGP_DIR = ../rrtmgp
+
+#
+# Compiler variables FC, FCFLAGS can be set in the environment or in Makefile.conf
+#
+include Makefile.conf
 #
 # Choose kernels depending on environment variable
 #
 ifeq ($(RTE_KERNELS), openacc)
   RTE_KERNEL_DIR    = ../rte/kernels-openacc
   RRTMGP_KERNEL_DIR = ../rrtmgp/kernels-openacc
+  FCFLAGS += -DUSE_OPENACC
 endif
 RTE_KERNEL_DIR += ../rte/kernels
 RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 NEURAL_DIR = ../neural
 VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL_DIR)
-#
-# Compiler variables FC, FCFLAGS can be set in the environment or in Makefile.conf
-#
-include Makefile.conf
+
 
 ifeq ($(USE_TIMING),yes)
 	#
 	# Timing library
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -fopenmp
+endif
+
+ifeq ($(USE_BLIS),yes)
+	FCFLAGS += -I$(BLAS_DIR)/include/blis
 endif
 
 all: librte.a librrtmgp.a libneural.a

@@ -4,14 +4,19 @@ export RRTMGP_DIR = ../../build
 # Sets macros FC, FCFLAGS consistent with RTE+RRTMGP
 
 # NetCDF C and Fortran libraries, module files
-#export NCHOME = /usr/
-#export NFHOME = /usr/
+export NCHOME = /usr/
+export NFHOME = /usr/
 
 # intel compiler
-export NCHOME = /home/puk/netcdf/
-export NFHOME = /home/puk/netcdf-fortran/
+#export NCHOME = /home/puk/netcdf/
+#export NFHOME = /home/puk/netcdf-fortran/
+
 #export NCHOME = /home/pepe/netcdf/
 #export NFHOME = /home/pepe/netcdf
+
+# ------ PGI ------
+#export NCHOME = /home/peter/netcdf-pgi/netcdf
+#export NFHOME = /home/peter/netcdf-pgi/netcdf
 
 
 # GPTL libraries and module files if desired (https://jmrosinski.github.io/GPTL/)

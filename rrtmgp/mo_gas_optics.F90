@@ -83,7 +83,7 @@ module mo_gas_optics
       real(wp), dimension(:),           intent(in   ) :: tsfc      ! surface skin temperatures [K]; (ncol)
       type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
       class(ty_optical_props_arry),     intent(inout) :: optical_props ! Optical properties
-      class(ty_source_func_lw    ),     intent(out)   :: sources       ! Planck sources
+      class(ty_source_func_lw    ),     intent(inout)   :: sources       ! Planck sources
       type(network_type), dimension(2), intent(in)    :: neural_nets
       character(len=128)                              :: error_msg
       real(wp), dimension(:,:),         intent(in   ), &
@@ -107,7 +107,7 @@ module mo_gas_optics
       class(ty_optical_props_arry),  &
                                 intent(inout) :: optical_props ! Optical properties
       class(ty_source_func_lw    ),  &
-                                intent(out) :: sources       ! Planck sources
+                                intent(inout) :: sources       ! Planck sources
       character(len=128)                      :: error_msg
       real(wp), dimension(:,:), intent(in   ), &
                             optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
