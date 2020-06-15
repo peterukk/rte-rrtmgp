@@ -89,8 +89,6 @@ contains
       err_message = "source_func_lw%alloc: must provide positive extents for ncol, nlay"
     if (err_message /= "") return
 
-    !$acc enter data create(this)
-
     if(allocated(this%sfc_source_bnd)) deallocate(this%sfc_source_bnd)
     if(allocated(this%sfc_source_bnd_Jac)) deallocate(this%sfc_source_bnd_Jac)
     if(allocated(this%lay_source_bnd)) deallocate(this%lay_source_bnd)
@@ -102,7 +100,8 @@ contains
     allocate(this%sfc_source_bnd(nbnd , ncol), this%lay_source_bnd(nbnd,nlay,ncol), &
              this%lev_source_bnd(nbnd,nlay+1,ncol), this%planck_frac(ngpt,nlay,ncol))
     allocate(this%sfc_source_bnd_Jac(nbnd, ncol))
-
+    
+    !$acc enter data create(this)
     !$acc enter data create(this%sfc_source_bnd, this%sfc_source_bnd_Jac, this%lay_source_bnd, &
     !$acc& this%lev_source_bnd, this%planck_frac)
 
@@ -194,6 +193,11 @@ contains
     if(allocated(this%sfc_source_bnd    )) then
       !$acc exit data delete(this%sfc_source_bnd)
       deallocate(this%sfc_source_bnd)
+    end if 
+
+    if(allocated(this%sfc_source_bnd_Jac    )) then
+      !$acc exit data delete(this%sfc_source_bnd_Jac)
+      deallocate(this%sfc_source_bnd_Jac)
     end if 
 
     call this%ty_optical_props%finalize()

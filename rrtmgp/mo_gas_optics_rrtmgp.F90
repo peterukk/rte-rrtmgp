@@ -250,7 +250,7 @@ contains
     class(ty_optical_props_arry),  &
                               intent(inout) :: optical_props ! Optical properties
     class(ty_source_func_lw    ),  &
-                              intent(out) :: sources       ! Planck sources
+                              intent(inout) :: sources       ! Planck sources
     character(len=128)                      :: error_msg
     ! Optional inputs
     real(wp), dimension(:,:),   intent(in   ), &
@@ -353,9 +353,8 @@ contains
                                               / (play(nlay,icol)-play(nlay-1,icol))
       end do
     end if
-
         ! ALLOCATE SOURCE FUNCTIONS
-    call stop_on_err(sources%alloc            (ncol, nlay, this))
+    ! call stop_on_err(sources%alloc            (ncol, nlay, this))
     !
     ! Interpolate per-band source function at levels and layers, and per-g-point planck fraction at layers
     ! This reduces the size of the arrays going into the solver, and the g-point source functions at layers and levels
@@ -366,7 +365,7 @@ contains
 #endif
     call compute_source_bybnd_pfrac_bygpt(ncol, nlay, nband, ngpt, &
       get_nflav(this), this%get_neta(), this%get_npres(), this%get_ntemp(), this%get_nPlanckTemp(), &
-      tlay, tlev_wk, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
+      tlay, tlev_wk, tsfc, &
       fmajor, jeta, tropo, jtemp, jpress,                    &
       this%get_gpoint_bands(), this%get_band_lims_gpoint(), this%temp_ref_min,&
       this%totplnk_delta, this%planck_frac_stored, this%totplnk, this%gpoint_flavor,  &
@@ -482,7 +481,7 @@ contains
     type(network_type), dimension(2), intent(in)      :: neural_nets ! Planck fraction model, optical depth model
 
     class(ty_optical_props_arry),     intent(inout)   :: optical_props ! Optical properties
-    class(ty_source_func_lw    ),     intent(out)     :: sources       ! Planck sources
+    class(ty_source_func_lw    ),     intent(inout)     :: sources       ! Planck sources
     character(len=128)                                :: error_msg
     ! Optional inputs
     real(wp), dimension(:,:),         intent(in   ), &
@@ -559,29 +558,24 @@ contains
     ret =  gptlstart('compute_band_sources')
 #endif
     
-    ! ALLOCATE SOURCE FUNCTIONS
-    call stop_on_err(sources%alloc (ncol, nlay, this))
-
     ! Compute internal (Planck) source functions at layers and levels,
     !  which depend on mapping from spectral space that creates k-distribution.
 
-    ! already created in constructor
+    ! ALLOCATE SOURCE FUNCTIONS
+    ! already created in constructor, called from rrtmgp_rfmip_lw
+    ! call stop_on_err(sources%alloc (ncol, nlay, this))
     !! !$acc enter data copyin(sources)
     !! !$acc enter data create(sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd, sources%planck_frac)
 
     !$acc enter data copyin(tlay,tsfc,tlev_wk)
-
     call  compute_source_bybnd(                               &
     ncol, nlay, nband,                                        &
     this%get_ntemp(),this%get_nPlanckTemp(),                  &
-    tlay, tlev_wk , tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
+    tlay, tlev_wk , tsfc, &
     this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
     sources%sfc_source_bnd, sources%sfc_source_bnd_Jac,       &
     sources%lay_source_bnd, sources%lev_source_bnd)
-
     !$acc exit data delete(tsfc,tlev_wk)
-
-    !! !$acc exit data copyout(sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd)    
 
 #ifdef USE_TIMING
     ret =  gptlstop('compute_band_sources')
@@ -607,8 +601,8 @@ contains
     ! Predict g-point taus and planck fractions using neural networks
 
     ! ----------------------------------------------------------
-    !$acc enter data copyin(optical_props)
-    !$acc enter data create(optical_props%tau)
+    ! !$acc enter data copyin(optical_props)
+    ! !$acc enter data create(optical_props%tau)
 
     ! Use BLAS for matrix-matrix computations, predicting all layers and colums simultaenously
     ! Usually the fastest kernel, but requires a fast BLAS library
@@ -618,7 +612,8 @@ contains
             neural_nets,              &  ! NN models (input)
             optical_props%tau, sources%planck_frac)    ! outputs 
 
-                                 
+    !$acc exit data delete(nn_inputs)
+                             
 #ifdef USE_TIMING
     ret =  gptlstop('compute_taus_pfracs_nnlw')
 #endif
@@ -739,7 +734,9 @@ contains
         col_dry_wk => col_dry_arr
       end if
 
-      !$acc kernels present(tlay,play,col_dry_wk)
+      !$acc enter data attach(col_dry_wk)
+
+      !$acc kernels present(tlay,play)
 
       ! nn_inputs(1,:,:) =  tlay
       ! nn_inputs(2,:,:) = log(play)
@@ -775,7 +772,7 @@ contains
     ret =  gptlstart('nn_inputs_write')
 #endif
 
-        !$acc kernels present(gas_array,col_dry_wk, input_scaler_max, input_scaler_min)
+        !$acc kernels present(gas_array, input_scaler_max, input_scaler_min)
         
         ! nn_inputs(igas+3,:,:) = gas_array(:,:)
 
@@ -790,7 +787,9 @@ contains
         !$acc end kernels
       end do
 
-      !$acc exit data delete(nn_gas_names, input_scaler_max, input_scaler_min, col_dry_arr, gas_array)
+      !$acc exit data detach(col_dry_wk)
+
+      !$acc exit data delete(nn_gas_names, input_scaler_max, input_scaler_min, col_dry_wk, col_dry_arr, gas_array)
 
 
       ! do igas = 1, ninputs
@@ -852,11 +851,9 @@ contains
     real(wp) :: rnd_factor
     ! ----------------------------------------------------------
 
-
     !
     ! Error checking
     !
-    
     error_msg = ''
 
     ! ----------------------------------------------------------
@@ -879,7 +876,7 @@ contains
     ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
     !
     idx_h2o = string_loc_in_array('h2o', this%gas_names)
-    !$acc enter data create(col_dry_wk, col_dry_arr, col_gas)
+    !$acc enter data create(col_dry_arr, col_gas)
     if (present(col_dry)) then
       col_dry_wk => col_dry
     else
@@ -900,14 +897,25 @@ contains
     !
     ! compute column gas amounts [molec/cm^2]
     !
-    col_gas(:,:,0) = col_dry_wk(:,:)
+
+    !$acc parallel loop gang vector collapse(2)
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        col_gas(ilay,icol,0) = col_dry_wk(ilay,icol)
+      end do
+    end do
     
-    !$acc parallel loop gang vector collapse(1)
+    !$acc parallel loop gang vector collapse(3)
     do igas = 1, ngas
-      col_gas(:,:,igas) = vmr(:,:,igas) * col_dry_wk(:,:)
+      do icol = 1, ncol
+        do ilay = 1, nlay
+          col_gas(ilay,icol,igas) = vmr(ilay,icol,igas) * col_dry_wk(ilay,icol)
+        end do
+      end do
     end do
 
-    !$acc exit data delete(col_dry_wk, col_dry_arr)
+    !$acc exit data delete(col_dry_arr)
+
 
     end function compute_col_gas
 
@@ -1046,10 +1054,10 @@ contains
     !
     ! ---- calculate gas optical depths ----
     !
-    !$acc enter data create(jtemp, jpress, jeta, tropo, fmajor)
     !$acc enter data create(col_mix, fminor)
     !$acc enter data copyin(this)
     !$acc enter data copyin(this%gpoint_flavor)
+
     call interpolation(               &
             ncol,nlay,                &        ! problem dimensions
             ngas, nflav, neta, npres, ntemp, & ! interpolation dimensions
@@ -1070,11 +1078,7 @@ contains
             tropo,        &
             jeta,jpress,play_log)
 
-
     idx_h2o = string_loc_in_array('h2o', this%gas_names)
-
-    !$acc enter data create(optical_props%tau) 
-    optical_props%tau = 0.0_wp 
 
     !$acc enter data copyin(this%kmajor)
 
@@ -1110,7 +1114,6 @@ contains
             play,tlay,col_gas,                       &
             jeta,jtemp,jpress,                       &
             optical_props%tau)
-
     !$acc exit data delete(this%kmajor)
 
 #ifdef USE_TIMING
@@ -1141,11 +1144,15 @@ contains
 
       !$acc exit data delete(this%krayl, tau_rayleigh)
     end if
+
     if (error_msg /= '') return
 
     !$acc exit data delete(col_gas, col_mix, fminor)
     !$acc exit data delete(this%gpoint_flavor)
-    !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
+
+    ! these variables are already created in outer procedure
+    ! !$acc exit data copyout(jtemp, jpress, jeta, tropo, fmajor)
+
   end function compute_gas_taus
   !------------------------------------------------------------------------------------------
   !
@@ -1576,6 +1583,7 @@ contains
     this%press_ref = press_ref
     this%temp_ref  = temp_ref
     this%kmajor    = kmajor
+    !$acc enter data copyin(this%kmajor)
 
 
     if(allocated(rayl_lower) .neqv. allocated(rayl_upper)) then
@@ -1592,6 +1600,7 @@ contains
     ! creates log reference pressure
     allocate(this%press_ref_log(size(this%press_ref)))
     this%press_ref_log(:) = log(this%press_ref(:))
+    !$acc enter data copyin(this%press_ref_log)
 
 
     ! log scale of reference pressure
@@ -1623,8 +1632,8 @@ contains
     !   for T, high-to-low ordering for p
     this%temp_ref_min  = this%temp_ref (1)
     this%temp_ref_max  = this%temp_ref (size(this%temp_ref))
-    this%press_ref_min = minval(this%press_ref)
-    this%press_ref_max = maxval(this%press_ref)
+    this%press_ref_min = this%press_ref(size(this%press_ref))
+    this%press_ref_max = this%press_ref(1)
 
     ! creates press_ref_log, temp_ref_delta
     this%press_ref_log_delta = (log(this%press_ref_min)-log(this%press_ref_max))/(size(this%press_ref)-1)

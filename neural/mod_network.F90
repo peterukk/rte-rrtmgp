@@ -57,10 +57,11 @@ module mod_network
     procedure, public, pass(self) :: load
     procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input, matrix-vector product
     procedure, public, pass(self) :: output_matmul_flatmodel                ! Matrix input, matrix-matrix product
-    procedure, public, pass(self) :: output_sgemm   ! Matrix input, matrix-matrix product using BLAS
-    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau, output_sgemv_flatmodel
 #ifdef USE_OPENACC
     procedure, public, pass(self) :: output_sgemm_pfrac_acc, output_sgemm_tau_acc
+#else
+    procedure, public, pass(self) :: output_sgemm   ! Matrix input, matrix-matrix product using BLAS
+    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau, output_sgemv_flatmodel
 #endif
     procedure, public, pass(self) :: save
     procedure, public, pass(self) :: set_activation
@@ -78,7 +79,7 @@ module mod_network
       import network_type, sp
       class(network_type),    intent(in)    :: self
       real(sp), dimension(:), intent(in)    :: x
-      real(sp), dimension(:), intent(inout) :: output
+      real(sp), dimension(:), intent(out) :: output
     end subroutine
 
     subroutine kernel_interface_m(self, nx, ny, nsample, x, output)
@@ -86,7 +87,7 @@ module mod_network
     class(network_type),              intent(in)      :: self
     integer,                          intent(in)      :: nx,ny,nsample
     real(sp), dimension(nx, nsample), intent(in)      :: x      ! (features, nsample)
-    real(sp), dimension(ny, nsample), intent(inout)   :: output ! (outputs, nsample)
+    real(sp), dimension(ny, nsample), intent(out)   :: output ! (outputs, nsample)
     end subroutine
   end interface
 
@@ -190,7 +191,7 @@ contains
   pure subroutine output_opt(self, x, output)
     class(network_type),    intent(in)  :: self
     real(sp), dimension(:), intent(in)  :: x
-    real(sp), dimension(:), intent(inout) :: output
+    real(sp), dimension(:), intent(out) :: output
     ! Local variables
     real(sp), allocatable   :: a(:)
     integer,  dimension(2)  :: matsize
@@ -232,7 +233,7 @@ contains
     ! For lower optimization levels the custom function (4) may be SLOWER
     class(network_type),    intent(in)  :: self
     real(sp), dimension(:), intent(in)  :: x
-    real(sp), dimension(:), intent(inout) :: output
+    real(sp), dimension(:), intent(out) :: output
     ! Local variables
     ! The signal/tensor passing through the network
     real(sp), dimension(size(self % layers(1) % w_transposed,1))        :: a 
@@ -257,7 +258,7 @@ contains
   subroutine output_sgemv_flatmodel(self, x, output)
     class(network_type),    intent(in)  :: self
     real(sp), dimension(:), intent(in)  :: x
-    real(sp), dimension(:), intent(inout) :: output
+    real(sp), dimension(:), intent(out) :: output
     ! Local variables
     ! The signal/tensor passing through the network
     real(sp), dimension(size(self % layers(1) % w_transposed,1))        :: a, c
@@ -298,7 +299,7 @@ contains
     real(sp), dimension(nx,  nsample), &
                             intent(in)          :: x      ! (features, nsample)
     real(sp), dimension(ny, nsample), &
-                            intent(inout)         :: output ! (outputs, nsample)
+                            intent(out)         :: output ! (outputs, nsample)
     ! Local variables
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample)  :: a
     integer :: n, neurons, isample
@@ -329,7 +330,7 @@ contains
     real(sp), dimension(nx, nsample), &
                             intent(in)          :: x      ! (features, nsample)
     real(sp), dimension(ny, nsample), &
-                            intent(inout)       :: output ! (outputs, nsample)
+                            intent(out)       :: output ! (outputs, nsample)
     ! Local variables
     real(sp), allocatable   :: a(:,:), a_next(:,:)
     real(sp)                :: alpha, beta
@@ -383,7 +384,7 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
     real(sp), dimension(nx, nsample), &
                               intent(in)    :: x      ! (features, nsample)
     real(sp), dimension(ny, nsample), &
-                              intent(inout)   :: output ! (outputs, nsample)
+                              intent(out)   :: output ! (outputs, nsample)
     ! Local variables
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample) &
                                             :: a, a_next
@@ -466,7 +467,7 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
     class(network_type),              intent(in)  :: self
     integer, intent(in)                           :: nx, ny, nsample
     real(sp), dimension(nx, nsample), intent(in)  :: x        ! (features, nsample)
-    real(sp), dimension(ny, nsample), intent(inout) :: output ! (outputs, nsample)
+    real(sp), dimension(ny, nsample), intent(out) :: output ! (outputs, nsample)
 
     ! LOCAL VARIABLES
     ! The "signal" i.e. output of hidden layers, assumed to not change shape
@@ -559,7 +560,7 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
     class(network_type),              intent(in), target  :: self
     integer, intent(in)                           :: nx, ny, nsample
     real(sp), dimension(nx, nsample), intent(in)  :: x      ! (features, nsample)
-    real(sp), dimension(ny, nsample), intent(inout) :: output ! (outputs, nsample) 
+    real(sp), dimension(ny, nsample), intent(out) :: output ! (outputs, nsample) 
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample), &
                                           target  :: a1, a2  
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
@@ -575,10 +576,10 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
       layersizes(i) = size(self%layers(i) % b)
     end do
 
-    !$acc enter data create(a1, a2)    
+    !$acc enter data create(a1, a2, output)    
     !$acc enter data copyin(nlayers, layersizes, neurons, nsample, nx, ny)
 
-    !$acc data present(layersizes, output)
+    !$acc data present(layersizes, x, output)
     associate(layers=>self%layers)
       
       wt => layers(1) % w_transposed
@@ -668,7 +669,7 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
     class(network_type),              intent(in), target  :: self
     integer, intent(in)                           :: nx, ny, nsample
     real(sp), dimension(nx, nsample), intent(in)  :: x      ! (features, nsample)
-    real(sp), dimension(ny, nsample), intent(inout) :: output ! (outputs, nsample) 
+    real(sp), dimension(ny, nsample), intent(out) :: output ! (outputs, nsample) 
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample), &
                                           target  :: a1, a2  
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
@@ -684,10 +685,10 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
       layersizes(i) = size(self%layers(i) % b)
     end do
 
-    !$acc enter data create(a1, a2)                                              
+    !$acc enter data create(a1, a2, output)                                              
     !$acc enter data copyin(nlayers, layersizes, neurons, nsample, nx, ny)
 
-    !$acc data present(layersizes, output)
+    !$acc data present(layersizes, x, output)
     associate(layers=>self%layers)
       
       wt => layers(1) % w_transposed

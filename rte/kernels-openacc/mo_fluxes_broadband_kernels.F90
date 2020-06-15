@@ -32,8 +32,22 @@ contains
     integer,                               intent(in ) :: ngpt, nlev, ncol
     real(wp), dimension(ngpt, nlev, ncol), intent(in ) :: spectral_flux
     real(wp), dimension(nlev, ncol),       intent(out) :: broadband_flux
+    integer  :: igpt, ilev, icol
+    real(wp) :: bb_flux_s
 
-    broadband_flux  = sum(spectral_flux, 1)
+    !$acc parallel loop gang collapse(2)
+    do icol = 1, ncol
+      do ilev = 1, nlev
+
+        bb_flux_s = 0.0_wp
+        !$acc loop vector reduction(+:bb_flux_s)
+        do igpt = 1, ngpt
+          bb_flux_s = bb_flux_s + spectral_flux(igpt, ilev, icol)
+        end do
+       broadband_flux(ilev, icol) = bb_flux_s
+      end do
+    end do
+
 
   end subroutine sum_broadband
 
@@ -41,8 +55,18 @@ contains
     integer,                         intent(in ) :: nlev, ngpt
     real(wp), dimension(ngpt, nlev), intent(in ) :: spectral_flux
     real(wp), dimension(nlev),       intent(out) :: broadband_flux
+    integer  :: igpt, ilev
+    real(wp) :: bb_flux_s
 
-    broadband_flux  = sum(spectral_flux, 1)
+    !$acc parallel loop gang
+    do ilev = 1, nlev
+      bb_flux_s = 0.0_wp
+      !$acc loop vector reduction(+:bb_flux_s)
+      do igpt = 1, ngpt
+        bb_flux_s = bb_flux_s + spectral_flux(igpt, ilev)
+      end do
+      broadband_flux(ilev) = bb_flux_s
+    end do
 
   end subroutine sum_broadband_nocol
   ! ----------------------------------------------------------------------------

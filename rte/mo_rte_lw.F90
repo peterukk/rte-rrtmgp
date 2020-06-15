@@ -35,6 +35,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_rte_lw
   use mo_rte_kind,      only: wp, wl
+  use mo_rte_config,    only: check_extents, check_values
   use mo_rte_util_array,only: any_vals_less_than, any_vals_outside, extents_are
 
   use mo_optical_props, only: ty_optical_props, &
@@ -95,7 +96,7 @@ contains
     integer :: n_quad_angs
     integer :: icol, iband, igpt
     real(wp) :: lw_Ds_wt
-    logical :: using_2stream, computing_gpoint_fluxes
+    logical :: using_2stream, computing_gpoint_fluxes, compute_Jac
     integer,  dimension(optical_props%get_ngpt())     :: gpoint_bands
     real(wp), dimension(:,:), contiguous, pointer     :: inc_flux_toa
     real(wp), dimension(:,:), allocatable, target     :: inc_flux_zero
@@ -148,35 +149,54 @@ contains
       return
     end if
     if (present(flux_up_Jac)) then
+      ! The optional argument flux_up_Jac can't be passed directly to the kernels, 
+      ! because they have C-binds which are incompatible with optional/allocatable
+      compute_Jac = .true.
       if( .not. extents_are(flux_up_Jac, nlay+1, ncol)) &
         error_msg = "rte_lw: flux Jacobian inconsistently sized"
+    else
+      compute_Jac = .false.
     endif
 
     !
     ! Source functions
     !
-    if(any([sources%get_ncol(), sources%get_nlay(), sources%get_ngpt()]  /= [ncol, nlay, ngpt])) &
-      error_msg = "rte_lw: sources and optical properties inconsistently sized"
+    if (check_extents) then
+      if(any([sources%get_ncol(), sources%get_nlay(), sources%get_ngpt()]  /= [ncol, nlay, ngpt])) &
+        error_msg = "rte_lw: sources and optical properties inconsistently sized"
+    end if
+
     ! Also need to validate
 
-    !
-    ! Surface emissivity
-    !
-    !$acc update self(sfc_emis)
-    if(any([size(sfc_emis,1), size(sfc_emis,2)] /= [nband, ncol])) &
-      error_msg = "rte_lw: sfc_emis inconsistently sized"
-    if(any(sfc_emis < 0._wp .or. sfc_emis > 1._wp)) &
-      error_msg = "rte_lw: sfc_emis has values < 0 or > 1"
-    if(len_trim(error_msg) > 0) return
+    if (check_extents) then
+      !
+      ! Surface emissivity
+      !
+      if(.not. extents_are(sfc_emis, nband, ncol)) &
+        error_msg = "rte_lw: sfc_emis inconsistently sized"
+      !
+      ! Incident flux, if present
+      !
+      if(present(inc_flux)) then
+        if(.not. extents_are(inc_flux, ngpt, ncol)) &
+          error_msg = "rte_lw: inc_flux inconsistently sized"
+      end if
+    end if
 
-    !
-    ! Incident flux, if present
-    !
-    if(present(inc_flux)) then
-      if(any([size(inc_flux,1), size(inc_flux,2)] /= [ngpt, ncol])) &
-        error_msg = "rte_lw: inc_flux inconsistently sized"
-      if(any(inc_flux < 0._wp)) &
-        error_msg = "rte_lw: inc_flux has values < 0"
+
+    if(check_values) then
+      if(any_vals_outside(sfc_emis, 0._wp, 1._wp)) &
+        error_msg = "rte_lw: sfc_emis has values < 0 or > 1"
+      if(present(inc_flux)) then
+        if(any_vals_less_than(inc_flux, 0._wp)) &
+          error_msg = "rte_lw: inc_flux has values < 0"
+      end if
+      if(present(n_gauss_angles)) then
+        if(n_gauss_angles > max_gauss_pts) &
+          error_msg = "rte_lw: asking for too many quadrature points for no-scattering calculation"
+        if(n_gauss_angles < 1) &
+          error_msg = "rte_lw: have to ask for at least one quadrature point for no-scattering calculation"
+      end if
     end if
     if(len_trim(error_msg) > 0) return
 
@@ -184,14 +204,7 @@ contains
     ! Number of quadrature points for no-scattering calculation
     !
     n_quad_angs = 1
-    if(present(n_gauss_angles)) then
-      if(n_gauss_angles > max_gauss_pts) &
-        error_msg = "rte_lw: asking for too many quadrature points for no-scattering calculation"
-      if(n_gauss_angles < 1) &
-        error_msg = "rte_lw: have to ask for at least one quadrature point for no-scattering calculation"
-      n_quad_angs = n_gauss_angles
-    end if
-
+    if(present(n_gauss_angles)) n_quad_angs = n_gauss_angles
     !
     ! Optionally - use 2-stream methods when low-order scattering properties are provided?
     !
@@ -231,11 +244,11 @@ contains
     end select
     if(len_trim(error_msg) > 0) return
 
+    !
+    ! Ensure values of tau, ssa, and g are reasonable if using scattering
+    !
+    if(check_values) error_msg =  optical_props%validate()
 
-    !
-    ! Ensure values of tau, ssa, and g are reasonable
-    !
-    error_msg =  optical_props%validate()
     if(len_trim(error_msg) > 0) then
       if(len_trim(optical_props%get_name()) > 0) &
         error_msg = trim(optical_props%get_name()) // ': ' // trim(error_msg)
@@ -247,23 +260,18 @@ contains
     !    Lower boundary condition -- expand surface emissivity by band to gpoints
     !
     allocate(sfc_emis_gpt(ngpt,         ncol))
-    allocate(flux_upJac(nlay+1, ncol))
-    !$acc enter data create(sfc_emis_gpt) 
+    allocate(flux_upJac  (nlay+1,       ncol))
     !$acc enter data create(flux_upJac) 
+    !$acc enter data create(sfc_emis_gpt) 
 
     gpoint_bands = optical_props%get_gpoint_bands()
+    !$acc enter data copyin(gpoint_bands) 
 
-    !$acc enter data copyin(sfc_emis,gpoint_bands)
-    !$acc parallel loop collapse(2)
-    do icol = 1, ncol
-      do igpt = 1, ngpt
-        sfc_emis_gpt(igpt,icol) = sfc_emis(gpoint_bands(igpt),icol)
-      end do
-    end do
+    call expand(optical_props, sfc_emis, sfc_emis_gpt)
 
-    allocate(Ds(n_quad_angs), weights(n_quad_angs))
-    Ds      = gauss_Ds(1:n_quad_angs,n_quad_angs)
-    weights = gauss_wts(1:n_quad_angs,n_quad_angs)
+    ! allocate(Ds(n_quad_angs), weights(n_quad_angs))
+    ! Ds      = gauss_Ds(1:n_quad_angs,n_quad_angs)
+    ! weights = gauss_wts(1:n_quad_angs,n_quad_angs)
 
     if(present(inc_flux)) then
       !$acc enter data copyin(inc_flux)
@@ -279,14 +287,13 @@ contains
       end do
       inc_flux_toa => inc_flux_zero
     end if
+    !$acc enter data attach(inc_flux_toa) 
+
     !
     ! Compute the radiative transfer...
     !
-    !$acc exit data delete(sfc_emis)
-
-    !$acc enter data copyin(n_quad_angs, Ds, weights, top_at_1)
-
-    !$acc data present(optical_props%tau, sources%planck_frac, sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd, inc_flux_toa, fluxes%flux_up, fluxes%flux_dn)
+  
+    !$acc data present(optical_props%tau, sources%planck_frac, sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd, sources%sfc_source_bnd_Jac, inc_flux_toa, fluxes%flux_up, fluxes%flux_dn)
 
     if (.not. computing_gpoint_fluxes) then
 
@@ -302,19 +309,20 @@ contains
                         sources%planck_frac, sources%lay_source_bnd,      &
                         sources%lev_source_bnd,  sources%sfc_source_bnd,  &
                         sfc_emis_gpt, fluxes%flux_up, fluxes%flux_dn, &
-                        sources%sfc_source_bnd_Jac, flux_upJac)
+                        sources%sfc_source_bnd_Jac, flux_upJac, logical(compute_Jac, wl))
 
       else
           call lw_solver_noscat_GaussQuad_broadband(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
-                          n_quad_angs, Ds, weights, inc_flux_toa, &
+                          n_quad_angs, gauss_Ds(1:n_quad_angs,n_quad_angs), &
+                          gauss_wts(1:n_quad_angs,n_quad_angs), &
+                          inc_flux_toa, &
                           gpoint_bands, optical_props%tau,      &
                           sources%planck_frac, sources%lay_source_bnd,      &
                           sources%lev_source_bnd,  sources%sfc_source_bnd,  &
                           sfc_emis_gpt, fluxes%flux_up, fluxes%flux_dn, &
-                          sources%sfc_source_bnd_Jac, flux_upJac)
+                          sources%sfc_source_bnd_Jac, flux_upJac,  logical(compute_Jac, wl))
       end if
-        !$acc update self(fluxes%flux_up, fluxes%flux_dn)
-        ! print *, "max fluxes", maxval(fluxes%flux_up), maxval(fluxes%flux_dn)
+
       class is (ty_optical_props_2str)
         if (using_2stream) then
           !
@@ -354,6 +362,8 @@ contains
 
       allocate(gpt_flux_up(ngpt, nlay+1, ncol), gpt_flux_dn(ngpt, nlay+1, ncol))
       allocate(gpt_flux_upJac(ngpt, nlay+1, ncol))
+      !$acc enter data create(gpt_flux_dn, gpt_flux_up)
+      !$acc enter data create(gpt_flux_upJac)
 
       ! Apply boundary condition
       call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl), inc_flux_toa, gpt_flux_dn)
@@ -374,8 +384,11 @@ contains
                               gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac)
 
       else
+
           call lw_solver_noscat_GaussQuad(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
-                          n_quad_angs, Ds, weights, &
+                          n_quad_angs, &
+                          gauss_Ds(1:n_quad_angs,n_quad_angs), &
+                          gauss_wts(1:n_quad_angs,n_quad_angs), &
                           gpoint_bands, optical_props%tau,      &
                           sources%planck_frac, sources%lay_source_bnd,      &
                           sources%lev_source_bnd,  sources%sfc_source_bnd,  &
@@ -383,8 +396,6 @@ contains
                           gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac)
 
       end if
-        !$acc update self(fluxes%flux_up, fluxes%flux_dn)
-        ! print *, "max fluxes", maxval(fluxes%flux_up), maxval(fluxes%flux_dn)
 
       class is (ty_optical_props_2str)
         if (using_2stream) then
@@ -404,9 +415,12 @@ contains
           ! Re-scaled solution to account for scattering
           !
           allocate(gpt_flux_dnJac(ngpt, nlay+1, ncol))
+          !$acc enter data create(gpt_flux_dnJac)
 
           call lw_solver_1rescl_GaussQuad(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
-                                 n_quad_angs, Ds, weights, &
+                                 n_quad_angs, &
+                                 gauss_Ds(1:n_quad_angs,n_quad_angs), &
+                                 gauss_wts(1:n_quad_angs,n_quad_angs), &
                                  gpoint_bands, optical_props%tau, optical_props%ssa, optical_props%g, &
                                  sources%planck_frac, sources%lay_source_bnd,      &
                                  sources%lev_source_bnd,  sources%sfc_source_bnd,  &
@@ -414,6 +428,7 @@ contains
                                  gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac, gpt_flux_dnJac)
         !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)
         endif
+
       class is (ty_optical_props_nstr)
         !
         ! n-stream calculation
@@ -425,39 +440,70 @@ contains
       ! ...and reduce spectral fluxes to desired output quantities
       !
       ! error_msg = fluxes%reduce(gpt_flux_up, gpt_flux_dn, optical_props, top_at_1)
-
       call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_up, fluxes%flux_up)
       call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_dn, fluxes%flux_dn)
-      
+
       if (present(flux_up_Jac)) then
         call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_upJac, flux_up_Jac)
 
-        if(.not. using_2stream) then
+        select type (optical_props)
+        class is (ty_optical_props_1scl)
 
-          call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_dnJac, flux_dn_Jac)
+          if(.not. using_2stream) then
 
-          ! if (present(flux_dn_Jac)) Jac_fluxes%flux_dn => flux_dn_Jac
-          ! error_msg = Jac_fluxes%reduce(gpt_flux_upJac, gpt_flux_dnJac, optical_props, top_at_1)
+            if (present(flux_dn_Jac)) then
+               ! Jac_fluxes%flux_dn => flux_dn_Jac
+               ! error_msg = Jac_fluxes%reduce(gpt_flux_upJac, gpt_flux_dnJac, optical_props, top_at_1)
 
-          !$acc exit data delete(gpt_flux_dnJac)
-          deallocate(gpt_flux_dnJac)
+                call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_dnJac, flux_dn_Jac)
+                !$acc exit data delete(gpt_flux_dnJac)
+                deallocate(gpt_flux_dnJac)
+            end if
+          end if
+      end select
+
         end if
 
-      end if 
+      !$acc exit data delete(gpt_flux_dn, gpt_flux_up)
+      !$acc exit data delete(gpt_flux_upJac)
 
     end if 
+
     !$acc end data                
   
-    
     if (error_msg /= '') return
 
-    !$acc exit data delete(sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd)
-    !$acc exit data delete(sources, optical_props)
-    !$acc exit data delete(inc_flux_zero)
-    !$acc exit data delete(n_quad_angs, Ds, weights, top_at_1, gpoint_bands)
-    !$acc exit data delete(sfc_emis_gpt)
+    !$acc exit data detach(inc_flux_toa) delete(gpoint_bands, inc_flux_zero, inc_flux_toa, inc_flux, sfc_emis_gpt)
     deallocate(sfc_emis_gpt, inc_flux_zero)
 
   end function rte_lw
+  !--------------------------------------------------------------------------------------------------------------------
+  !
+  ! Expand from band to g-point dimension, transpose dimensions (nband, ncol) -> (ncol,ngpt)
+  !
+  subroutine expand(ops,arr_in,arr_out)
+    class(ty_optical_props),  intent(in ) :: ops
+    real(wp), dimension(:,:), intent(in ) :: arr_in  ! (nband, ncol)
+    real(wp), dimension(:,:), intent(out) :: arr_out ! (ngpt, ncol)
+    ! -------------
+    integer :: ncol, nband, ngpt
+    integer :: icol, iband, igpt
+    integer, dimension(2,ops%get_nband()) :: limits
+
+    ncol  = size(arr_in, 2)
+    nband = ops%get_nband()
+    ngpt  = ops%get_ngpt()
+    limits = ops%get_band_lims_gpoint()
+    !$acc parallel loop collapse(2) copyin(arr_in, limits)
+    do iband = 1, nband
+      do icol = 1, ncol
+        do igpt = limits(1, iband), limits(2, iband)
+          arr_out(igpt, icol) = arr_in(iband,icol)
+        end do
+      end do
+    end do
+
+  end subroutine expand
+  !--------------------------------------------------------------------------------------------------------------------
 
 end module mo_rte_lw
