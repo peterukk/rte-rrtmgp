@@ -771,7 +771,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('nn_inputs_write')
 #endif
-
         !$acc kernels present(gas_array, input_scaler_max, input_scaler_min)
         
         ! nn_inputs(igas+3,:,:) = gas_array(:,:)

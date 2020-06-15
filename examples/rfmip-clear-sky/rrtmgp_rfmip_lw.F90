@@ -157,20 +157,22 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_nn      = .true.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
-  compare_flux = .false.
+  compare_flux = .true.
 
   ! Where neural network model weights are located (required!)
   ! Planck model
   modelfile_source        = "../../neural/data/pfrac-19-16-16-pow2-minmax2.txt" ! Best so far
   ! Optical depth model
   modelfile_tau           = "../../neural/data/tau-lw-19-64-64-ynorm-pow8-minmax3.txt"   ! Best so far
+
+  !modelfile_tau           = "../../neural/data/tau-lw-19-48-48-48-ynorm-pow8-minmax.txt"
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'

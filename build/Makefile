@@ -23,7 +23,7 @@ VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL
 ifeq ($(USE_TIMING),yes)
 	#
 	# Timing library
-	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -fopenmp
+	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING
 endif
 
 ifeq ($(USE_BLIS),yes)
