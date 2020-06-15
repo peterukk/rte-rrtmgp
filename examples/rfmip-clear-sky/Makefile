@@ -28,9 +28,9 @@ LIBS      += -lnetcdff -lnetcdf
 #
 # THIS IS SET UP IN THE MASTER MAKEFILE
 
-ifeq ($(USE_TIMING),yes)
-	USE_OPENMP=yes
-endif
+#ifeq ($(USE_TIMING),yes)
+#	USE_OPENMP=yes
+#endif
 # Use OpenMP?
 ifeq ($(USE_OPENMP),yes)
 	OMPFLAG = -fopenmp
