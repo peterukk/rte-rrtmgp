@@ -33,7 +33,7 @@ contains
   ! for calculations of major optical depths, minor optical depths, Rayleigh,
   ! and Planck fractions
   subroutine interpolation( &
-                nlay,ncol,ngas,nflav,neta, npres, ntemp, &
+                ncol,nlay,ngas,nflav,neta, npres, ntemp, &
                 flavor,                                  &
                 press_ref_log, temp_ref,press_ref_log_delta,    &
                 temp_ref_min,temp_ref_delta,press_ref_trop_log, &
@@ -56,8 +56,8 @@ contains
     real(wp),    dimension(nlay,ncol,0:ngas), intent(in) :: col_gas
 
     ! outputs
-    integer,     dimension(nlay,ncol), intent(out) :: jtemp, jpress
-    logical(wl), dimension(nlay,ncol), intent(out) :: tropo
+    integer,     dimension(nlay,ncol),            intent(out) :: jtemp, jpress
+    logical(wl), dimension(nlay,ncol),            intent(out) :: tropo
     integer,     dimension(2,    nflav,nlay,ncol), intent(out) :: jeta
     real(wp),    dimension(2,    nflav,nlay,ncol), intent(out) :: col_mix
     real(wp),    dimension(2,2,2,nflav,nlay,ncol), intent(out) :: fmajor
@@ -76,8 +76,10 @@ contains
     ! local indexes
     integer :: ilay, icol, iflav, igases(2), itropo, itemp
 
-    !$acc enter data copyin(flavor,press_ref_log,temp_ref,vmr_ref,play,tlay,col_gas)
-    !$acc enter data create(jtemp,jpress,tropo,jeta,col_mix,fmajor,fminor)
+    !$acc data present(jtemp, jpress, jeta, tropo, fmajor)
+
+    !$acc enter data copyin(flavor,press_ref_log,temp_ref,vmr_ref)
+    !$acc enter data create(col_mix,fminor)
     !$acc enter data create(ftemp,fpress)
 
     !$acc parallel loop gang vector collapse(2)
@@ -137,9 +139,14 @@ contains
       end do ! ilay,icol
     end do
 
-    !$acc exit data delete(flavor,press_ref_log,temp_ref,vmr_ref,play,tlay,col_gas)
-    !$acc exit data copyout(jtemp,jpress,tropo,jeta,col_mix,fmajor,fminor)
+    !$acc exit data delete(flavor,press_ref_log,temp_ref,vmr_ref)
+
+    ! copyout deletes data from device?
+    ! !$acc exit data copyout(jtemp,jpress,tropo,jeta,col_mix,fmajor,fminor)
+
     !$acc exit data delete(ftemp,fpress)
+
+    !$acc end data
 
   end subroutine interpolation
   
@@ -201,20 +208,21 @@ contains
     integer,     dimension(  nminorupper),           intent(in) :: idx_minor_scaling_upper
     integer,     dimension(  nminorlower),           intent(in) :: kminor_start_lower
     integer,     dimension(  nminorupper),           intent(in) :: kminor_start_upper
-    logical(wl), dimension(ncol,nlay),               intent(in) :: tropo
+    logical(wl), dimension(nlay,ncol),               intent(in) :: tropo
     ! ---------------------
     ! inputs from profile or parent function
-    real(wp), dimension(2,    nflav,ncol,nlay       ), intent(in) :: col_mix
-    real(wp), dimension(2,2,2,nflav,ncol,nlay       ), intent(in) :: fmajor
-    real(wp), dimension(2,2,  nflav,ncol,nlay       ), intent(in) :: fminor
-    real(wp), dimension(            ncol,nlay       ), intent(in) :: play, tlay      ! pressure and temperature
-    real(wp), dimension(            ncol,nlay,0:ngas), intent(in) :: col_gas
-    integer,  dimension(2,    nflav,ncol,nlay       ), intent(in) :: jeta
-    integer,  dimension(            ncol,nlay       ), intent(in) :: jtemp
-    integer,  dimension(            ncol,nlay       ), intent(in) :: jpress
+    real(wp), dimension(2,    nflav,nlay,ncol       ), intent(in) :: col_mix
+    real(wp), dimension(2,2,2,nflav,nlay,ncol       ), intent(in) :: fmajor
+    real(wp), dimension(2,2,  nflav,nlay,ncol       ), intent(in) :: fminor
+    real(wp), dimension(            nlay,ncol       ), intent(in) :: play, tlay      ! pressure and temperature
+    real(wp), dimension(            nlay,ncol,0:ngas), intent(in) :: col_gas
+    integer,  dimension(2,    nflav,nlay,ncol       ), intent(in) :: jeta
+    integer,  dimension(            nlay,ncol       ), intent(in) :: jtemp
+    integer,  dimension(            nlay,ncol       ), intent(in) :: jpress
     ! ---------------------
     ! output - optical depth
     real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
+    
     ! ---------------------
     ! Local variables
     !
@@ -225,32 +233,35 @@ contains
     ! ----------------------------------------------------------------
 
     !$acc enter data create(itropo_lower, itropo_upper)
-    !$acc enter data copyin(play, tlay, tropo, gpoint_flavor, jeta, jtemp, col_gas, fminor, tau)
+
+    !$acc data present(play, tlay, tropo, gpoint_flavor, jeta, jtemp, col_gas, fminor, tau)
 
     ! ---------------------
     ! Layer limits of upper, lower atmospheres
     ! ---------------------
-    top_at_1 = play(1,1) < play(1, nlay)
+    top_at_1 = play(1,1) < play(nlay, 1)
     if(top_at_1) then
       !$acc parallel loop
       do icol = 1,ncol
         itropo_lower(icol,2) = nlay
-        itropo_lower(icol,1) = minloc(play(icol,:), dim=1, mask=tropo(icol,:))
+        itropo_lower(icol,1) = minloc(play(:,icol), dim=1, mask=tropo(:,icol))
         itropo_upper(icol,1) = 1
-        itropo_upper(icol,2) = maxloc(play(icol,:), dim=1, mask=(.not. tropo(icol,:)))
+        itropo_upper(icol,2) = maxloc(play(:,icol), dim=1, mask=(.not. tropo(:,icol)))
       end do
     else
       !$acc parallel loop
       do icol = 1,ncol
         itropo_lower(icol,1) = 1
-        itropo_lower(icol,2) = minloc(play(icol,:), dim=1, mask=tropo(icol,:))
+        itropo_lower(icol,2) = minloc(play(:,icol), dim=1, mask=tropo(:,icol))
         itropo_upper(icol,2) = nlay
-        itropo_upper(icol,1) = maxloc(play(icol,:), dim=1, mask=(.not.tropo(icol,:)))
+        itropo_upper(icol,1) = maxloc(play(:,icol), dim=1, mask=(.not.tropo(:,icol)))
       end do
     end if
+
     ! ---------------------
     ! Major Species
     ! ---------------------
+
     call gas_optical_depths_major(   &
           ncol,nlay,nbnd,ngpt,       & ! dimensions
           nflav,neta,npres,ntemp,    &
@@ -260,6 +271,7 @@ contains
           col_mix,fmajor,            &
           jeta,tropo,jtemp,jpress,   &
           tau)
+
     ! ---------------------
     ! Minor Species - lower
     ! ---------------------
@@ -281,6 +293,7 @@ contains
            col_gas,fminor,jeta,        &
            itropo_lower,jtemp,         &
            tau)
+
     ! ---------------------
     ! Minor Species - upper
     ! ---------------------
@@ -303,13 +316,13 @@ contains
            itropo_upper,jtemp,         &
            tau)
 
+    !$acc end data 
+
     !$acc exit data delete(itropo_lower,itropo_upper)
-    !$acc exit data delete(play, tlay, tropo, gpoint_flavor, jeta, jtemp, col_gas, fminor)
+    !$acc exit data delete(gpoint_flavor, col_gas, fminor)
     !$acc exit data copyout(tau)
 
   end subroutine compute_tau_absorption
-  ! --------------------------------------------------------------------------------------
-
   ! --------------------------------------------------------------------------------------
   !
   ! compute minor species optical depths
@@ -330,11 +343,11 @@ contains
     real(wp), dimension(ngpt,neta,npres+1,ntemp), intent(in) :: kmajor
 
     ! inputs from profile or parent function
-    real(wp),    dimension(2,    nflav,ncol,nlay), intent(in) :: col_mix
-    real(wp),    dimension(2,2,2,nflav,ncol,nlay), intent(in) :: fmajor
-    integer,     dimension(2,    nflav,ncol,nlay), intent(in) :: jeta
-    logical(wl), dimension(ncol,nlay), intent(in) :: tropo
-    integer,     dimension(ncol,nlay), intent(in) :: jtemp, jpress
+    real(wp),    dimension(2,    nflav,nlay, ncol), intent(in) :: col_mix
+    real(wp),    dimension(2,2,2,nflav,nlay, ncol), intent(in) :: fmajor
+    integer,     dimension(2,    nflav,nlay, ncol), intent(in) :: jeta
+    logical(wl), dimension(nlay, ncol), intent(in) :: tropo
+    integer,     dimension(nlay, ncol), intent(in) :: jtemp, jpress
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
@@ -342,34 +355,28 @@ contains
     ! local variables
     real(wp) :: tau_major ! major species optical depth
     ! local index
-    integer :: icol, ilay, iflav, igpt, itropo
-
+    integer :: icol, ilay, iflav, ibnd, igpt, itropo
+    integer :: gptS, gptE
     ! -----------------
 
-    ! -----------------
-
-    ! optical depth calculation for major species
     !$acc parallel loop collapse(3)
-    do ilay = 1, nlay
-      do icol = 1, ncol
-        ! optical depth calculation for major species
+    do icol = 1, ncol
+      do ilay = 1, nlay
         do igpt = 1, ngpt
           ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
-          itropo = merge(1,2,tropo(icol,ilay))  ! WS: moved inside innermost loop
-
-          ! binary species parameter (eta) and col_mix depend on band flavor
-          iflav = gpoint_flavor(itropo, igpt)
+          itropo = merge(1,2,tropo(ilay,icol))
+          iflav = gpoint_flavor(itropo, igpt) !eta interpolation depends on band's flavor
           tau_major = &
             ! interpolation in temperature, pressure, and eta
-            interpolate3D(col_mix(:,iflav,icol,ilay), &
-                          fmajor(:,:,:,iflav,icol,ilay), kmajor, &
-                          igpt, jeta(:,iflav,icol,ilay), jtemp(icol,ilay),jpress(icol,ilay)+itropo)
+            interpolate3D(col_mix(:,iflav,ilay,icol),                   &
+                                 fmajor(:,:,:,iflav,ilay,icol), kmajor, &
+                                 igpt, jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)
           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_major
         end do ! igpt
       end do
     end do ! ilay
-  end subroutine gas_optical_depths_major
 
+  end subroutine gas_optical_depths_major
   ! ----------------------------------------------------------
   !
   ! compute minor species optical depths
@@ -400,12 +407,12 @@ contains
     logical(wl), dimension(  nminor),            intent(in   ) :: scale_by_complement
     integer,     dimension(  nminor),            intent(in   ) :: kminor_start
     integer,     dimension(  nminor),            intent(in   ) :: idx_minor, idx_minor_scaling
-    real(wp),    dimension(ncol,nlay),           intent(in   ) :: play, tlay
-    real(wp),    dimension(ncol,nlay,0:ngas),    intent(in   ) :: col_gas
-    real(wp),    dimension(2,2,nflav,ncol,nlay), intent(in   ) :: fminor
-    integer,     dimension(2,  nflav,ncol,nlay), intent(in   ) :: jeta
+    real(wp),    dimension(nlay, ncol),          intent(in   ) :: play, tlay
+    real(wp),    dimension(nlay, ncol,0:ngas),   intent(in   ) :: col_gas
+    real(wp),    dimension(2,2,nflav,nlay,ncol), intent(in   ) :: fminor
+    integer,     dimension(2,  nflav,nlay,ncol), intent(in   ) :: jeta
     integer,     dimension(ncol, 2),             intent(in   ) :: layer_limits
-    integer,     dimension(ncol,nlay),           intent(in   ) :: jtemp
+    integer,     dimension(nlay,ncol),           intent(in   ) :: jtemp
     real(wp),    dimension(ngpt,nlay,ncol),      intent(inout) :: tau
     ! -----------------
     ! local variables
@@ -427,23 +434,23 @@ contains
     max_gpt_diff = maxval( minor_limits_gpt(2,:) - minor_limits_gpt(1,:) )
 
     !$acc parallel loop gang vector collapse(3)
-    do ilay = 1 , nlay
-      do icol = 1, ncol
+    do icol = 1, ncol
+      do ilay = 1 , nlay
         do igpt0 = 0, max_gpt_diff
           !
           ! This check skips individual columns with no pressures in range
           !
           if ( layer_limits(icol,1) <= 0 .or. ilay < layer_limits(icol,1) .or. ilay > layer_limits(icol,2) ) cycle
 
-          myplay  = play (icol,ilay)
-          mytlay  = tlay (icol,ilay)
-          myjtemp = jtemp(icol,ilay)
-          mycol_gas_h2o = col_gas(icol,ilay,idx_h2o)
-          mycol_gas_0   = col_gas(icol,ilay,0)
+          myplay  = play (ilay, icol)
+          mytlay  = tlay (ilay, icol)
+          myjtemp = jtemp(ilay, icol)
+          mycol_gas_h2o = col_gas(ilay, icol,idx_h2o)
+          mycol_gas_0   = col_gas(ilay, icol,0)
 
           do imnr = 1, extent
 
-            scaling = col_gas(icol,ilay,idx_minor(imnr))
+            scaling = col_gas(ilay, icol,idx_minor(imnr))
             if (minor_scales_with_density(imnr)) then
               !
               ! NOTE: P needed in hPa to properly handle density scaling.
@@ -451,17 +458,19 @@ contains
               scaling = scaling * (PaTohPa * myplay/mytlay)
 
               if(idx_minor_scaling(imnr) > 0) then  ! there is a second gas that affects this gas's absorption
-                mycol_gas_imnr = col_gas(icol,ilay,idx_minor_scaling(imnr))
+                mycol_gas_imnr = col_gas(ilay, icol,idx_minor_scaling(imnr))
                 vmr_fact = 1._wp / mycol_gas_0
                 dry_fact = 1._wp / (1._wp + mycol_gas_h2o * vmr_fact)
                 ! scale by density of special gas
                 if (scale_by_complement(imnr)) then ! scale by densities of all gases but the special one
                   scaling = scaling * (1._wp - mycol_gas_imnr * vmr_fact * dry_fact)
                 else
-                  scaling = scaling *          mycol_gas_imnr * vmr_fact * dry_fact
+                  scaling = scaling *          (mycol_gas_imnr * vmr_fact * dry_fact)
                 endif
               endif
             endif
+
+            scaling = scaling * (1._wp - col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
 
             !
             ! Interpolation of absorption coefficient and calculation of optical depth
@@ -481,10 +490,10 @@ contains
               tau_minor = 0._wp
               iflav = gpt_flv(idx_tropo,igpt) ! eta interpolation depends on flavor
               minor_loc = minor_start + (igpt - gptS) ! add offset to starting point
-              kminor_loc = interpolate2D(fminor(:,:,iflav,icol,ilay), kminor, minor_loc, &
-                                          jeta(:,iflav,icol,ilay), myjtemp)
+              kminor_loc = interpolate2D(fminor(:,:,iflav,ilay, icol), kminor, minor_loc, &
+                                          jeta(:,iflav,ilay, icol), myjtemp)
+                                                 
               tau_minor = kminor_loc * scaling
-
               !$acc atomic update
               tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_minor
             endif
@@ -495,7 +504,9 @@ contains
       enddo
     enddo
 
+
   end subroutine gas_optical_depths_minor
+
   ! ----------------------------------------------------------
   !
   ! compute Rayleigh scattering optical depths
@@ -513,12 +524,12 @@ contains
     integer,     dimension(2,nbnd),              intent(in ) :: band_lims_gpt ! start and end g-point for each band
     real(wp),    dimension(ngpt,neta,ntemp,2),   intent(in ) :: krayl
     integer,                                     intent(in ) :: idx_h2o
-    real(wp),    dimension(ncol,nlay),           intent(in ) :: col_dry
-    real(wp),    dimension(ncol,nlay,0:ngas),    intent(in ) :: col_gas
-    real(wp),    dimension(2,2,nflav,ncol,nlay), intent(in ) :: fminor
-    integer,     dimension(2,  nflav,ncol,nlay), intent(in ) :: jeta
-    logical(wl), dimension(ncol,nlay),           intent(in ) :: tropo
-    integer,     dimension(ncol,nlay),           intent(in ) :: jtemp
+    real(wp),    dimension(nlay,ncol),           intent(in ) :: col_dry
+    real(wp),    dimension(nlay,ncol,0:ngas),    intent(in ) :: col_gas
+    real(wp),    dimension(2,2,nflav,nlay,ncol), intent(in ) :: fminor
+    integer,     dimension(2,  nflav,nlay,ncol), intent(in ) :: jeta
+    logical(wl), dimension(nlay,ncol),           intent(in ) :: tropo
+    integer,     dimension(nlay,ncol),           intent(in ) :: jtemp
     ! outputs
     real(wp),    dimension(ngpt,nlay,ncol),      intent(out) :: tau_rayleigh
     ! -----------------
@@ -527,37 +538,38 @@ contains
     integer  :: icol, ilay, iflav, igpt
     integer  :: itropo
     ! -----------------
-
     !$acc parallel loop collapse(3)
-    do ilay = 1, nlay
-      do icol = 1, ncol
+    do icol = 1, ncol
+      do ilay = 1, nlay
         do igpt = 1, ngpt
-          itropo = merge(1,2,tropo(icol,ilay)) ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
+          itropo = merge(1,2,tropo(ilay, icol)) ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
           iflav = gpoint_flavor(itropo, igpt)
-          k = interpolate2D(fminor(:,:,iflav,icol,ilay), &
+          k = interpolate2D(fminor(:,:,iflav,ilay, icol), &
                             krayl(:,:,:,itropo),      &
-                            igpt, jeta(:,iflav,icol,ilay), jtemp(icol,ilay))
-          tau_rayleigh(igpt,ilay,icol) =  k * (col_gas(icol,ilay,idx_h2o)+col_dry(icol,ilay))
+                            igpt, jeta(:,iflav,ilay, icol), jtemp(ilay, icol))
+          tau_rayleigh(igpt,ilay,icol) =  k * (col_gas(ilay, icol,idx_h2o)+col_dry(ilay, icol))
         end do
       end do
     end do
   end subroutine compute_tau_rayleigh
 
-      ! ----------------------------------------------------------
+  ! ----------------------------------------------------------
+  ! Calculation of fraction of band's Planck irradiance associated with each g-point
+! ----------------------------------------------------------
   subroutine compute_source_bybnd_pfrac_bygpt(             &
                     ncol, nlay, nbnd, ngpt,                &
                     nflav, neta, npres, ntemp, nPlanckTemp,&
-                    tlay, tlev, tsfc, sfc_lay,             &
+                    tlay, tlev, tsfc,             &
                     fmajor, jeta, tropo, jtemp, jpress,    &
                     gpoint_bands, band_lims_gpt,           &
                     temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
-                    sfc_source_bnd, lay_source_bnd, lev_source_bnd, pfrac) bind(C, name="compute_source_bybnd_pfrac_bygpt")
+                    sfc_source_bnd, sfc_source_bnd_Jac,    &
+                    lay_source_bnd, lev_source_bnd, pfrac) bind(C, name="compute_source_bybnd_pfrac_bygpt")
     integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
     integer,                                    intent(in) :: nflav, neta, npres, ntemp, nPlanckTemp
     real(wp),    dimension(nlay, ncol  ),        intent(in) :: tlay
     real(wp),    dimension(nlay+1, ncol),        intent(in) :: tlev
     real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-    integer,                                    intent(in) :: sfc_lay
     ! Interpolation variables
     real(wp),    dimension(2,2,2,nflav,nlay, ncol), intent(in) :: fmajor
     integer,     dimension(2,    nflav,nlay, ncol), intent(in) :: jeta
@@ -572,6 +584,7 @@ contains
     integer,  dimension(2,ngpt),                  intent(in) :: gpoint_flavor
 
     real(wp), dimension(nbnd,     ncol),          intent(inout) :: sfc_source_bnd
+    real(wp), dimension(nbnd,     ncol),          intent(inout) :: sfc_source_bnd_Jac
     real(wp), dimension(nbnd,nlay,ncol),          intent(inout) :: lay_source_bnd
     real(wp), dimension(nbnd,nlay+1,ncol),        intent(inout) :: lev_source_bnd
     real(wp), dimension(ngpt,nlay,ncol),          intent(inout) :: pfrac
@@ -580,25 +593,45 @@ contains
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
+    real(wp), parameter               :: delta_Tsurf = 1.0_wp
+
     ! -----------------    
 
     ! Calculation of fraction of band's Planck irradiance associated with each g-point
-    !$acc kernels present(sfc_source_bnd,lev_source_bnd,lay_source_bnd,tsfc,tlay,tlev,temp_ref_min,totplnk_delta,totplnk)
-
+    
+    !$acc data present(sfc_source_bnd,sfc_source_bnd_Jac,lev_source_bnd,lay_source_bnd,tsfc,tlay,tlev,temp_ref_min,totplnk_delta,jpress,jtemp,jeta,fmajor,tropo,totplnk,pfrac)
+    
+    !$acc parallel loop 
     do icol = 1, ncol
       !
       ! Planck function by band for the surface
       !
       call interpolate1D(tsfc(icol),   temp_ref_min, totplnk_delta, totplnk, sfc_source_bnd(:,icol))
+      call interpolate1D(tsfc(icol) + delta_Tsurf,   temp_ref_min, totplnk_delta, totplnk, sfc_source_bnd_Jac(:,icol))
       call interpolate1D(tlev(1,icol), temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,1, icol))
+    end do
 
+    ! explicit loop unrolling
+    !$acc parallel loop collapse(2)
+    do icol = 1, ncol, 2
       do ilay = 1, nlay
-        call interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,1, icol))
+        call interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,ilay+1,icol))
         call interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk, lay_source_bnd(:,ilay,icol))
+
+        if (icol < ncol) then
+          call interpolate1D(tlev(ilay+1,icol+1),  temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,ilay+1,icol+1))
+          call interpolate1D(tlay(ilay,icol+1),    temp_ref_min, totplnk_delta, totplnk, lay_source_bnd(:,ilay,icol+1))
+        end if
+      end do
+    end do
+
+   !$acc parallel loop collapse(3)
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        do igpt = 1, ngpt
         ! Calculation of fraction of band's Planck irradiance associated with each g-point
         ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
-        itropo = merge(1,2,tropo(ilay,icol))
-        do igpt = 1, ngpt
+          itropo = merge(1,2,tropo(ilay,icol))
           iflav = gpoint_flavor(itropo, igpt) !eta interpolation depends on band's flavor
           pfrac(igpt,ilay,icol) = &
             ! interpolation in temperature, pressure, and eta
@@ -607,33 +640,35 @@ contains
         end do ! g-point
       end do ! ilay
     end do ! icol
-    !$acc end kernels
 
+    !$acc end data
 
   end subroutine compute_source_bybnd_pfrac_bygpt
 
   subroutine compute_source_bybnd(                    &
                     ncol, nlay, nbnd,                 &
                     ntemp, nPlanckTemp,                   &
-                    tlay, tlev, tsfc, sfc_lay,            &
+                    tlay, tlev, tsfc,            &
                     temp_ref_min, totplnk_delta, totplnk, &
-                    sfc_source_bnd, lay_source_bnd, lev_source_bnd) bind(C, name="compute_Planck_bybnd")
+                    sfc_source_bnd, sfc_source_bnd_Jac,   &
+                    lay_source_bnd, lev_source_bnd) bind(C, name="compute_Planck_bybnd")
     integer,                                    intent(in) :: ncol, nlay, nbnd
     integer,                                    intent(in) :: ntemp, nPlanckTemp
     real(wp),    dimension(nlay,ncol  ),        intent(in) :: tlay
     real(wp),    dimension(nlay+1,ncol),        intent(in) :: tlev
     real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-    integer,                                    intent(in) :: sfc_lay
 
     real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
 
     real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd
+    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd_Jac
     real(wp), dimension(nbnd,nlay,ncol),          intent(out) :: lay_source_bnd
     real(wp), dimension(nbnd,nlay+1,ncol),        intent(out) :: lev_source_bnd
     ! -----------------
     ! local
     integer  :: ilay, icol, ibnd
+    real(wp), parameter                             :: delta_Tsurf = 1.0_wp
 
     !$acc data present(sfc_source_bnd,lev_source_bnd,lay_source_bnd,tsfc,tlay,tlev,temp_ref_min,totplnk_delta,totplnk)
     
@@ -644,6 +679,7 @@ contains
       ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
       !
       call interpolate1D(tsfc(icol),   temp_ref_min, totplnk_delta, totplnk, sfc_source_bnd(:,icol))
+      call interpolate1D(tsfc(icol) + delta_Tsurf,   temp_ref_min, totplnk_delta, totplnk, sfc_source_bnd_Jac(:,icol))
       call interpolate1D(tlev(1,icol), temp_ref_min, totplnk_delta, totplnk, lev_source_bnd(:,1, icol))
     end do ! icol
 
@@ -656,8 +692,6 @@ contains
     end do ! icol
 
     !$acc end data
-
-
 
   end subroutine compute_source_bybnd
 
@@ -724,7 +758,8 @@ contains
   ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as single precision
   ! (avoids temporary output array, which is faster)
   !
-  subroutine predict_nn_lw_blas_sp(               &
+
+    subroutine predict_nn_lw_blas_sp(               &
                     ncol, nlay, ngpt, ninputs,       & 
                     nn_inputs,                    &
                     neural_nets,                  &
@@ -738,7 +773,7 @@ contains
 
     ! outputs
     real(sp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(inout) :: pfrac, tau
+                                        intent(out) :: pfrac, tau
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
     integer                                           :: ilay, icol, nobs
@@ -752,15 +787,75 @@ contains
 
     call neural_nets(2) % output_sgemm_tau_acc(ninputs, ngpt, nobs, input, output)
 
-    !$acc exit data delete(output)
-
     call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
 
     call neural_nets(1) %  output_sgemm_pfrac_acc(ninputs,ngpt,nobs,input, output)
 
-    ! !$acc update self(output)
-
   end subroutine predict_nn_lw_blas_sp
+
+  ! subroutine predict_nn_lw_blas_sp(               &
+  !                   ncol, nlay, ngpt, ninputs,       & 
+  !                   nn_inputs,                    &
+  !                   neural_nets,                  &
+  !                   tau, pfrac)
+  !   ! inputs
+  !   integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+  !   real(sp), dimension(ninputs,nlay,ncol), target, &     
+  !                                       intent(in)    :: nn_inputs 
+  !   ! The neural network models
+  !   type(network_type), dimension(2),   intent(in)    :: neural_nets
+
+  !   ! outputs
+  !   real(sp), dimension(ngpt,nlay,ncol), target, &
+  !                                       intent(out) :: pfrac, tau
+  !   ! local
+  !   real(sp), dimension(ngpt,nlay*ncol) :: tmp_output
+  !   real(sp), dimension(ninputs,nlay*ncol) :: tmp_input
+                      
+  !   integer     :: ilay, icol, nobs, igpt, iobs, igas
+
+  !   ! PREDICT PLANCK FRACTIONS
+  !   nobs = nlay*ncol
+
+  !   !$acc enter data create(tmp_input, tmp_output)
+
+  !   !$acc parallel loop collapse(3)
+  !   do icol = 1, ncol
+  !     do ilay = 1, nlay
+  !         do igas = 1, ninputs
+  !           iobs = icol*ilay
+  !           tmp_input(igas,iobs) = nn_inputs(igas, ilay, icol)
+  !         end do 
+  !     end do 
+  !   end do
+
+  !   call neural_nets(2) % output_sgemm_tau_acc(ninputs, ngpt, nobs, tmp_input, tmp_output)
+  
+  !   !$acc parallel loop collapse(3)
+  !   do icol = 1, ncol
+  !     do ilay = 1, nlay
+  !         do igpt = 1, ngpt
+  !           iobs = icol*ilay
+  !           tau(igpt,ilay,icol) = tmp_output(igpt, iobs)
+  !         end do 
+  !     end do 
+  !   end do
+
+  !   call neural_nets(1) %  output_sgemm_pfrac_acc(ninputs,ngpt,nobs,tmp_input, tmp_output)
+
+  !   !$acc parallel loop collapse(3)
+  !   do icol = 1, ncol
+  !     do ilay = 1, nlay
+  !         do igpt = 1, ngpt
+  !           iobs = icol*ilay
+  !           pfrac(igpt,ilay,icol) = tmp_output(igpt, iobs)
+  !         end do 
+  !     end do 
+  !   end do
+
+  !   !$acc exit data delete(tmp_input, tmp_output)
+
+  ! end subroutine predict_nn_lw_blas_sp
 
   ! ----------------------------------------------------------
   !

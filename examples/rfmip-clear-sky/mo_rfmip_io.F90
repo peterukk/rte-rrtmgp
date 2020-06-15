@@ -521,6 +521,7 @@ contains
       call stop_on_err("get_var_size: can't get information for variable " // "water_vapor")
 
     if (ndims == 3) then ! (nlay, ncol, nexp)
+      allocate(gas_conc_temp_3d(nlay_l,blocksize,nblocks))
       gas_conc_temp_3d = reshape(       read_field(ncid, "water_vapor", nlay_l,  ncol_l, nexp_l), &
                     shape = [nlay_l, blocksize, nblocks]) * read_scaling(ncid, "water_vapor")
     else if (ndims == 2) then ! (nlay, ncol)
@@ -542,6 +543,7 @@ contains
       call stop_on_err("get_var_size: can't get information for variable " // "ozone")
 
     if (ndims == 3) then ! (nlay, ncol, nexp)
+      allocate(gas_conc_temp_3d(nlay_l,blocksize,nblocks))
       gas_conc_temp_3d = reshape(       read_field(ncid, "ozone", nlay_l,  ncol_l, nexp_l), &
                     shape = [nlay_l, blocksize, nblocks]) * read_scaling(ncid, "ozone")
     else if (ndims == 2) then ! (nlay, ncol)

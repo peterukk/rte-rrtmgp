@@ -29,6 +29,13 @@ module mo_rte_solver_kernels
   use,  intrinsic :: iso_c_binding
   use mo_rte_kind, only: wp, wl
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
+#ifdef USE_TIMING
+  !
+  ! Timing library
+  !
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+                                   gptlpercent, gptloverhead
+#endif
   implicit none
   private
 
@@ -51,6 +58,10 @@ module mo_rte_solver_kernels
             adding, lw_gpt_source
 
   real(wp), parameter :: pi = acos(-1._wp)
+
+#ifdef USE_TIMING
+  integer :: ret, i
+#endif
 contains
   ! -------------------------------------------------------------------------------------------------
   !
@@ -82,11 +93,11 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
     real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_emis            ! Surface emissivity      []
     ! Outputs
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) :: radn_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(ngpt, nlay+1,     ncol), intent(out) :: radn_up      ! Broadband radiances [W/m2-str]
     real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) :: radn_dn      ! Top level must contain incident flux boundary condition
     ! real(wp), dimension(nlay+1,     ncol), optional, &
     !                                       intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) ::  radn_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
+    real(wp), dimension(ngpt, nlay+1,     ncol), intent(out) ::  radn_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
     ! ------------------------------------
     ! Local variables. no col dependency
     real(wp), dimension(:,:),         contiguous, pointer :: lev_source_up, lev_source_dn ! Mapping increasing/decreasing indicies to up/down
@@ -139,11 +150,16 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       !
       ! Compute the source function per g-point from source function per band
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('gpt_source')
+#endif
       call lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, gpoint_bands, &
                     planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
                     sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), &
                     sfc_src, sfc_srcJac, lay_source, lev_source_dec, lev_source_inc)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('gpt_source')
+#endif
       !
       ! Source function for diffuse radiation
       !
@@ -158,18 +174,18 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       source_sfcJac(:)  = sfc_emis(:,icol) * sfc_srcJac
       !
       ! Transport
-      !
+      !      
       call lw_transport_noscat(ngpt, nlay, top_at_1,  &
                                tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
                                radn_up(:,:,icol), radn_dn(:,:,icol), &
                                source_sfcJac, radn_up_Jac(:,:,icol))
+                               
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
       radn_dn(:,:,icol)     = 2._wp * pi * weight * radn_dn(:,:,icol)   
       radn_up(:,:,icol)     = 2._wp * pi * weight * radn_up(:,:,icol)  
       radn_up_Jac(:,:,icol)  = 2._wp * pi * weight * radn_up_Jac(:,:,icol)
-
     end do  ! column loop
 
   end subroutine lw_solver_noscat
@@ -194,11 +210,11 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd      ! Surface source function by band [W/m2]
     real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
     ! Outputs
-    real(wp), dimension(ngpt, nlay+1,     ncol),  intent(inout) ::  flux_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(ngpt, nlay+1,     ncol),  intent(out) ::  flux_up      ! Radiances [W/m2-str]
     real(wp), dimension(ngpt, nlay+1,     ncol),  intent(inout) ::  flux_dn      ! Top level must contain incident flux boundary condition
     ! real(wp), dimension(nlay+1,     ncol),  optional, &
-    !                                         intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]                                        
+    !                                         intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of radiances [W/m2-str / K]
+    real(wp), dimension(ngpt, nlay+1,     ncol), intent(out) ::  flux_up_Jac   ! surface temperature Jacobian of radiances [W/m2-str / K]                                        
     ! Local variables
     real(wp), dimension(ngpt, ncol)             :: Ds_ngpt
 
@@ -209,7 +225,6 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     !
     ! For the first angle output arrays store total flux
     !
-
     Ds_ngpt(:,:) = Ds(1)
   
     call lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, &
@@ -240,7 +255,6 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       flux_dn = flux_dn + radn_dn
       flux_up_Jac = flux_up_Jac + radn_up_Jac
     end do                      
-
   end subroutine lw_solver_noscat_GaussQuad
 
   subroutine lw_solver_noscat_broadband(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, inc_flux, gpoint_bands, &
@@ -248,9 +262,9 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
                               lay_source_bnd, lev_source_bnd, &
                               sfc_source_bnd, sfc_emis, &
                               flux_up, flux_dn, &
-                              sfc_source_bnd_Jac, flux_up_Jac) bind(C, name="lw_solver_noscat_broadband")
+                              sfc_source_bnd_Jac, flux_up_Jac, compute_Jac) bind(C, name="lw_solver_noscat_broadband")
     integer,                               intent(in   ) :: nbnd, ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
-    logical(wl),                           intent(in   ) :: top_at_1
+    logical(wl),                           intent(in   ) :: top_at_1, compute_Jac
     real(wp), dimension(ngpt,       ncol), intent(in   ) :: D            ! secant of propagation angle  []
     real(wp),                              intent(in   ) :: weight       ! quadrature weight
     real(wp), dimension(ngpt,ncol),        intent(in   ) :: inc_flux    ! incident flux at domain top [W/m2] (ngpts, ncol)
@@ -264,8 +278,8 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
     real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_emis            ! Surface emissivity      []
     ! Outputs
-    real(wp), dimension(nlay+1,     ncol), intent(inout) :: flux_up      ! Broadband radiances [W/m2-str]
-    real(wp), dimension(nlay+1,     ncol), intent(inout) :: flux_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(nlay+1,     ncol), intent(out) :: flux_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(nlay+1,     ncol), intent(out) :: flux_dn      ! Top level must contain incident flux boundary condition
     ! real(wp), dimension(nlay+1,     ncol), optional, &
     !                                       intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
     real(wp), dimension(nlay+1,     ncol), intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
@@ -285,12 +299,16 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
 
     real(wp), parameter :: pi = acos(-1._wp)
+    real(wp)  :: fac
     integer             :: ilev, icol, igpt, ilay, sfc_lay, top_level
     ! ------------------------------------
     ! Which way is up?
     ! Level Planck sources for upward and downward radiation
     ! When top_at_1, lev_source_up => lev_source_dec
     !                lev_source_dn => lev_source_inc, and vice-versa
+#ifdef USE_TIMING
+    ret =  gptlstart('lw_solver_noscat_broadband')
+#endif
     if(top_at_1) then
       top_level = 1
       sfc_lay   = nlay  ! the layer (not level) closest to surface
@@ -317,20 +335,23 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       ! Optical path and transmission, used in source function and transport calculations
       !
       do ilay = 1, nlay
-        do igpt = 1, ngpt
-          tau_loc(igpt,ilay)  = tau(igpt,ilay,icol) * D(igpt,icol)
-          trans(igpt,ilay)    = exp(-tau_loc(igpt,ilay)) 
-        end do
+          tau_loc(:,ilay)  = tau(:,ilay,icol) * D(:,icol)
+          trans(:,ilay)    = exp(-tau_loc(:,ilay)) 
       end do
       
       !
       ! Compute the source function per g-point from source function per band
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('gpt_source')
+#endif
       call lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, gpoint_bands, &
                     planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
                     sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), &
                     sfc_src, sfc_srcJac, lay_source, lev_source_dec, lev_source_inc)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('gpt_source')
+#endif
       !
       ! Source function for diffuse radiation
       !
@@ -340,9 +361,9 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       !
       ! Surface albedo, surface source function
       !
-      sfc_albedo(:)     = 1._wp - sfc_emis(:,icol)
-      source_sfc(:)     = sfc_emis(:,icol) * sfc_src
-      source_sfcJac(:)  = sfc_emis(:,icol) * sfc_srcJac
+      sfc_albedo     = 1._wp - sfc_emis(:,icol)
+      source_sfc     = sfc_emis(:,icol) * sfc_src
+      source_sfcJac  = sfc_emis(:,icol) * sfc_srcJac
       !
       ! Transport
       !
@@ -353,19 +374,29 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
-      radn_dn     = 2._wp * pi * weight * radn_dn   
-      radn_up     = 2._wp * pi * weight * radn_up   
-      radn_up_Jac  = 2._wp * pi * weight * radn_up_Jac
+      fac         = 2._wp * pi * weight
+      radn_dn     = fac * radn_dn   
+      radn_up     = fac * radn_up   
+      radn_up_Jac = fac * radn_up_Jac
 
+#ifdef USE_TIMING
+    ret =  gptlstart('spectral_reduction')
+#endif
       ! Compute broadband fluxes
       call sum_broadband_nocol(ngpt, nlay+1, radn_up, flux_up(:,icol) )
       call sum_broadband_nocol(ngpt, nlay+1, radn_dn, flux_dn(:,icol) )
 
-      !if (present(flux_up_Jac)) then
+      if (compute_Jac) then
         call sum_broadband_nocol(ngpt, nlay+1, radn_up_Jac, flux_up_Jac(:,icol) )
-      !end if
-
+      end if
+#ifdef USE_TIMING
+    ret =  gptlstop('spectral_reduction')
+#endif
     end do  ! column loop
+
+#ifdef USE_TIMING
+    ret =  gptlstop('lw_solver_noscat_broadband')
+#endif
 
   end subroutine lw_solver_noscat_broadband
 
@@ -374,9 +405,9 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
                                    lay_source_bnd, lev_source_bnd, &
                                    sfc_source_bnd, sfc_emis, &
                                    flux_up, flux_dn, &
-                                   sfc_source_bnd_Jac, flux_up_Jac) bind(C, name="lw_solver_noscat_GaussQuad_broadband")
+                                   sfc_source_bnd_Jac, flux_up_Jac, compute_Jac) bind(C, name="lw_solver_noscat_GaussQuad_broadband")
     integer,                                intent(in   ) ::  nbnd, ngpt, nlay, ncol ! Number of columns, layers, g-points
-    logical(wl),                            intent(in   ) ::  top_at_1
+    logical(wl),                            intent(in   ) ::  top_at_1, compute_Jac
     integer,                                intent(in   ) ::  nmus         ! number of quadrature angles
     real(wp), dimension(nmus),              intent(in   ) ::  Ds, weights  ! quadrature secants, weights
     real(wp), dimension(ngpt,ncol),         intent(in   ) ::  inc_flux    ! incident flux at domain top [W/m2] (ngpts, ncol)
@@ -389,11 +420,11 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
     real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd      ! Surface source function by band [W/m2]
     real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
     ! Outputs
-    real(wp), dimension(nlay+1,     ncol),  intent(inout) ::  flux_up      ! Broadband radiances [W/m2-str]
-    real(wp), dimension(nlay+1,     ncol),  intent(inout) ::  flux_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(nlay+1,     ncol),  intent(out) ::  flux_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(nlay+1,     ncol),  intent(out) ::  flux_dn      ! Top level must contain incident flux boundary condition
     ! real(wp), dimension(nlay+1,     ncol),  optional, &
     !                                         intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(nlay+1,     ncol), intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]                                        
+    real(wp), dimension(nlay+1,     ncol), intent(out) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]                                        
     ! Local variables
     real(wp), dimension(ngpt, ncol)             :: Ds_ngpt
 
@@ -412,7 +443,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
                           gpoint_bands, tau, planck_frac, &
                           lay_source_bnd, lev_source_bnd, &
                           sfc_source_bnd, sfc_emis, &
-                          flux_up, flux_dn, sfc_source_bnd_Jac, flux_up_Jac)
+                          flux_up, flux_dn, sfc_source_bnd_Jac, flux_up_Jac, compute_Jac)
 
     if (nmus > 1) then
       allocate( radn_up(nlay+1, ncol) )
@@ -429,7 +460,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
         gpoint_bands, tau, planck_frac, &
         lay_source_bnd, lev_source_bnd, &
         sfc_source_bnd, sfc_emis, &
-        radn_up, radn_dn, sfc_source_bnd_Jac, radn_up_Jac)
+        radn_up, radn_dn, sfc_source_bnd_Jac, radn_up_Jac, compute_Jac)
 
       flux_up = flux_up + radn_up
       flux_dn = flux_dn + radn_dn
@@ -507,10 +538,15 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, gpoint_
       !
       ! Source function per g-point from source function per band
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('gpt_source')
+#endif
       call lw_gpt_source(nbnd, ngpt, nlay, sfc_lay, gpoint_bands, &
                       planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), sfc_source_bnd(:,icol), &
                       sfc_src, lay_source, lev_source_dec, lev_source_inc)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('gpt_source')
+#endif
       !
       ! RRTMGP provides source functions at each level using the spectral mapping
       !   of each adjacent layer. Combine these for two-stream calculations
@@ -1325,7 +1361,7 @@ end subroutine sw_source_2str
   ! Planck sources by g-point from plank fraction and sources by band
   !
   ! -------------------------------------------------------------------------------------------------
-  subroutine lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, gpt_bands, planck_frac, &
+  pure subroutine lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, gpt_bands, planck_frac, &
     lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_source_bnd_Jac, &     ! inputs: band source functions
     sfc_source, sfc_source_Jac,  lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
 
@@ -1349,7 +1385,7 @@ end subroutine sw_source_2str
     end do
 
     do ilay = 1, nlay
-      do igpt = 1, ngpt
+      do concurrent (igpt = 1 : ngpt) 
         ! compute layer source irradiance for each g-point
         lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(gpt_bands(igpt),ilay)
         ! compute level source irradiance for each g-point, one each for upward and downward paths
@@ -1360,7 +1396,7 @@ end subroutine sw_source_2str
 
   end subroutine lw_gpt_source_Jac
 
-  subroutine lw_gpt_source(nbnd, ngpt, nlay, sfc_lay, gpt_bands, planck_frac, &
+  pure subroutine lw_gpt_source(nbnd, ngpt, nlay, sfc_lay, gpt_bands, planck_frac, &
       lay_source_bnd, lev_source_bnd, sfc_source_bnd, &     ! inputs: band source functions
       sfc_source, lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
 
@@ -1382,7 +1418,7 @@ end subroutine sw_source_2str
       end do
 
       do ilay = 1, nlay
-        do igpt = 1, ngpt
+        do concurrent (igpt = 1 : ngpt) 
           ! compute layer source irradiance for each g-point
           lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(gpt_bands(igpt),ilay)
           ! compute level source irradiance for each g-point, one each for upward and downward paths
@@ -1553,11 +1589,16 @@ end subroutine apply_BC_old
       !
       ! Compute the source function per g-point from source function per band
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('gpt_source')
+#endif
       call lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, gpoint_bands, &
                       planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
                       sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), &
                       sfc_src, sfc_srcJac, lay_source, lev_source_dec, lev_source_inc)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('gpt_source')
+#endif
       !
       ! Source function for diffuse radiation
       !

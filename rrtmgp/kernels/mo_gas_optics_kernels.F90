@@ -236,6 +236,7 @@ contains
     ! ---------------------
     ! Major Species
     ! ---------------------
+    tau = 0.0_wp
     call gas_optical_depths_major(   &
           ncol,nlay,nbnd,ngpt,       & ! dimensions
           nflav,neta,npres,ntemp,    &
@@ -245,6 +246,7 @@ contains
           col_mix,fmajor,            &
           jeta,tropo,jtemp,jpress,   &
           tau)
+
     ! ---------------------
     ! Minor Species - lower
     ! ---------------------
@@ -265,6 +267,7 @@ contains
            col_gas,fminor,jeta,        &
            itropo_lower,jtemp,         &
            tau)
+
     ! ---------------------
     ! Minor Species - upper
     ! ---------------------
@@ -285,6 +288,7 @@ contains
            col_gas,fminor,jeta,        &
            itropo_upper,jtemp,         &
            tau)
+
   end subroutine compute_tau_absorption
 
   ! --------------------------------------------------------------------------------------
@@ -343,6 +347,7 @@ contains
         end do ! igpt
       end do
     end do ! ilay
+
   end subroutine gas_optical_depths_major
 
   ! ----------------------------------------------------------
@@ -375,12 +380,12 @@ contains
     logical(wl), dimension(  nminor),            intent(in   ) :: scale_by_complement
     integer,     dimension(  nminor),            intent(in   ) :: kminor_start
     integer,     dimension(  nminor),            intent(in   ) :: idx_minor, idx_minor_scaling
-    real(wp),    dimension(nlay, ncol),           intent(in   ) :: play, tlay
-    real(wp),    dimension(nlay, ncol,0:ngas),    intent(in   ) :: col_gas
-    real(wp),    dimension(2,2,nflav,nlay, ncol), intent(in   ) :: fminor
-    integer,     dimension(2,  nflav,nlay, ncol), intent(in   ) :: jeta
+    real(wp),    dimension(nlay, ncol),          intent(in   ) :: play, tlay
+    real(wp),    dimension(nlay, ncol,0:ngas),   intent(in   ) :: col_gas
+    real(wp),    dimension(2,2,nflav,nlay, ncol),intent(in   ) :: fminor
+    integer,     dimension(2,  nflav,nlay, ncol),intent(in   ) :: jeta
     integer,     dimension(ncol, 2),             intent(in   ) :: layer_limits
-    integer,     dimension(nlay, ncol),           intent(in   ) :: jtemp
+    integer,     dimension(nlay, ncol),          intent(in   ) :: jtemp
     real(wp),    dimension(ngpt,nlay,ncol),      intent(inout) :: tau
     ! -----------------
     ! local variables
@@ -452,6 +457,7 @@ contains
       enddo
     end if
   end subroutine gas_optical_depths_minor
+  
 
   ! ----------------------------------------------------------
   !
@@ -621,11 +627,11 @@ contains
 
   end subroutine compute_Planck_source
 
-    ! ----------------------------------------------------------
+  ! ----------------------------------------------------------
   subroutine compute_source_bybnd_pfrac_bygpt(             &
                     ncol, nlay, nbnd, ngpt,                &
                     nflav, neta, npres, ntemp, nPlanckTemp,&
-                    tlay, tlev, tsfc, sfc_lay,             &
+                    tlay, tlev, tsfc,             &
                     fmajor, jeta, tropo, jtemp, jpress,    &
                     gpoint_bands, band_lims_gpt,           &
                     temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
@@ -636,7 +642,6 @@ contains
     real(wp),    dimension(nlay, ncol  ),        intent(in) :: tlay
     real(wp),    dimension(nlay+1, ncol),        intent(in) :: tlev
     real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-    integer,                                    intent(in) :: sfc_lay
     ! Interpolation variables
     real(wp),    dimension(2,2,2,nflav,nlay, ncol), intent(in) :: fmajor
     integer,     dimension(2,    nflav,nlay, ncol), intent(in) :: jeta
@@ -650,11 +655,11 @@ contains
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
     integer,  dimension(2,ngpt),                  intent(in) :: gpoint_flavor
 
-    real(wp), dimension(nbnd,     ncol),          intent(inout) :: sfc_source_bnd
-    real(wp), dimension(nbnd,     ncol),          intent(inout) :: sfc_source_bnd_Jac
-    real(wp), dimension(nbnd,nlay,ncol),          intent(inout) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),        intent(inout) :: lev_source_bnd
-    real(wp), dimension(ngpt,nlay,ncol),          intent(inout) :: pfrac
+    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd
+    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd_Jac
+    real(wp), dimension(nbnd,nlay,ncol),          intent(out) :: lay_source_bnd
+    real(wp), dimension(nbnd,nlay+1,ncol),        intent(out) :: lev_source_bnd
+    real(wp), dimension(ngpt,nlay,ncol),          intent(out) :: pfrac
     ! -----------------
     ! local
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
@@ -670,7 +675,7 @@ contains
       !
       sfc_source_bnd(:,icol)       = interpolate1D(tsfc(icol),                 temp_ref_min, totplnk_delta, totplnk)
       sfc_source_bnd_Jac(:,icol)   = interpolate1D(tsfc(icol) + delta_Tsurf,   temp_ref_min, totplnk_delta, totplnk)
-      lev_source_bnd(:,1, icol)    = interpolate1D(tlev(1,icol),               temp_ref_min, totplnk_delta, totplnk)
+      lev_source_bnd(:, 1, icol)    = interpolate1D(tlev(1,icol),               temp_ref_min, totplnk_delta, totplnk)
       do ilay = 1, nlay
         lev_source_bnd(:,ilay+1,icol)  = interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk)
         lay_source_bnd(:,ilay,icol)    = interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk)
@@ -696,7 +701,7 @@ contains
   subroutine compute_source_bybnd(                    &
                     ncol, nlay, nbnd,                 &
                     ntemp, nPlanckTemp,                   &
-                    tlay, tlev, tsfc, sfc_lay,            &
+                    tlay, tlev, tsfc,            &
                     temp_ref_min, totplnk_delta, totplnk, &
                     sfc_source_bnd, sfc_source_bnd_Jac,   &
                     lay_source_bnd, lev_source_bnd) bind(C, name="compute_Planck_bybnd")
@@ -705,7 +710,6 @@ contains
     real(wp),    dimension(nlay,ncol  ),        intent(in) :: tlay
     real(wp),    dimension(nlay+1,ncol),        intent(in) :: tlev
     real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-    integer,                                    intent(in) :: sfc_lay
 
     real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
@@ -753,7 +757,7 @@ contains
     ! The neural network models
     type(network_type), dimension(2),     intent(in)    :: neural_nets
 
-    real(dp), dimension(ngpt,nlay,ncol),  intent(inout) :: pfrac, tau
+    real(dp), dimension(ngpt,nlay,ncol),  intent(out) :: pfrac, tau
     ! local
     real(sp), dimension(:,:), contiguous, &
                               pointer   :: input
@@ -813,7 +817,7 @@ contains
 
     ! outputs
     real(sp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(inout) :: pfrac, tau
+                                        intent(out) :: pfrac, tau
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
     integer                                           :: ilay, icol, nobs
