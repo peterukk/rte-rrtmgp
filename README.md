@@ -1,18 +1,18 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics computations 
 
-Update 4.6.2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper is being written. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 3-7 by using neural networks, the solver (RTE) has been rewritten to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) lead to an up to 75% speedup overall without any neural networks, while the whole code is up to 4 times faster when neural networks are used. 
+Update 4.6.2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper is being written. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been rewritten to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) lead to an up to 75% speedup overall without any neural networks, while the whole clear-sky radiative transfer code is up to 4 times faster when neural networks are used (on an Intel platform with MKL - expect smaller speed-ups with other platforms and BLAS libraries). 
 
-No neural network has been developed for the **shortwave** yet. Because of the refactoring also the shortwave code is significantly faster, but the fluxes are currently wrong presumably due to a bug in the solver.
+No neural network has been developed for the **shortwave** yet. Because of the refactoring, also the shortwave code is faster (but the fluxes differ slightly in single precision?)
 
 The **cloud optics** extension is still broken.
 
-**GPU** computations are supported (openACC), which are very fast for RRTMGP-NN, but the RTE kernels are currently broken (fix coming soon). 
+**GPU** acceleration is supported (openACC+cuBLAS), but the code is currently slow due to non-computational bottlenecks (working on it). 
 
 ------------
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "major" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for given atmospheric conditions and gas concentrations, which includes all minor long-wave gases supported by RRTMGP. The neural network predicts optical properties (optical depth or Planck fraction) for all 256 g-points from one input vector (the atmospheric conditions for one atmospheric layer), therefore avoiding loops over g-point or band. The model has been trained on very diverse data so that it may be used for both weather and climate applications. 
 
-**Speed**: The optical depth kernel is up to 3 times faster than the original on ifort+MKL when using single precision and a 4-layer neural network model which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total). Optical depths and planck fractions are predicted by separate models, which output all 256 g-points. The fastest implementation uses BLAS/MKL where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time (replacing the matrix-vector dot product of a feed-forward neural network with a matrix-matrix call).
+**Speed**: The optical depth kernel is up to 4 times faster than the original on ifort+MKL when using single precision and neural network with 2 hidden layers which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total) and predict optical depth and planck fraction (256 outputs), using two separate models. The fastest implementation uses BLAS/MKL where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time (replacing the matrix-vector dot product of a feed-forward neural network with a matrix-matrix call).
 
 **Accuracy**: The errors in the downwelling and up-welling fluxes are similar to the original scheme in the tests done so far using RFMIP and GCM data. CKDMIP evaluation coming soon. 
 
@@ -22,8 +22,8 @@ The code should work very similarly to the end-user as the original, but the neu
 **to-do**
 - "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)? **done**
 - related to this, offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate) **simpler models using less gases do not seem much faster, but the code now supports using less gases as input (CKDMIP-gases only with CFC11-eq) - these models need to be updated**
-- implement for shortwave
-- GPU kernels - should be easy and very fast with openacc_cublas
+- implement neural networks for shortwave
+- GPU kernels - should be easy and very fast with openacc_cublas **done, but the code is slow due to spurious CUDA memory and deallocations on the device. needs to be looked into**
 - post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
 
 
