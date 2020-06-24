@@ -13,12 +13,17 @@
 
 timing.*
 
-examples/rfmip-clear-sky/output/
+examples/ckdmip/
+examples/garand/
+examples/rfmip-clear-sky/input/
 examples/rfmip-clear-sky/old/
 examples/rfmip-clear-sky/timings/
 examples/rfmip-clear-sky/rrtmgp_rfmip_lw
 examples/rfmip-clear-sky/rrtmgp_rfmip_sw
-
+examples/rfmip-clear-sky/timing*
+examples/rfmip-clear-sky/*.pgprof
+*.pgprof
+*.gprof
 gprof*
 *.out
 
