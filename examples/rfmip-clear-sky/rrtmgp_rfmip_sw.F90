@@ -342,7 +342,7 @@ do i = 1, 10
                             toa_flux,        &
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
-                            fluxes, compute_gpoint_fluxes = .false.))
+                            fluxes, compute_gpoint_fluxes = .true.))
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
