@@ -157,7 +157,7 @@ program rrtmgp_rfmip_lw
 
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .true.
+  use_nn      = .false.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input  = .false.
   save_output = .false.
