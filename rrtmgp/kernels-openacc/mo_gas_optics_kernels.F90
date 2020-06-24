@@ -470,8 +470,6 @@ contains
               endif
             endif
 
-            scaling = scaling * (1._wp - col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
-
             !
             ! Interpolation of absorption coefficient and calculation of optical depth
             !
