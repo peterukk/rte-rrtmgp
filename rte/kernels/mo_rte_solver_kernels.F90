@@ -141,10 +141,8 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
       ! Optical path and transmission, used in source function and transport calculations
       !
       do ilay = 1, nlay
-        do igpt = 1, ngpt
-          tau_loc(igpt,ilay)  = tau(igpt,ilay,icol) * D(igpt,icol)
-          trans(igpt,ilay)    = exp(-tau_loc(igpt,ilay)) 
-        end do
+        tau_loc(:,ilay)  = tau(:,ilay,icol) * D(:,icol)
+        trans(:,ilay)    = exp(-tau_loc(:,ilay)) 
       end do
       
       !
