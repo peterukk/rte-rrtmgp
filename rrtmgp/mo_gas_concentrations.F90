@@ -527,7 +527,6 @@ contains
     ! -----------------
     integer :: igas
     ! -----------------
-    find_gas = GAS_NOT_IN_LIST
     if(.not. allocated(this%gas_name)) return
     ! do igas = 1, size(this%gas_name)
     !   if (lower_case(trim(this%gas_name(igas))) == lower_case(trim(gas))) then
