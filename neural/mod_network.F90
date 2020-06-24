@@ -408,12 +408,12 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
 #endif
       ! Add biases and use activation function
       layersize = size(layers(2) % b)
-      do concurrent (isample = 1 : nsample)
-        !dir$ vector aligned
-        do concurrent (i = 1 : layersize)    
+      !dir$ vector aligned
+      do concurrent (isample = 1 : nsample, i = 1 : layersize)
+        ! do concurrent (i = 1 : layersize)    
           a(i, isample) = a(i, isample ) + layers(2) % b(i)
           call softsignn(a(i, isample))
-        end do
+        ! end do
       end do
 
       ! Intermediate layers: in each layer, multiply the signal matrix a with weights in that layer, add biases, and activation
@@ -426,12 +426,12 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
         ret =  gptlstop('sgemm_pfrac')
 #endif
         layersize = size(layers(n) % b)
-        do concurrent (isample = 1 : nsample)
-          !dir$ vector aligned
-          do concurrent (i = 1 : layersize)  
+        !dir$ vector aligned
+        do concurrent (isample = 1 : nsample, i = 1 : layersize)
+          ! do concurrent (i = 1 : layersize)  
             a_next(i, isample) = a_next(i, isample ) + layers(n) % b(i)
             call softsignn(a_next(i, isample))
-          end do
+          ! end do
         end do 
         a = a_next
       end do
@@ -444,13 +444,13 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
 #endif
       layersize = size(layers(n) % b)
 
-      do concurrent (isample = 1 : nsample)
-        !dir$ vector aligned
-        do concurrent (i = 1 : layersize)  
+      !dir$ vector aligned
+      do concurrent (isample = 1 : nsample, i = 1 : layersize)  
+        ! do concurrent (i = 1 : layersize)  
           output(i, isample) = output(i, isample ) + layers(n) % b(i)
           call reluu(output(i, isample))
           output(i, isample) = output(i, isample)**2
-        end do
+        ! end do
       end do
 
       ! print *, "max,min PFRAC", maxval(output), minval(output)
@@ -494,13 +494,12 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
 #endif
       layersize = size(layers(2) % b)
       
-      do concurrent (isample = 1 : nsample)
-        !dir$ vector aligned
-        do concurrent (i = 1 : layersize)  
-          a(i, isample) = a(i, isample ) + layers(2) % b(i)
-          call softsignn(a(i, isample))
-        end do
+      !dir$ vector aligned
+      do concurrent (isample = 1 : nsample, i = 1 : layersize)
+        a(i, isample) = a(i, isample ) + layers(2) % b(i)
+        call softsignn(a(i, isample))
       end do
+
 #ifdef USE_TIMING
       ret =  gptlstop('add_signal_bias_and_activation')
 #endif
@@ -515,12 +514,12 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
       ret =  gptlstart('add_signal_bias_and_activation')
 #endif
         layersize = size(layers(n) % b)
-        do concurrent (isample = 1 : nsample)
-          !dir$ vector aligned
-          do concurrent (i = 1 : layersize)  
+        !dir$ vector aligned
+        do concurrent (isample = 1 : nsample, i = 1 : layersize)
+          ! do concurrent (i = 1 : layersize)  
             a_next(i, isample) = a_next(i, isample ) + layers(n) % b(i)
             call softsignn(a_next(i, isample))
-          end do
+          ! end do
         end do 
 #ifdef USE_TIMING
       ret =  gptlstop('add_signal_bias_and_activation')
@@ -537,12 +536,12 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, output)
       ret =  gptlstart('add_output_bias_and_scale')
 #endif
       layersize = size(layers(n) % b)
-      do concurrent (isample = 1 : nsample)
-        !dir$ vector aligned
-        do concurrent (i = 1 : layersize)  
+      !dir$ vector aligned
+      do concurrent (isample = 1 : nsample, i = 1 : layersize)
+        ! do concurrent (i = 1 : layersize)  
           output(i, isample) = output(i, isample ) + layers(n) % b(i)
           output(i, isample) = (tau_sigma*output(i, isample) + tau_gpt_means(i))**8
-        end do
+        ! end do
       end do
 #ifdef USE_TIMING
       ret =  gptlstop('add_output_bias_and_scale')
