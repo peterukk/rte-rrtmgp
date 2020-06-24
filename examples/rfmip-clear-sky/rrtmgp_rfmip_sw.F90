@@ -342,7 +342,7 @@ do i = 1, 10
                             toa_flux,        &
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
-                            fluxes, compute_gpoint_fluxes = .true.))
+                            fluxes, compute_gpoint_fluxes = .false.))
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
@@ -360,7 +360,6 @@ do i = 1, 10
 
   end do
 
-
   !
   ! End timers
   !
@@ -369,7 +368,7 @@ do i = 1, 10
   ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
-  print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,:)), maxval(flux_dn(:,:,:))
+  ! print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,:)), maxval(flux_dn(:,:,:))
 
   allocate(temparray(   block_size*(nlay+1)*nblocks)) 
   temparray = pack(flux_dn(:,:,:),.true.)
