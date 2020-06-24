@@ -42,7 +42,7 @@ module mo_gas_concentrations
                                    gptlpercent, gptloverhead
 #endif
   implicit none
-  integer, parameter :: GAS_NOT_IN_LIST = -1
+  integer, parameter :: GAS_NOT_IN_LIST = 0
 #ifdef USE_TIMING
   integer :: ret, i
 #endif
@@ -333,8 +333,8 @@ contains
     igas = this%find_gas(gas)
     if (igas == GAS_NOT_IN_LIST) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
-    else if(.not. allocated(this%concs(igas)%conc)) then
-      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
+     else if(.not. allocated(this%concs(igas)%conc)) then
+       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
     end if
 #ifdef USE_TIMING
     ret =  gptlstop('get_vmr_find')
@@ -529,11 +529,13 @@ contains
     ! -----------------
     find_gas = GAS_NOT_IN_LIST
     if(.not. allocated(this%gas_name)) return
-    do igas = 1, size(this%gas_name)
-      if (lower_case(trim(this%gas_name(igas))) == lower_case(trim(gas))) then
-        find_gas = igas
-      end if
-    end do
+    ! do igas = 1, size(this%gas_name)
+    !   if (lower_case(trim(this%gas_name(igas))) == lower_case(trim(gas))) then
+    !     find_gas = igas
+    !   end if
+    ! end do
+    find_gas = findloc(this%gas_name,gas,dim=1)
+    ! print *, "igas", find_gas
   end function
   ! -------------------------------------------------------------------------------------
   subroutine del(this)
