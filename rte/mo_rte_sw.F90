@@ -150,8 +150,6 @@ contains
     call expand(atmos, sfc_alb_dir, sfc_alb_dir_gpt)
     call expand(atmos, sfc_alb_dif, sfc_alb_dif_gpt)
 
-    ! call expand_and_transpose(atmos, sfc_alb_dir, sfc_alb_dir_gpt)
-    ! call expand_and_transpose(atmos, sfc_alb_dif, sfc_alb_dif_gpt)
     ! ------------------------------------------------------------------------------------
     !
     ! Compute the radiative transfer...
