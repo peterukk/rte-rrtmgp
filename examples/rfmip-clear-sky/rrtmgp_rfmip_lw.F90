@@ -24,6 +24,7 @@
 !
 subroutine stop_on_err(error_msg)
   use iso_fortran_env, only : error_unit
+  use iso_c_binding
   character(len=*), intent(in) :: error_msg
 
   if(error_msg /= "") then
@@ -47,7 +48,7 @@ program rrtmgp_rfmip_lw
 #endif
   ! Working precision for real variables
   !
-  use mo_rte_kind,           only: wp, sp, wl
+  use mo_rte_kind,           only: wp, sp, wl, i4
   !
   ! Optical properties of the atmosphere as array of values
   !   In the longwave we include only absorption optical depth (_1scl)
@@ -96,12 +97,12 @@ program rrtmgp_rfmip_lw
                                    gptlpercent, gptloverhead
 #endif
   implicit none
+
+#include "f90papi.h"
   ! --------------------------------------------------
   !
   ! Local variables
   !
-  !character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-1_none.nc', &
-  !                      kdist_file = 'coefficients_lw.nc'
   character(len=132) :: rfmip_file,kdist_file
   character(len=132) :: flxdn_file, flxup_file, inp_outp_file, flx_file, flx_file_ref, flx_file_lbl
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
@@ -124,7 +125,7 @@ program rrtmgp_rfmip_lw
   type(network_type), dimension(2)    :: neural_nets ! One model for predicting planck fractions, one for optical depths
 
   logical 		:: use_nn, save_output, save_input, compare_flux, save_flux, tlev_provided
-
+  integer(i4)                               :: check          ! PAPI's error flag WHICH SHOULD BE CHECKED!
   !
   ! Classes used by rte+rrtmgp
   !
@@ -147,6 +148,7 @@ program rrtmgp_rfmip_lw
   !
   ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+  ret = GPTLsetoption (PAPI_SP_OPS, 1);
   ret = gptlinitialize()
 #endif
 
@@ -166,29 +168,31 @@ program rrtmgp_rfmip_lw
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
 
-  ! Where neural network model weights are located (required!)
+  ! ------------ Neural network model weights -----------------
   ! Planck model
-  modelfile_source        = "../../neural/data/pfrac-19-16-16-pow2-minmax2.txt" ! Best so far
+  ! modelfile_source        = "../../neural/data/pfrac-19-16-16-pow2-minmax2.txt" 
+  modelfile_source        = "../../neural/data/pfrac-18-16-16_new2.txt" 
   ! Optical depth model
-  modelfile_tau           = "../../neural/data/tau-lw-19-64-64-ynorm-pow8-minmax3.txt"   ! Best so far
+  ! modelfile_tau           = "../../neural/data/tau-lw-19-64-64-ynorm-pow8-minmax3.txt"  
+  modelfile_tau           = "../../neural/data/tau-lw-18-58-58_new.txt" 
 
-  !modelfile_tau           = "../../neural/data/tau-lw-19-48-48-48-ynorm-pow8-minmax.txt"
+  ! modelfile_tau           = "../../neural/data/tau-lw-tmp.txt"
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'
+  ! flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
   
+
   ! FOR NN MODEL DEVELOPMENT 
   ! Where to save neural network inputs (using NN code) and target outputs (planck fractions and optical depths, using reference code)
 
-  ninputs = 19
+  ninputs = 18
   ! inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_CKDMIP-MM-2.0_1f1.nc"
   ! inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_RFMIP-Halton-rnd-0.4-2.0_1f1.nc"
 
   ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
 
   if (use_nn) then
-  !   !$acc enter data create(neural_nets)
-
 	  print *, 'loading planck fraction model from ', modelfile_source
     call neural_nets(1) % load(modelfile_source)
 
@@ -198,15 +202,12 @@ program rrtmgp_rfmip_lw
     ! Here we can change the neural network computational kernels (SGEMM is fastest, but requires a BLAS library)
     ! If BLAS is not available, output_opt_flatmodel is the fastest kernel
 
+#ifndef USE_OPENACC
     call change_kernel(neural_nets(1),  output_opt_flatmodel, output_sgemm_pfrac) ! custom pfrac kernel (outputs are post-processed inside kernel)
     call change_kernel(neural_nets(2),  output_opt_flatmodel, output_sgemm_tau)   ! custom tau kernel 
-
-     !  !$acc enter data copyin(neural_nets)
-
+#endif
   end if  
 
-
-  
   !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
   nargs = command_argument_count()
@@ -360,8 +361,6 @@ program rrtmgp_rfmip_lw
 #ifdef USE_TIMING
 do i = 1, 10
 #endif
-
-
   do b = 1, nblocks
     
     ! print *, b, "/", nblocks
@@ -438,7 +437,7 @@ optical_props%tau = 0.0
                             top_at_1,        &
                             source,          &
                             sfc_emis_spec,   &
-                            fluxes, n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .false.))
+                            fluxes, n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .true.))
 
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
@@ -669,6 +668,15 @@ call source%finalize()
 
     print *, "MAE in downwelling fluxes of NN w.r.t RRTMGP, present-day:     ", &
      mae(reshape(rld_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rld_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "Max-diff in d.w. flux w.r.t RRTMGP ", &
+     maxval(rld_ref(:,:,:)-rld_nn(:,:,:))
+ 
+    print *, "Max-diff in u.w. flux w.r.t RRTMGP ", &
+     maxval(rlu_ref(:,:,:)-rlu_nn(:,:,:))
+
+    print *, "Max-diff in net flux w.r.t RRTMGP  ", &
+     maxval(rldu_ref(:,:,:)-rldu_nn(:,:,:)) 
 
     deallocate(rld_ref,rlu_ref,rld_nn,rlu_nn,rld_lbl,rlu_lbl,rldu_ref,rldu_nn,rldu_lbl)
 

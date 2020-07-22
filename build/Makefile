@@ -9,7 +9,7 @@ include Makefile.conf
 #
 # Choose kernels depending on environment variable
 #
-ifeq ($(RTE_KERNELS), openacc)
+ifeq ($(USE_OPENACC), yes)
   RTE_KERNEL_DIR    = ../rte/kernels-openacc
   RRTMGP_KERNEL_DIR = ../rrtmgp/kernels-openacc
   FCFLAGS += -DUSE_OPENACC
@@ -23,7 +23,11 @@ VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL
 ifeq ($(USE_TIMING),yes)
 	#
 	# Timing library
-	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING
+	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
+endif
+
+ifeq ($(FAST_EXPONENTIAL),yes)
+	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
 ifeq ($(USE_BLIS),yes)

@@ -37,6 +37,10 @@ ifeq ($(USE_OPENMP),yes)
 	FCFLAGS += -DUSE_OPENMP
 endif
 
+ifeq ($(USE_OPENACC), yes)
+  FCFLAGS += -DUSE_OPENACC
+endif
+
 # 
 # Choose BLAS library: e.g. "blis", "openblas", "mkl"
 # 
@@ -67,8 +71,8 @@ ifeq ($(USE_TIMING),yes)
 	FCINCLUDE += -I$(TIME_DIR)/include
 	# Compiler specific
 	FCFLAGS += -DUSE_TIMING
-	LDFLAGS   += -L$(TIME_DIR)/lib
-	LIBS      += -lgptl
+	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
+	LIBS      += -lgptl  -rdynamic  -lpapi
 endif
 
 VPATH = ../
