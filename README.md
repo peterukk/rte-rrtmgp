@@ -1,12 +1,13 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics computations 
+July 2020 update: The neural networks now predict **molecular absorption** from which the optical depth is retrieved by multiplying with the dry air column amount Ndry. This does not change accuracy but makes the model robust to changes in vertical resolution since Ndry is no longer an input.
 
-Update June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper is being written. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been rewritten to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) lead to almost 80% speedup overall without neural networks, while the whole clear-sky radiative transfer is more than 3 times faster when neural networks are used. These results are for an Intel platform using the latest ifort and MKL - expect smaller speed-ups on other platforms and other BLAS libraries). 
+June 2020 update: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has been submitted to JAMES. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been refactored to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) can make the solver 80% faster. When NN are additionally switched on, computing clear-sky longwave fluxes is up to 3 times faster. These results are for intel compilers and MKL - expect smaller speed-ups on other platforms and other BLAS libraries. 
 
 No neural network has been developed for the **shortwave** yet. Because of the refactoring, also the shortwave code is faster (but the fluxes differ slightly in single precision?)
 
 The **cloud optics** extension is still broken.
 
-**GPU** acceleration is supported (openACC+cuBLAS), but the code is currently slow due to non-computational bottlenecks (working on it). 
+**GPU** acceleration is supported (openACC+cuBLAS), but the code is currently slow due to spurious CUDA (de)allocations (help with this would be most welcome).
 
 ------------
 

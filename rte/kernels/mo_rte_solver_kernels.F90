@@ -27,7 +27,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_rte_solver_kernels
   use,  intrinsic :: iso_c_binding
-  use mo_rte_kind, only: wp, wl
+  use mo_rte_kind, only: wp, dp, wl
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
 #ifdef USE_TIMING
   !
@@ -63,6 +63,35 @@ module mo_rte_solver_kernels
   integer :: ret, i
 #endif
 contains
+
+#ifdef FAST_EXPONENTIAL
+  !---------------------------------------------------------------------
+  ! Fast exponential for negative arguments: a Pade approximant that
+  ! doesn't go negative for negative arguments, applied to arg/8, and
+  ! the result is then squared three times
+  elemental function exp_fast(arg) result(ex)
+    real(wp), intent(in)  :: arg
+    real(wp)              :: ex
+    ex = 1.0_wp / (1.0_wp + arg*(-0.125_wp &
+         + arg*(0.0078125_wp - 0.000325520833333333_wp * arg)))
+    ex = ex*ex
+    ex = ex*ex
+    ex = ex*ex
+  end function exp_fast
+
+  elemental function exp_fast_double(arg) result(ex)
+  real(dp), intent(in)  :: arg
+  real(dp)              :: ex
+  ex = 1.0_wp / (1.0_wp + arg*(-0.125_wp &
+       + arg*(0.0078125_wp - 0.000325520833333333_wp * arg)))
+  ex = ex*ex
+  ex = ex*ex
+  ex = ex*ex
+end function exp_fast_double
+#else
+#define exp_fast exp
+#define exp_fast_double exp
+#endif
   ! -------------------------------------------------------------------------------------------------
   !
   ! Top-level longwave kernels
@@ -106,7 +135,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     real(wp), dimension(ngpt)                             :: sfc_src       ! Surface source function by g-point [W/m2]
     real(wp), dimension(ngpt)                             :: sfc_srcJac   ! Jacobian of surface source function by g-point [W/m2]
     real(wp), dimension(ngpt,nlay) :: tau_loc, &  ! path length (tau/mu)
-                                        trans       ! transmissivity  = exp(-tau)
+                                        trans       ! transmissivity  = exp_fast(-tau)
     real(wp), dimension(ngpt,nlay) :: source_dn, source_up
     real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
 
@@ -140,10 +169,16 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
       !
       ! Optical path and transmission, used in source function and transport calculations
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_trans_exp_fast()')
+#endif     
       do ilay = 1, nlay
         tau_loc(:,ilay)  = tau(:,ilay,icol) * D(:,icol)
-        trans(:,ilay)    = exp(-tau_loc(:,ilay)) 
+        trans(:,ilay)    = exp_fast(-tau_loc(:,ilay)) 
       end do
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_trans_exp_fast()')
+#endif   
       
       !
       ! Compute the source function per g-point from source function per band
@@ -292,7 +327,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     real(wp), dimension(ngpt,nlay+1)                      :: radn_dn          ! Top level must contain incident flux boundary condition
     real(wp), dimension(ngpt,nlay+1)                      :: radn_up_Jac       ! surface temperature Jacobian of g-point radiances [W/m2-str / K]
     real(wp), dimension(ngpt,nlay) :: tau_loc, &  ! path length (tau/mu)
-                                        trans       ! transmissivity  = exp(-tau)
+                                        trans       ! transmissivity  = exp_fast(-tau)
     real(wp), dimension(ngpt,nlay) :: source_dn, source_up
     real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
 
@@ -332,11 +367,16 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
       !
       ! Optical path and transmission, used in source function and transport calculations
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_trans_exp_fast()')
+#endif  
       do ilay = 1, nlay
           tau_loc(:,ilay)  = tau(:,ilay,icol) * D(:,icol)
-          trans(:,ilay)    = exp(-tau_loc(:,ilay)) 
+          trans(:,ilay)    = exp_fast(-tau_loc(:,ilay)) 
       end do
-      
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_trans_exp_fast()')
+#endif  
       !
       ! Compute the source function per g-point from source function per band
       !
@@ -353,9 +393,15 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
       !
       ! Source function for diffuse radiation
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('lw_source_noscat')
+#endif  
       call lw_source_noscat(ngpt, nlay, &
                             lay_source, lev_source_up, lev_source_dn, &
                             tau_loc, trans, source_dn, source_up)
+#ifdef USE_TIMING
+    ret =  gptlstop('lw_source_noscat')
+#endif  
       !
       ! Surface albedo, surface source function
       !
@@ -365,10 +411,16 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
       !
       ! Transport
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('lw_transport_noscat')
+#endif        
       call lw_transport_noscat(ngpt, nlay, top_at_1,  &
                                tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
                                radn_up, radn_dn, &
                                source_sfcJac, radn_up_Jac)
+#ifdef USE_TIMING
+    ret =  gptlstop('lw_transport_noscat')
+#endif  
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
@@ -610,7 +662,7 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
       ! previous level is up (-1)
       do icol = 1, ncol
         do ilev = 2, nlay+1
-          flux_dir(:,ilev,icol) = flux_dir(:,ilev-1,icol) * exp(-tau(:,ilev-1,icol)*mu0_inv(icol))
+          flux_dir(:,ilev,icol) = flux_dir(:,ilev-1,icol) * exp_fast(-tau(:,ilev-1,icol)*mu0_inv(icol))
         end do
       end do
     else
@@ -618,7 +670,7 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
       ! previous level is up (+1)
       do icol = 1, ncol
         do ilev = nlay, 1, -1
-          flux_dir(:,ilev,icol) = flux_dir(:,ilev+1,icol) * exp(-tau(:,ilev,icol)*mu0_inv(icol))
+          flux_dir(:,ilev,icol) = flux_dir(:,ilev+1,icol) * exp_fast(-tau(:,ilev,icol)*mu0_inv(icol))
         end do
       end do
     end if
@@ -725,7 +777,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         ! layer index = level index - 1
         ! previous level is up (-1)
         do ilev = 2, nlay+1
-          radn_dir(:,ilev) = radn_dir(:,ilev-1) * exp(-tau(:,ilev-1,icol)*mu0_inv(icol))
+          radn_dir(:,ilev) = radn_dir(:,ilev-1) * exp_fast(-tau(:,ilev-1,icol)*mu0_inv(icol))
         end do
 
         ! Compute broadband fluxes
@@ -743,7 +795,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         ! layer index = level index
         ! previous level is up (+1)
         do ilev = nlay, 1, -1
-          radn_dir(:,ilev) = radn_dir(:,ilev+1) * exp(-tau(:,ilev,icol)*mu0_inv(icol))
+          radn_dir(:,ilev) = radn_dir(:,ilev+1) * exp_fast(-tau(:,ilev,icol)*mu0_inv(icol))
         end do
 
         ! Compute broadband fluxes
@@ -803,30 +855,52 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('sw_two_stream')
+#endif
       call sw_two_stream(ngpt, nlay, mu0(icol),                                &
                          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-                         Rdif, Tdif, Rdir, Tdir, Tnoscat)      
+                         Rdif, Tdif, Rdir, Tdir, Tnoscat)   
+#ifdef USE_TIMING
+    ret =  gptlstop('sw_two_stream')
+#endif    
       !
       ! Direct-beam and source for diffuse radiation
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('sw_source_2str')
+#endif
       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
                           source_up, source_dn, source_srf, radn_dir)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('sw_source_2str')
+#endif
       !
       ! Transport
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('adding')
+#endif
       call adding(ngpt, nlay, top_at_1,            &
                      sfc_alb_dif(:,icol), Rdif, Tdif, &
                      source_dn, source_up, source_srf, radn_up, radn_dn)
+#ifdef USE_TIMING
+    ret =  gptlstop('adding')
+#endif                    
       !
       ! adding computes only diffuse flux; flux_dn is total
       !
       radn_dn = radn_dn + radn_dir
-
+#ifdef USE_TIMING
+    ret =  gptlstart('sum_broadband_nocol')
+#endif  
       ! Compute broadband fluxes
       call sum_broadband_nocol(ngpt, nlay+1, radn_dir, flux_dir(:,icol) )
       call sum_broadband_nocol(ngpt, nlay+1, radn_up, flux_up(:,icol) )
       call sum_broadband_nocol(ngpt, nlay+1, radn_dn, flux_dn(:,icol) )
+#ifdef USE_TIMING
+    ret =  gptlstop('sum_broadband_nocol')
+#endif    
     end do
 
   end subroutine sw_solver_2stream_broadband
@@ -847,7 +921,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
                                                    lev_source_up, & ! Planck source at levels (layer edges),
                                                    lev_source_dn, & !   increasing/decreasing layer index
                                                    tau,        & ! Optical path (tau/mu)
-                                                   trans         ! Transmissivity (exp(-tau))
+                                                   trans         ! Transmissivity (exp_fast(-tau))
     real(wp), dimension(ngpt, nlay), intent(out):: source_dn, source_up
                                                                    ! Source function at layer edges
                                                                    ! Down at the bottom of the layer, up at the top
@@ -890,7 +964,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     integer,                          intent(in   ) :: ngpt, nlay ! Number of columns, layers, g-points
     logical(wl),                      intent(in   ) :: top_at_1   !
     real(wp), dimension(ngpt,nlay  ), intent(in   ) :: tau, &     ! Absorption optical thickness, pre-divided by mu []
-                                                       trans      ! transmissivity = exp(-tau)
+                                                       trans      ! transmissivity = exp_fast(-tau)
     real(wp), dimension(ngpt       ), intent(in   ) :: sfc_albedo ! Surface albedo
     real(wp), dimension(ngpt,nlay  ), intent(in   ) :: source_dn, &
                                                        source_up  ! Diffuse radiation emitted by the layer
@@ -983,7 +1057,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       k(:) = sqrt(max((gamma1(:,j) - gamma2(:,j)) * &
                            (gamma1(:,j) + gamma2(:,j)),  &
                            1.e-12_wp))
-      exp_minusktau(:) = exp(-tau(:,j)*k(:))
+      exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
       !
       ! Diffuse reflection and transmission
       !
@@ -1119,27 +1193,26 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     integer  :: i, j
 
     ! Variables used in Meador and Weaver
-    real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+    real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
     ! Ancillary variables
-    real(wp), dimension(ngpt) :: RT_term, exp_minusktau, exp_minus2ktau
-    real(wp) :: k_mu, k_gamma3, k_gamma4, mu0_inv
+    real(dp), dimension(ngpt) :: RT_term, exp_minusktau, exp_minus2ktau
+    real(dp) :: k_mu, k_gamma3, k_gamma4, mu0_inv
     ! ---------------------------------
-    mu0_inv = 1._wp/mu0
+    mu0_inv = 1._dp/mu0
     do j = 1, nlay
       do i = 1, ngpt
         
         ! Zdunkowski Practical Improved Flux Method "PIFM"
         !  (Zdunkowski et al., 1980;  Contributions to Atmospheric Physics 53, 147-66)
         !
-        gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
-        gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
-        gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
-        gamma4(i)=  1._wp - gamma3(i)
+        gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
+        gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
+        gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
+        gamma4(i)=  1._dp - gamma3(i)
 
         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
       end do
-
       ! Written to encourage vectorization of exponential, square root
       ! Eq 18;  k = SQRT(gamma1**2 - gamma2**2), limited below to avoid div by 0.
       !   k = 0 for isotropic, conservative scattering; this lower limit on k
@@ -1147,8 +1220,9 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       !   of < 0.1% in Rdif down to tau = 10^-9
       k(:) = sqrt(max((gamma1(:) - gamma2(:)) * &
                            (gamma1(:) + gamma2(:)),  &
-                           1.e-12_wp))
-      exp_minusktau(:) = exp(-tau(:,j)*k(:))
+                           1.e-12_dp))
+      exp_minusktau(:) = exp_fast_double(-tau(:,j)*k(:))
+
       !
       ! Diffuse reflection and transmission
       !
@@ -1156,21 +1230,19 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         exp_minus2ktau(i) = exp_minusktau(i) * exp_minusktau(i)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-        RT_term(i) = 1._wp / (k     (i) * (1._wp + exp_minus2ktau(i))  + &
-                              gamma1(i) * (1._wp - exp_minus2ktau(i)) )
+        RT_term(i) = 1._dp / (k     (i) * (1._dp + exp_minus2ktau(i))  + &
+                              gamma1(i) * (1._dp - exp_minus2ktau(i)) )
 
         ! Equation 25
-        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
+        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
 
         ! Equation 26
-        Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
+        Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
       end do
-
       !
       ! Transmittance of direct, unscattered beam. Also used below
       !
-      Tnoscat(:,j) = exp(-tau(:,j)*mu0_inv)
-
+      Tnoscat(:,j) = exp_fast_double(-tau(:,j)*mu0_inv)
       !
       ! Direct reflect and transmission
       !
@@ -1180,32 +1252,162 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         k_gamma4 = k(i) * gamma4(i)
 
         !
-        ! Equation 14, multiplying top and bottom by exp(-k*tau)
+        ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
         !   and rearranging to avoid div by 0.
         !
-        RT_term(i) =  w0(i,j) * RT_term(i)/merge(1._wp - k_mu*k_mu, &
-                                                 epsilon(1._wp),    &
-                                                 abs(1._wp - k_mu*k_mu) >= epsilon(1._wp))
+        RT_term(i) =  w0(i,j) * RT_term(i)/merge(1._dp - k_mu*k_mu, &
+                                                 epsilon(1._dp),    &
+                                                 abs(1._dp - k_mu*k_mu) >= epsilon(1._dp))
 
         Rdir(i,j) = RT_term(i)  *                                        &
-            ((1._wp - k_mu) * (alpha2(i) + k_gamma3)                     - &
-             (1._wp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-             2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j))
+            ((1._dp - k_mu) * (alpha2(i) + k_gamma3)                     - &
+             (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
+             2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j))
 
         !
-        ! Equation 15, multiplying top and bottom by exp(-k*tau),
-        !   multiplying through by exp(-tau/mu0) to
+        ! Equation 15, multiplying top and bottom by exp_fast(-k*tau),
+        !   multiplying through by exp_fast(-tau/mu0) to
         !   prefer underflow to overflow
         ! Omitting direct transmittance
         !
         Tdir(i,j) = -RT_term(i) *                                                                 &
-                    ((1._wp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-                     (1._wp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-                     2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+                    ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+                     (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+                     2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
 
       end do
     end do
+
   end subroutine sw_two_stream
+
+ subroutine sw_two_stream_timing(ngpt, nlay, mu0, tau, w0, g, &
+                                Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream_timing")
+    integer,                        intent(in)  :: ngpt, nlay
+    real(wp),                       intent(in)  :: mu0
+    real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
+    real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+    ! -----------------------
+    integer  :: i, j
+
+    ! Variables used in Meador and Weaver
+    real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+    ! Ancillary variables
+    real(dp), dimension(ngpt) :: RT_term, exp_minusktau, exp_minus2ktau
+    real(dp) :: k_mu, k_gamma3, k_gamma4, mu0_inv
+    ! ---------------------------------
+    mu0_inv = 1._dp/mu0
+    do j = 1, nlay
+
+#ifdef USE_TIMING
+      ret =  gptlstart('gamma')
+#endif
+      do i = 1, ngpt
+        
+        ! Zdunkowski Practical Improved Flux Method "PIFM"
+        !  (Zdunkowski et al., 1980;  Contributions to Atmospheric Physics 53, 147-66)
+        !
+        gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
+        gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
+        gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
+        gamma4(i)=  1._dp - gamma3(i)
+
+        alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
+        alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
+      end do
+#ifdef USE_TIMING
+    ret =  gptlstop('gamma')
+#endif
+      ! Written to encourage vectorization of exponential, square root
+      ! Eq 18;  k = SQRT(gamma1**2 - gamma2**2), limited below to avoid div by 0.
+      !   k = 0 for isotropic, conservative scattering; this lower limit on k
+      !   gives relative error with respect to conservative solution
+      !   of < 0.1% in Rdif down to tau = 10^-9
+      k(:) = sqrt(max((gamma1(:) - gamma2(:)) * &
+                           (gamma1(:) + gamma2(:)),  &
+                           1.e-12_dp))
+#ifdef USE_TIMING
+    ret =  gptlstart('exp1')
+#endif
+     ! tau_tmp = -tau(:,j)*k(:)
+      !exp_minusktau(:) = exp_fast(tau_tmp)
+      exp_minusktau(:) = exp_fast_double(-tau(:,j)*k(:))
+#ifdef USE_TIMING
+    ret =  gptlstop('exp1')
+#endif
+      !
+      ! Diffuse reflection and transmission
+      !
+#ifdef USE_TIMING
+    ret =  gptlstart('diffuse')
+#endif
+      do i = 1, ngpt
+        exp_minus2ktau(i) = exp_minusktau(i) * exp_minusktau(i)
+
+        ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
+        RT_term(i) = 1._dp / (k     (i) * (1._dp + exp_minus2ktau(i))  + &
+                              gamma1(i) * (1._dp - exp_minus2ktau(i)) )
+
+        ! Equation 25
+        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
+
+        ! Equation 26
+        Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
+      end do
+#ifdef USE_TIMING
+    ret =  gptlstop('diffuse')
+#endif
+      !
+      ! Transmittance of direct, unscattered beam. Also used below
+      !
+#ifdef USE_TIMING
+    ret =  gptlstart('exp2')
+#endif)
+      Tnoscat(:,j) = exp_fast_double(-tau(:,j)*mu0_inv)
+#ifdef USE_TIMING
+    ret =  gptlstop('exp2')
+#endif
+      !
+      ! Direct reflect and transmission
+      !
+#ifdef USE_TIMING
+    ret =  gptlstart('direct')
+#endif
+      do i = 1, ngpt
+        k_mu     = k(i) * mu0
+        k_gamma3 = k(i) * gamma3(i)
+        k_gamma4 = k(i) * gamma4(i)
+
+        !
+        ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
+        !   and rearranging to avoid div by 0.
+        !
+        RT_term(i) =  w0(i,j) * RT_term(i)/merge(1._dp - k_mu*k_mu, &
+                                                 epsilon(1._dp),    &
+                                                 abs(1._dp - k_mu*k_mu) >= epsilon(1._dp))
+
+        Rdir(i,j) = RT_term(i)  *                                        &
+            ((1._dp - k_mu) * (alpha2(i) + k_gamma3)                     - &
+             (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
+             2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j))
+
+        !
+        ! Equation 15, multiplying top and bottom by exp_fast(-k*tau),
+        !   multiplying through by exp_fast(-tau/mu0) to
+        !   prefer underflow to overflow
+        ! Omitting direct transmittance
+        !
+        Tdir(i,j) = -RT_term(i) *                                                                 &
+                    ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+                     (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+                     2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+
+      end do
+#ifdef USE_TIMING
+    ret =  gptlstop('direct')
+#endif 
+    end do
+
+  end subroutine sw_two_stream_timing
   ! ---------------------------------------------------------------
   !
   ! Direct beam source for diffuse radiation in layers and at surface;
@@ -1435,6 +1637,7 @@ end subroutine sw_source_2str
     end do
 
   end subroutine lw_gpt_source
+
   ! ---------------------------------------------------------------
   !
   ! Upper boundary condition
@@ -1551,7 +1754,7 @@ end subroutine apply_BC_old
     real(wp), dimension(ngpt)                             :: sfc_src       ! Surface source function by g-point [W/m2]
     real(wp), dimension(ngpt)                             :: sfc_srcJac   ! Jacobian of surface source function by g-point [W/m2]
     real(wp), dimension(ngpt,nlay) :: tau_loc, &  ! path length (tau/mu)
-                                        trans       ! transmissivity  = exp(-tau)
+                                        trans       ! transmissivity  = exp_fast(-tau)
     real(wp), dimension(ngpt,nlay) :: source_dn, source_up
     real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
     real(wp), dimension(ngpt,nlay) :: An, Cn
@@ -1584,7 +1787,7 @@ end subroutine apply_BC_old
       !
       do ilev = 1, nlay
         tau_loc(:,ilev) = tau(:,ilev,icol)*D(:,icol)
-        trans  (:,ilev) = exp(-tau_loc(:,ilev))
+        trans  (:,ilev) = exp_fast(-tau_loc(:,ilev))
         !
         ! here scaling is used to store parameter wb/(1-w(1-b)) of Eq.21 of the Tang's paper
         ! explanation of factor 0.4 note A of Table
@@ -1831,7 +2034,7 @@ end subroutine apply_BC_old
                               radn_up_Jac, radn_dn_Jac) bind(C, name="lw_transport_1rescl")
     integer,                          intent(in   ) :: ngpt, nlay ! Number of columns, layers, g-points
     logical(wl),                      intent(in   ) :: top_at_1   !
-    real(wp), dimension(ngpt,nlay  ), intent(in   ) :: trans      ! transmissivity = exp(-tau)
+    real(wp), dimension(ngpt,nlay  ), intent(in   ) :: trans      ! transmissivity = exp_fast(-tau)
     real(wp), dimension(ngpt,nlay  ), intent(in   ) :: source_dn, &
                                                       source_up  ! Diffuse radiation emitted by the layer
     real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_up    ! Radiances [W/m2-str]

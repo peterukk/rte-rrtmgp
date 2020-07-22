@@ -327,6 +327,9 @@ contains
     integer :: ilay, icol, igas
     ! ---------------------
     error_msg = ''
+#ifdef USE_TIMING
+    ret =  gptlstart('find_gas')
+#endif
     igas = this%find_gas(gas)
     if (igas == GAS_NOT_IN_LIST) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
@@ -343,7 +346,9 @@ contains
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (ncol)'
     end if
     if(error_msg /= "") return
-
+#ifdef USE_TIMING
+    ret =  gptlstop('find_gas')
+#endif
     !$acc data copyout (array) present(this, this%concs)
 #ifdef USE_TIMING
     ret =  gptlstart('get_vmr_loops')
@@ -522,9 +527,7 @@ contains
     integer :: igas
     ! -----------------
     if(.not. allocated(this%gas_name)) return
-#ifdef USE_TIMING
-    ret =  gptlstart('find_gas')
-#endif
+
     ! do igas = 1, size(this%gas_name)
     !   if (lower_case(trim(this%gas_name(igas))) == lower_case(trim(gas))) then
     !     find_gas = igas
@@ -532,9 +535,6 @@ contains
     ! end do
     find_gas = findloc(this%gas_name,gas,dim=1)
     ! print *, "igas", find_gas
-#ifdef USE_TIMING
-    ret =  gptlstop('find_gas')
-#endif
   end function
   ! -------------------------------------------------------------------------------------
   subroutine del(this)
