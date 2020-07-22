@@ -97,9 +97,10 @@ contains
                                         trans       ! transmissivity  = exp(-tau)
     real(wp), dimension(ngpt,nlay, ncol)  :: source_dn, source_up
     real(wp), dimension(ngpt,ncol)        :: source_sfc, sfc_albedo, source_sfcJac
+    integer,  dimension(ngpt)             :: gpt_bands ! band number (1...16) for each g-point
 
     real(wp), parameter :: pi = acos(-1._wp)
-    integer             :: ilay, ilev, icol, igpt, sfc_lay, top_level
+    integer             :: ilay, ilev, icol, igpt, sfc_lay, top_level, ibnd
 
     ! ------------------------------------
     ! Which way is up?
@@ -121,12 +122,19 @@ contains
       lev_source_dn => lev_source_dec
     end if
 
-    !$acc enter data create (lev_source_dec, lev_source_inc, lay_source,  sfc_src, sfc_src_Jac) copyin(D, weight)
+    !$acc enter data create (gpt_bands, lev_source_dec, lev_source_inc, lay_source,  sfc_src, sfc_src_Jac) copyin(D, weight)
 
     !
     ! Compute the source function per g-point from source function per band
     !
-    call lw_gpt_source_Jac(nbnd, ngpt, nlay, ncol, sfc_lay, band_limits, &
+    !$acc parallel loop
+    do ibnd = 1, nbnd
+      do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
+        gpt_bands(igpt) = ibnd
+      end do
+    end do
+
+    call lw_gpt_source_Jac(nbnd, ngpt, nlay, ncol, sfc_lay, gpt_bands, &
                   planck_frac, lay_source_bnd, lev_source_bnd, &
                   sfc_source_bnd, sfc_source_bnd_Jac, &
                   sfc_src, sfc_src_Jac, lay_source, lev_source_dec, lev_source_inc)
@@ -551,7 +559,8 @@ contains
     real(wp), dimension(ngpt,nlay+1,ncol) :: lev_source
     real(wp), dimension(ngpt,nlay,ncol  ) :: source_dn, source_up
     real(wp), dimension(ngpt     ,ncol  ) :: source_sfc
-    integer :: icol, sfc_lay, top_level, igpt
+    integer :: icol, sfc_lay, top_level, igpt, ibnd
+    integer,  dimension(ngpt)             :: gpt_bands ! band number (1...16) for each g-point
 
     ! ------------------------------------
 
@@ -568,9 +577,16 @@ contains
     !$acc enter data create (sfc_src, lay_source, lev_source_dec, lev_source_inc)
 
     !$acc enter data copyin(sfc_emis, flux_dn)
-    !$acc enter data create(flux_up, Rdif, Tdif, gamma1, gamma2, sfc_albedo, lev_source, source_dn, source_up, source_sfc)
+    !$acc enter data create(gpt_bands,flux_up, Rdif, Tdif, gamma1, gamma2, sfc_albedo, lev_source, source_dn, source_up, source_sfc)
 
-    call lw_gpt_source(nbnd, ngpt, nlay, ncol, sfc_lay, band_limits, &
+    !$acc parallel loop
+    do ibnd = 1, nbnd
+      do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
+        gpt_bands(igpt) = ibnd
+      end do
+    end do
+
+    call lw_gpt_source(nbnd, ngpt, nlay, ncol, sfc_lay, gpt_bands, &
                   planck_frac(:,:,:), lay_source_bnd(:,:,:), lev_source_bnd(:,:,:), &
                   sfc_source_bnd(:,:),  &
                   sfc_src, lay_source, lev_source_dec, lev_source_inc)
@@ -1545,12 +1561,12 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! Planck sources by g-point from plank fraction and sources by band
   !
   ! -------------------------------------------------------------------------------------------------
-  pure subroutine lw_gpt_source_Jac_nocol(nbnd, ngpt, nlay, sfc_lay, band_limits, planck_frac, &
+  pure subroutine lw_gpt_source_Jac_nocol(nbnd, ngpt, nlay, sfc_lay, gpt_bands, planck_frac, &
     lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_source_bnd_Jac, &     ! inputs: band source functions
     sfc_source, sfc_source_Jac,  lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
 
     integer,                          intent(in   ) :: nbnd, ngpt, nlay, sfc_lay
-    integer,  dimension(2,nbnd),      intent(in   ) :: band_limits
+    integer,  dimension(ngpt),        intent(in)    :: gpt_bands ! band number (1...16) for each g-point
     real(wp), dimension(ngpt,nlay),   intent(in   ) :: planck_frac 
     real(wp), dimension(nbnd,nlay),   intent(in   ) :: lay_source_bnd
     real(wp), dimension(nbnd,nlay+1), intent(in )   :: lev_source_bnd
@@ -1563,36 +1579,32 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 
     integer             ::  ilay, igpt, ibnd, gptS, gptE
 
-    !$acc parallel loop collapse(2)
-    do ibnd = 1, nbnd
-      do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-        sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-        sfc_source_Jac(igpt) = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(ibnd) - sfc_source_bnd_Jac(ibnd))
-      end do
-    end do 
+    !$acc parallel loop 
+    do igpt = 1, ngpt
+      sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(gpt_bands(igpt))
+      sfc_source_Jac(igpt) = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(gpt_bands(igpt)) - sfc_source_bnd_Jac(gpt_bands(igpt)))
+    end do
 
     !$acc parallel loop collapse(2)
     do ilay = 1, nlay
-      do ibnd = 1, nbnd
-        do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-          ! compute layer source irradiance for each g-point
-          lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-          ! compute level source irradiance for each g-point, one each for upward and downward paths
-          lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-          lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-        end do
-      end do 
+      do igpt = 1,ngpt 
+        ! compute layer source irradiance for each g-point
+        lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(gpt_bands(igpt),ilay)
+        ! compute level source irradiance for each g-point, one each for upward and downward paths
+        lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(gpt_bands(igpt),ilay)
+        lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(gpt_bands(igpt),ilay+1)
+      end do
     end do
 
   end subroutine lw_gpt_source_Jac_nocol
 
 
-  pure subroutine lw_gpt_source_nocol(nbnd, ngpt, nlay, sfc_lay, band_limits, planck_frac, &
+  pure subroutine lw_gpt_source_nocol(nbnd, ngpt, nlay, sfc_lay, gpt_bands, planck_frac, &
     lay_source_bnd, lev_source_bnd, sfc_source_bnd, &     ! inputs: band source functions
     sfc_source, lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
 
     integer,                          intent(in   ) :: nbnd, ngpt, nlay, sfc_lay
-    integer,  dimension(2,nbnd),      intent(in   ) :: band_limits
+    integer,  dimension(ngpt),        intent(in)    :: gpt_bands ! band number (1...16) for each g-point
     real(wp), dimension(ngpt,nlay),   intent(in   ) :: planck_frac 
     real(wp), dimension(nbnd,nlay),   intent(in   ) :: lay_source_bnd
     real(wp), dimension(nbnd,nlay+1), intent(in )   :: lev_source_bnd
@@ -1604,25 +1616,20 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 
     integer             ::  ilay, igpt, ibnd, gptS, gptE
 
-   !$acc parallel loop collapse(2)
-    do ibnd = 1, nbnd
-      do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-        sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-        sfc_source_Jac(igpt) = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(ibnd) - sfc_source_bnd_Jac(ibnd))
-      end do
-    end do 
+   !$acc parallel loop 
+    do igpt = 1, ngpt
+      sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(gpt_bands(igpt))
+    end do
 
-    !$acc parallel loop collapse(3)
+    !$acc parallel loop collapse(2)
     do ilay = 1, nlay
-      do ibnd = 1, nbnd
-        do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-          ! compute layer source irradiance for each g-point
-          lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-          ! compute level source irradiance for each g-point, one each for upward and downward paths
-          lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-          lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-        end do
-      end do 
+      do igpt = 1 , ngpt 
+        ! compute layer source irradiance for each g-point
+        lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(gpt_bands(igpt),ilay)
+        ! compute level source irradiance for each g-point, one each for upward and downward paths
+        lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(gpt_bands(igpt),ilay)
+        lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(gpt_bands(igpt),ilay+1)
+      end do
     end do
 
   end subroutine lw_gpt_source_nocol
@@ -1633,12 +1640,12 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! Planck sources by g-point from plank fraction and sources by band
   !
   ! -------------------------------------------------------------------------------------------------
-  subroutine lw_gpt_source_Jac(nbnd, ngpt, nlay, ncol, sfc_lay, band_limits, planck_frac, &
+  subroutine lw_gpt_source_Jac(nbnd, ngpt, nlay, ncol, sfc_lay, gpt_bands, planck_frac, &
     lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_source_bnd_Jac, &     ! inputs: band source functions
     sfc_source, sfc_source_Jac,  lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
 
     integer,                                intent(in )   :: nbnd, ngpt, nlay, ncol, sfc_lay
-    integer,  dimension(2,nbnd),            intent(in   ) :: band_limits
+    integer,  dimension(ngpt),              intent(in)    :: gpt_bands ! band number (1...16) for each g-point
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in )   :: planck_frac 
     real(wp), dimension(nbnd,nlay,  ncol),  intent(in )   :: lay_source_bnd
     real(wp), dimension(nbnd,nlay+1,ncol),  intent(in )   :: lev_source_bnd
@@ -1651,34 +1658,31 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 
     integer             ::  ilay, icol, igpt, ibnd, gptS, gptE
 
-    !$acc data present(band_limits,planck_frac,lay_source_bnd,lev_source_bnd,sfc_source_bnd,sfc_source_bnd_Jac)
+  
+    !$acc data present(gpt_bands,planck_frac,lay_source_bnd,lev_source_bnd,sfc_source_bnd,sfc_source_bnd_Jac)
+
+    !$acc parallel loop collapse(2)
+    do icol = 1, ncol
+      do igpt = 1, ngpt
+        sfc_source(igpt, icol)     = planck_frac(igpt,sfc_lay, icol) * sfc_source_bnd(gpt_bands(igpt), icol)
+        sfc_source_Jac(igpt, icol) = planck_frac(igpt,sfc_lay, icol) * (sfc_source_bnd(gpt_bands(igpt), icol) - sfc_source_bnd_Jac(gpt_bands(igpt), icol))
+      end do
+    end do
 
     !$acc parallel loop collapse(3)
     do icol = 1, ncol
-      do ibnd = 1, nbnd
-        do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-          sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-          sfc_source_Jac(igpt) = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(ibnd) - sfc_source_bnd_Jac(ibnd))
-        end do
-      end do 
-    end do
-
-    !$acc parallel loop collapse(4)
-    do icol = 1, ncol
       do ilay = 1, nlay
-        do ibnd = 1, nbnd
-          do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-            ! compute layer source irradiance for each g-point
-            lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-            ! compute level source irradiance for each g-point, one each for upward and downward paths
-            lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-            lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-          end do
-        end do 
+        do igpt = 1,ngpt 
+          ! compute layer source irradiance for each g-point
+          lay_source(igpt,ilay, icol)       = planck_frac(igpt,ilay, icol) * lay_source_bnd(gpt_bands(igpt),ilay, icol)
+          ! compute level source irradiance for each g-point, one each for upward and downward paths
+          lev_source_dec(igpt,ilay, icol)   = planck_frac(igpt,ilay, icol) * lev_source_bnd(gpt_bands(igpt),ilay, icol)
+          lev_source_inc(igpt,ilay, icol)   = planck_frac(igpt,ilay, icol) * lev_source_bnd(gpt_bands(igpt),ilay+1, icol)
+        end do
       end do
     end do
     
-   !$acc end data
+    !$acc end data
 
   end subroutine lw_gpt_source_Jac
 
@@ -1687,12 +1691,12 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! Planck sources by g-point from plank fraction and sources by band
   !
   ! -------------------------------------------------------------------------------------------------
-  pure subroutine lw_gpt_source(nbnd, ngpt, nlay, ncol, sfc_lay, band_limits, planck_frac, &
+  pure subroutine lw_gpt_source(nbnd, ngpt, nlay, ncol, sfc_lay, gpt_bands, planck_frac, &
     lay_source_bnd, lev_source_bnd, sfc_source_bnd, &     ! inputs: band source functions
     sfc_source,  lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
 
     integer,                               intent(in   ) :: nbnd, ngpt, nlay, ncol, sfc_lay
-    integer,  dimension(2,nbnd),           intent(in   ) :: band_limits
+    integer,  dimension(ngpt),             intent(in)    :: gpt_bands ! band number (1...16) for each g-point
     real(wp), dimension(ngpt,nlay,ncol),   intent(in   ) :: planck_frac 
     real(wp), dimension(nbnd,nlay,ncol),   intent(in   ) :: lay_source_bnd
     real(wp), dimension(nbnd,nlay+1,ncol), intent(in )   :: lev_source_bnd
@@ -1706,25 +1710,21 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 
     !$acc parallel loop collapse(2)
     do icol = 1, ncol
-      do ibnd = 1, nbnd
-        do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-          sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-        end do
-      end do 
+      do igpt = 1, ngpt
+        sfc_source(igpt, icol)     = planck_frac(igpt,sfc_lay, icol) * sfc_source_bnd(gpt_bands(igpt), icol)
+      end do
     end do
 
-    !$acc parallel loop collapse(4)
+    !$acc parallel loop collapse(3)
     do icol = 1, ncol
       do ilay = 1, nlay
-        do ibnd = 1, nbnd
-          do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-            ! compute layer source irradiance for each g-point
-            lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-            ! compute level source irradiance for each g-point, one each for upward and downward paths
-            lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-            lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-          end do
-        end do 
+        do igpt = 1,ngpt 
+          ! compute layer source irradiance for each g-point
+          lay_source(igpt,ilay, icol)       = planck_frac(igpt,ilay, icol) * lay_source_bnd(gpt_bands(igpt),ilay, icol)
+          ! compute level source irradiance for each g-point, one each for upward and downward paths
+          lev_source_dec(igpt,ilay, icol)   = planck_frac(igpt,ilay, icol) * lev_source_bnd(gpt_bands(igpt),ilay, icol)
+          lev_source_inc(igpt,ilay, icol)   = planck_frac(igpt,ilay, icol) * lev_source_bnd(gpt_bands(igpt),ilay+1, icol)
+        end do
       end do
     end do
 
@@ -1870,10 +1870,10 @@ end subroutine apply_BC_old
 
     real(wp), dimension(:,:,:),         contiguous, pointer :: lev_source_up, lev_source_dn ! Mapping increasing/decreasing indicies to up/down
     real(wp), dimension(ngpt,nlay,ncol),   target           :: lev_source_dec, lev_source_inc
+    integer,  dimension(ngpt)               :: gpt_bands ! band number (1...16) for each g-point
     real(wp), parameter :: pi = acos(-1._wp)
-    ! ------------------------------------
     real(wp), parameter :: tau_thresh = sqrt(epsilon(tau))
-    integer             :: ilev, icol, igpt, ilay, sfc_lay, top_level
+    integer             :: ilev, icol, igpt, ilay, sfc_lay, top_level, ibnd
     real(wp), dimension(ngpt,nlay,ncol) :: An, Cn
     ! ------------------------------------
 
@@ -1898,7 +1898,14 @@ end subroutine apply_BC_old
     !$acc enter data create(An, Cn)
     !$acc enter data attach(lev_source_up,lev_source_dn)
 
-    call lw_gpt_source_Jac(nbnd, ngpt, nlay, ncol, sfc_lay, band_limits, &
+    !$acc parallel loop
+    do ibnd = 1, nbnd
+      do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
+        gpt_bands(igpt) = ibnd
+      end do
+    end do
+
+    call lw_gpt_source_Jac(nbnd, ngpt, nlay, ncol, sfc_lay, gpt_bands, &
               planck_frac, lay_source_bnd, lev_source_bnd, &
               sfc_source_bnd, sfc_source_bnd_Jac, &
               sfc_src, sfc_src_Jac, lay_source, lev_source_dec, lev_source_inc)

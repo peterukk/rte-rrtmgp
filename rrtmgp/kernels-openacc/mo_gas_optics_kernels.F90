@@ -16,7 +16,7 @@
 
 module mo_gas_optics_kernels
   use mo_rte_kind,      only: wp, wl, sp, dp
-  use mod_network,      only: network_type, output_sgemm_pfrac_acc, output_sgemm_tau_acc
+  use mod_network,      only: network_type, output_sgemm_pfrac_flat_acc, output_sgemm_tau_flat_acc
   use, intrinsic :: ISO_C_BINDING
   
   implicit none
@@ -783,11 +783,11 @@ contains
 
     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
 
-    call neural_nets(2) % output_sgemm_tau_acc(ninputs, ngpt, nobs, input, output)
+    call neural_nets(2) % output_sgemm_tau_flat_acc(ninputs, ngpt, nobs, input, output)
 
-    call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
+    ! call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
 
-    call neural_nets(1) %  output_sgemm_pfrac_acc(ninputs,ngpt,nobs,input, output)
+    ! call neural_nets(1) %  output_sgemm_pfrac_flat_acc(ninputs,ngpt,nobs,input, output)
 
   end subroutine predict_nn_lw_blas_sp
 
@@ -827,7 +827,7 @@ contains
   !     end do 
   !   end do
 
-  !   call neural_nets(2) % output_sgemm_tau_acc(ninputs, ngpt, nobs, tmp_input, tmp_output)
+  !   call neural_nets(2) % output_sgemm_tau_flat_acc(ninputs, ngpt, nobs, tmp_input, tmp_output)
   
   !   !$acc parallel loop collapse(3)
   !   do icol = 1, ncol
@@ -839,7 +839,7 @@ contains
   !     end do 
   !   end do
 
-  !   call neural_nets(1) %  output_sgemm_pfrac_acc(ninputs,ngpt,nobs,tmp_input, tmp_output)
+  !   call neural_nets(1) %  output_sgemm_pfrac_flat_acc(ninputs,ngpt,nobs,tmp_input, tmp_output)
 
   !   !$acc parallel loop collapse(3)
   !   do icol = 1, ncol
