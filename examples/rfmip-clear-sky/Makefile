@@ -72,9 +72,18 @@ ifeq ($(USE_TIMING),yes)
 	# Compiler specific
 	FCFLAGS += -DUSE_TIMING
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
+	LIBS      += -lgptl  -rdynamic  
+endif
+ifeq ($(USE_FULL_TIMING),yes)
+	#
+	# Timing library
+	#
+	FCINCLUDE += -I$(TIME_DIR)/include
+	# Compiler specific
+	FCFLAGS += -DUSE_TIMING -DUSE_PAPI
+	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl  -rdynamic  -lpapi
 endif
-
 VPATH = ../
 
 # Compilation rules

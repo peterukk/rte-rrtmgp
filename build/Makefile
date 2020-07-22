@@ -22,11 +22,17 @@ VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL
 
 ifeq ($(USE_TIMING),yes)
 	#
-	# Timing library
+	# Timing library GPTL
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
 endif
 
-ifeq ($(FAST_EXPONENTIAL),yes)
+ifeq ($(USE_FULL_TIMING),yes)
+	#
+	# GPTL + PAPI 
+	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
+endif
+
+ifeq ($(USE_FAST_EXPONENTIAL),yes)
 	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
