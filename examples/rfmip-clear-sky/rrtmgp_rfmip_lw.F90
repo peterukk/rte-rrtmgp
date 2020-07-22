@@ -98,7 +98,9 @@ program rrtmgp_rfmip_lw
 #endif
   implicit none
 
+#ifdef USE_PAPI  
 #include "f90papi.h"
+#endif  
   ! --------------------------------------------------
   !
   ! Local variables
@@ -148,7 +150,9 @@ program rrtmgp_rfmip_lw
   !
   ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+#ifdef USE_PAPI  
   ret = GPTLsetoption (PAPI_SP_OPS, 1);
+#endif  
   ret = gptlinitialize()
 #endif
 
@@ -437,7 +441,7 @@ optical_props%tau = 0.0
                             top_at_1,        &
                             source,          &
                             sfc_emis_spec,   &
-                            fluxes, n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .true.))
+                            fluxes, n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .false.))
 
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
