@@ -47,7 +47,7 @@ module mo_gas_concentrations
   integer :: ret, i
 #endif
 
-  type, private :: conc_field
+  type, public :: conc_field
     real(wp), dimension(:,:), allocatable :: conc
   end type conc_field
 
@@ -82,6 +82,7 @@ module mo_gas_concentrations
                                       get_vmr_2d
       generic,   public :: get_subset => get_subset_range
       procedure, public :: get_conc_field
+      procedure, public :: get_conc_dims_and_igas
       procedure, public :: get_num_gases
       procedure, public :: get_gas_names
   end type ty_gas_concs
@@ -383,10 +384,7 @@ contains
 
   end function get_vmr_2d
  
-    ! -------------------------------------------------------------------------------------
-  !
-  ! 2D array (col, lay)
-  !
+  ! -------------------------------------------------------------------------------------
   function get_conc_field(this, gas, array, dims) result(error_msg)
     class(ty_gas_concs) :: this
     character(len=*),         intent(in ) :: gas
@@ -417,6 +415,34 @@ contains
     array = this%concs(igas)%conc
 
   end function get_conc_field
+
+  ! -------------------------------------------------------------------------------------
+  function get_conc_dims_and_igas(this, gas, dims, igas) result(error_msg)
+    class(ty_gas_concs) :: this
+    character(len=*),         intent(in ) :: gas
+    integer,                  intent(out) :: dims, igas
+    character(len=128)                    :: error_msg
+    ! ---------------------
+    integer :: ilay, icol
+    ! ---------------------
+    error_msg = ''
+
+    igas = this%find_gas(gas)
+    if (igas == GAS_NOT_IN_LIST) then
+      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
+    else if(.not. allocated(this%concs(igas)%conc)) then
+      error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
+    end if
+
+    if(size(this%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
+      dims = 2
+    else if(size(this%concs(igas)%conc, 1) > 1) then ! Concentration stored as 1D
+      dims = 1
+    else                              ! Concentration stored as scalar
+      dims = 0
+    end if
+
+  end function get_conc_dims_and_igas
   ! -------------------------------------------------------------------------------------
   !
   ! Extract a subset of n columns starting with column 'start'

@@ -16,7 +16,7 @@
 
 module mo_gas_optics_kernels
   use mo_rte_kind,      only : wp, wl, sp, dp
-  use mod_network,      only: network_type
+  use mod_network,      only: network_type, output_sgemm_tau, output_sgemm_pfrac
   use, intrinsic :: ISO_C_BINDING
 #ifdef USE_TIMING
   ! Timing library
@@ -30,9 +30,125 @@ module mo_gas_optics_kernels
     module procedure predict_nn_lw_blas_sp, predict_nn_lw_blas_mp
   end interface predict_nn_lw_blas
 
+  interface predict_nn_sw_blas
+    module procedure predict_nn_sw_blas_sp, predict_nn_sw_blas_mp
+  end interface predict_nn_sw_blas
+
 #ifdef USE_TIMING
   integer :: ret, i
 #endif
+
+  real(sp), parameter                 :: ysigma_lw_tau = 0.0008864219_sp
+  real(sp), parameter, dimension(256) :: ymeans_lw_tau = (/ &
+  0.0007013, 0.00081638, 0.00088407, 0.0009376, 0.00100272,  0.00108871, 0.00119965, 0.00136057, 0.00162019, 0.00185225,&
+  0.00195079, 0.00206555, 0.00220559, 0.00240607, 0.00271468,0.00301905, 0.00046654, 0.00051556, 0.00058341, 0.00065088,&
+  0.00070464, 0.00076876, 0.00085896, 0.00097935, 0.00119935,0.00141034, 0.00151006, 0.00163442, 0.00180711, 0.00204042,&
+  0.00242276, 0.00280669, 0.00042887, 0.00046485, 0.00051584,0.00058201, 0.00065572, 0.00072477, 0.00080584, 0.00091423,&
+  0.00110042, 0.00127067, 0.00134649, 0.00144005, 0.00155864,0.0017359, 0.00192395, 0.00202425, 0.00089971, 0.00101015,&
+  0.0010735, 0.00113382, 0.00121697, 0.00131415, 0.0014548,0.00166414, 0.00201406, 0.0023286, 0.00248189, 0.0026516,&
+  0.0028395, 0.00309552, 0.00329059, 0.00340846, 0.00040419,0.00044149, 0.00049501, 0.00057646, 0.00065665, 0.00072959,&
+  0.0008178, 0.00092567, 0.00110577, 0.00127773, 0.00135464,0.00144639, 0.00155456, 0.00172624, 0.00195144, 0.00219249,&
+  0.00037311, 0.00038832, 0.00039876, 0.00039357, 0.00039073,0.00039439, 0.00040139, 0.00041544, 0.00045041, 0.00048733,&
+  0.00050021, 0.000511, 0.0005222, 0.00053226, 0.00053905,0.00053686, 0.00045033, 0.00050789, 0.00056031, 0.0006055,&
+  0.00064596, 0.0006884, 0.00073842, 0.00080476, 0.00091462,0.00100837, 0.00104174, 0.00107803, 0.00112003, 0.00116588,&
+  0.00121704, 0.00124574, 0.00043096, 0.00044609, 0.00045882,0.00047328, 0.00049173, 0.00051617, 0.00055129, 0.00060892,&
+  0.00070759, 0.00078732, 0.00081574, 0.00084897, 0.00089626,0.00096228, 0.00103707, 0.00107244, 0.00044382, 0.00047923,&
+  0.00052424, 0.00056825, 0.00061594, 0.00066949, 0.00073642,0.00083537, 0.00099988, 0.00115576, 0.00122428, 0.00130514,&
+  0.0013967, 0.00150886, 0.00164095, 0.00173281, 0.0005398,0.00058346, 0.00061954, 0.00065103, 0.00069784, 0.00076837,&
+  0.00086104, 0.00099005, 0.00119531, 0.00135744, 0.00142613,0.00151644, 0.00163775, 0.0017866, 0.00194151, 0.00203961,&
+  0.00062092, 0.00068568, 0.00072482, 0.00076629, 0.00081684,0.00088733, 0.00098261, 0.00111583, 0.00132001, 0.00149657,&
+  0.00157718, 0.00167974, 0.00181246, 0.00196578, 0.00211621,0.00222501, 0.00027775, 0.00031307, 0.00034595, 0.00037792,&
+  0.00040985, 0.00044745, 0.00049738, 0.00056636, 0.00068384,0.00079073, 0.00083684, 0.00089007, 0.00094933, 0.00101663,&
+  0.00109136, 0.00115981, 0.00041082, 0.00047212, 0.0005221,0.00057267, 0.00062689, 0.00068311, 0.00074801, 0.00083137,&
+  0.0009249, 0.00097404, 0.00098701, 0.0009677, 0.00091862,0.00092232, 0.00097919, 0.00099403, 0.00082178, 0.00097702,&
+  0.00115414, 0.00134279, 0.00149137, 0.00160743, 0.00175431,0.00198898, 0.00242579, 0.00281907, 0.00299135, 0.00319233,&
+  0.00345435, 0.00384145, 0.00410627, 0.00420549, 0.00022183,0.00025186, 0.00027004, 0.0002846, 0.0003047, 0.00032399,&
+  0.00034067, 0.00035919, 0.00038545, 0.00040524, 0.00041355,0.00042393, 0.00043629, 0.00045243, 0.0004797, 0.00050912,&
+  0.00030737, 0.00035681, 0.00039763, 0.00043568, 0.00047533,0.00052387, 0.00058468, 0.00066867, 0.00081455, 0.00094435,&
+  0.00099829, 0.00107121, 0.00117441, 0.00127705, 0.00135903, 0.00142707 /)
+
+  ! real(sp), parameter                 :: ysigma_sw_tau_tot = 0.0005998554
+  ! real(sp), parameter, dimension(224) :: ymeans_sw_tau_tot = (/ &
+  ! 0.00037083, 0.00044209, 0.00050536, 0.00058699, 0.00069377, 0.0008147 , 0.00095259, 0.00118586, 0.00160582, 0.00188952,&
+  ! 0.00201833, 0.00219009, 0.00244024, 0.00283895, 0.00348068, 0.00406385, 0.00034179, 0.00038664, 0.00042815, 0.00046809,&
+  ! 0.0005097 , 0.00056119, 0.00062559, 0.00071393, 0.00086488, 0.00099768, 0.00105177, 0.0011247 , 0.00122712, 0.00132632,&
+  ! 0.00140509, 0.00147116, 0.0004506 , 0.00053909, 0.00064168,0.00074254, 0.00084421, 0.00096252, 0.00108908, 0.00123447,&
+  ! 0.00148458, 0.00171693, 0.00181891, 0.00194639, 0.00210757,0.00235399, 0.00260144, 0.00272683, 0.00032192, 0.00034846,&
+  ! 0.00037568, 0.00040586, 0.00044164, 0.00048103, 0.00052855,0.00059311, 0.00069642, 0.00079178, 0.00083278, 0.00087989,&
+  ! 0.00093853, 0.00101786, 0.00110595, 0.00112647, 0.00032898,0.00037803, 0.00042608, 0.00047477, 0.00052442, 0.00057716,&
+  ! 0.00063745, 0.00071833, 0.00085972, 0.00099369, 0.00105385,0.00113107, 0.00124225, 0.00137246, 0.00152802, 0.00163304,&
+  ! 0.00032347, 0.00035042, 0.00038449, 0.00044857, 0.00053532,0.00059162, 0.00065327, 0.00074091, 0.00089425, 0.00103798,&
+  ! 0.00110064, 0.00117579, 0.00127228, 0.00139873, 0.00152858,0.00161931, 0.00033517, 0.00037287, 0.0004173 , 0.00046665,&
+  ! 0.00052037, 0.0005756 , 0.00063536, 0.00071477, 0.00085556,0.00099234, 0.00105448, 0.00112842, 0.00121555, 0.00132714,&
+  ! 0.00145095, 0.00155022, 0.00036895, 0.00038357, 0.00039398,0.00040467, 0.00041701, 0.0004305 , 0.00044344, 0.00046376,&
+  ! 0.0005305 , 0.00061535, 0.00067116, 0.00073367, 0.00079331,0.00085168, 0.00090718, 0.00094346, 0.00038343, 0.0003924 ,&
+  ! 0.00040473, 0.00042312, 0.00044495, 0.00047225, 0.00050571,0.00054339, 0.00060592, 0.00065974, 0.00068728, 0.00073093,&
+  ! 0.00079389, 0.00088332, 0.00098721, 0.00108659, 0.00045222,0.00046618, 0.00047975, 0.00049424, 0.00050797, 0.00052239,&
+  ! 0.0005392 , 0.00056305, 0.00062147, 0.00068353, 0.00071958,0.00078041, 0.00088791, 0.00110135, 0.00138173, 0.00152975,&
+  ! 0.0005231 , 0.00053445, 0.00054292, 0.00055498, 0.00056824,0.00057908, 0.00058575, 0.00059095, 0.00059543, 0.0005999 ,&
+  ! 0.00060232, 0.00060586, 0.00061152, 0.0006206 , 0.00063354,0.00065011, 0.00057636, 0.00058859, 0.00060019, 0.00061094,&
+  ! 0.00062062, 0.00062907, 0.00063611, 0.00064161, 0.00064556,0.00064732, 0.00064764, 0.00064789, 0.00064809, 0.00064823,&
+  ! 0.0006483 , 0.00064833, 0.0006635 , 0.00070939, 0.00078375,0.00088054, 0.00098333, 0.00106954, 0.00112823, 0.00116335,&
+  ! 0.00118329, 0.0011896 , 0.00119042, 0.00119094, 0.00119124,0.00119147, 0.00119165, 0.0011917 , 0.00104226, 0.0010737 ,&
+  ! 0.00112755, 0.00119405, 0.00125461, 0.00129682, 0.00131468, 0.00132099, 0.00132339, 0.00132437, 0.00132464, 0.00132507,&
+  ! 0.00132562, 0.00132582, 0.00132593, 0.00132591 /)    
+
+  real(sp), parameter                 :: ysigma_sw_tau_ray = 0.00019679657
+  real(sp), parameter, dimension(224) :: ymeans_sw_tau_ray = (/ &
+  0.00016408, 0.00016821, 0.00016852, 0.00016616, 0.0001631 ,0.0001615 , 0.00016211, 0.00016632, 0.00017432, 0.00017609,&
+  0.00017617, 0.00017683, 0.00017806, 0.00017891, 0.00017938,0.00017905, 0.00020313, 0.000203  , 0.00020417, 0.00020546,&
+  0.00020597, 0.00020647, 0.0002067 , 0.0002069 , 0.00020719,0.00020752, 0.00020766, 0.00020783, 0.00020801, 0.00020828,&
+  0.00020884, 0.00020988, 0.00022147, 0.00022575, 0.00022777,0.00022846, 0.00022824, 0.00022803, 0.00022816, 0.00022841,&
+  0.0002286 , 0.00022876, 0.00022883, 0.00022887, 0.00022888,0.00022891, 0.00022922, 0.00023004, 0.00025017, 0.00024942,&
+  0.00024824, 0.00024734, 0.00024655, 0.00024587, 0.00024539,0.00024486, 0.00024454, 0.0002441 , 0.00024381, 0.00024343,&
+  0.00024307, 0.00024265, 0.00024179, 0.00024042, 0.00025942,0.00026145, 0.00026296, 0.00026379, 0.00026454, 0.00026518,&
+  0.00026548, 0.00026566, 0.00026578, 0.00026592, 0.00026607,0.00026617, 0.00026612, 0.00026633, 0.00026634, 0.00026667,&
+  0.00028838, 0.00028652, 0.00028487, 0.00028311, 0.00027978,0.00027901, 0.00027885, 0.00027866, 0.000278  , 0.00027733,&
+  0.00027734, 0.00027694, 0.00027574, 0.00027526, 0.0002754 ,0.00027594, 0.00030356, 0.00031213, 0.00031563, 0.00031476,&
+  0.00031548, 0.00031693, 0.00031758, 0.00031764, 0.00031757,0.00031747, 0.0003175 , 0.0003176 , 0.00031767, 0.00031787,&
+  0.00031921, 0.00032022, 0.00033161, 0.00033401, 0.00033486,0.0003345 , 0.00033421, 0.00033408, 0.00033402, 0.00033377,&
+  0.00033366, 0.00033365, 0.0003337 , 0.0003337 , 0.00033372,0.00033368, 0.0003336 , 0.00033342, 0.00038102, 0.00038465,&
+  0.00038598, 0.00038884, 0.00039175, 0.00039174, 0.00039248,0.00039248, 0.00039339, 0.00038445, 0.00037872, 0.00037472,&
+  0.00037253, 0.00036779, 0.00036238, 0.00035383, 0.0004347 ,0.00044431, 0.00045121, 0.00045676, 0.00046053, 0.00046292,&
+  0.00046443, 0.00046354, 0.00045597, 0.0004476 , 0.00044526,0.00044227, 0.00043994, 0.00043726, 0.00043139, 0.00043131,&
+  0.00050991, 0.0005198 , 0.00052429, 0.00052806, 0.00052854,0.00052917, 0.00053388, 0.00053857, 0.0005396 , 0.00053686,&
+  0.00053488, 0.0005327 , 0.00052904, 0.00052511, 0.00052043,0.00051689, 0.00057637, 0.0005886 , 0.0006002 , 0.00061095,&
+  0.00062064, 0.00062908, 0.00063611, 0.00064162, 0.00064557,0.00064733, 0.00064765, 0.0006479 , 0.0006481 , 0.00064824,&
+  0.00064831, 0.00064833, 0.00065669, 0.00067188, 0.00068705,0.00070096, 0.00071349, 0.00072444, 0.00073358, 0.00074076,&
+  0.00074614, 0.00074835, 0.00074795, 0.00074786, 0.0007479 ,0.00074804, 0.00074818, 0.00074823, 0.0008143 , 0.00081451,&
+  0.00081412, 0.00081407, 0.00081408, 0.00081299, 0.00081158,0.00081498, 0.00081472, 0.0008145 , 0.00081539, 0.00081426,&
+  0.00081398, 0.000814  , 0.00081404, 0.00081415 /)   
+
+  real(sp), parameter                 :: ysigma_sw_tau_abs = 0.00065187697
+  real(sp), parameter, dimension(224) :: ymeans_sw_tau_abs = (/ &
+  3.64390580e-4, 4.35663940e-4, 4.98018635e-4, 5.77545608e-4, 6.80800469e-4, 7.98740832e-4, 9.35279648e-4, 1.16656872e-3,&
+  1.58452173e-3, 1.86584354e-3, 1.99465151e-3, 2.16701976e-3, 2.41802959e-3, 2.82146805e-3, 3.48183908e-3, 4.09035478e-3,&
+  3.24113556e-4, 3.74707161e-4, 4.17389121e-4, 4.57456830e-4, 4.98836453e-4, 5.49621007e-4, 6.13025972e-4, 7.00094330e-4,&
+  8.49446864e-4, 9.81244841e-4, 1.03521883e-3, 1.10830076e-3, 1.21134310e-3, 1.31195760e-3, 1.39195414e-3, 1.45876186e-3,&
+  4.28469037e-4, 5.20646572e-4, 6.22550666e-4, 7.22033263e-4, 8.23189737e-4, 9.40993312e-4, 1.06700219e-3, 1.21110224e-3,&
+  1.45994173e-3, 1.69180706e-3, 1.79443962e-3, 1.92319078e-3, 2.08631344e-3, 2.33873748e-3, 2.59446981e-3, 2.72375043e-3,&
+  2.89453164e-4, 3.26674141e-4, 3.59543861e-4, 3.93101625e-4, 4.30800777e-4, 4.71213047e-4, 5.19042369e-4, 5.83244429e-4,&
+  6.85371691e-4, 7.79234222e-4, 8.19451292e-4, 8.65648268e-4, 9.23064887e-4, 1.00047945e-3, 1.08587136e-3, 1.09644048e-3,&
+  2.97961291e-4, 3.59470578e-4, 4.12600290e-4, 4.63586446e-4, 5.14341518e-4, 5.67600771e-4, 6.28228823e-4, 7.09333457e-4,&
+  8.51527497e-4, 9.86502739e-4, 1.04738004e-3, 1.12565351e-3, 1.23939372e-3, 1.37201988e-3, 1.52829266e-3, 1.63304247e-3,&
+  2.70115474e-4, 3.13259574e-4, 3.55943455e-4, 4.24126105e-4, 5.12095110e-4, 5.70286124e-4, 6.33014424e-4, 7.20241107e-4,&
+  8.71218799e-4, 1.01254229e-3, 1.07443938e-3, 1.14905764e-3, 1.24553905e-3, 1.37227518e-3, 1.50288385e-3, 1.59471075e-3,&
+  2.49097910e-4, 3.04214394e-4, 3.61522223e-4, 4.22842306e-4, 4.84134798e-4, 5.45158167e-4, 6.10073039e-4, 6.93159061e-4,&
+  8.35262705e-4, 9.70904832e-4, 1.03256141e-3, 1.10617711e-3, 1.19320781e-3, 1.30544091e-3, 1.43013091e-3, 1.53011072e-3,&
+  3.03399313e-4, 3.29578412e-4, 3.45331355e-4, 3.61360639e-4, 3.78781464e-4, 3.96694435e-4, 4.13389760e-4, 4.41241835e-4,&
+  5.20797505e-4, 6.10202318e-4, 6.68037275e-4, 7.32506509e-4, 7.93701038e-4, 8.53195263e-4, 9.09500406e-4, 9.46514192e-4,&
+  2.32592269e-4, 2.71835335e-4, 3.08167830e-4, 3.44223663e-4, 3.79800709e-4, 4.20017983e-4, 4.63830249e-4, 5.07036340e-4,&
+  5.73535392e-4, 6.31669944e-4, 6.62838283e-4, 7.10128399e-4, 7.75139430e-4, 8.65899900e-4, 9.70544817e-4, 1.06985983e-3,&
+  3.41864652e-4, 3.69071873e-4, 3.96323914e-4, 4.22754820e-4, 4.46886756e-4, 4.71655425e-4, 4.98428126e-4, 5.32940670e-4,&
+  6.06888614e-4, 6.70523092e-4, 7.07189436e-4, 7.71613559e-4, 8.81720975e-4, 1.09840697e-3, 1.38371368e-3, 1.53473706e-3,&
+  4.17014409e-4, 4.30032291e-4, 4.34701447e-4, 4.33250068e-4, 4.38496791e-4, 4.55915550e-4, 4.31207794e-4, 4.22994781e-4,&
+  4.37038223e-4, 4.48761188e-4, 4.56356967e-4, 4.66349302e-4, 4.80149902e-4, 4.99643327e-4, 5.27186319e-4, 5.57484163e-4,&
+  2.16507342e-5, 2.14800675e-5, 2.42409842e-5, 2.30929109e-5, 2.50050962e-5, 2.49029163e-5, 2.54020069e-5, 2.31895119e-5,&
+  2.51217079e-5, 2.50334833e-5, 2.48085526e-5, 2.50862649e-5, 2.36565447e-5, 2.40919053e-5, 2.22349281e-5, 2.54304305e-5,&
+  4.07712301e-4, 5.41551271e-4, 6.77760807e-4, 8.20003042e-4, 9.50566900e-4, 1.05036958e-3, 1.11506274e-3, 1.15274324e-3,&
+  1.17376540e-3, 1.18031248e-3, 1.18122390e-3, 1.18179375e-3, 1.18207792e-3, 1.18228467e-3, 1.18242903e-3, 1.18247792e-3,&
+  1.02293247e-3, 1.05753809e-3, 1.11542153e-3, 1.18556281e-3, 1.24850264e-3, 1.29191973e-3, 1.30981358e-3, 1.31571468e-3,&
+  1.31824624e-3, 1.31927885e-3, 1.31954963e-3, 1.31999550e-3, 1.32057443e-3, 1.32077874e-3, 1.32089714e-3, 1.32086105e-3 /)
 
 contains
 
@@ -47,7 +163,7 @@ contains
                 temp_ref_min,temp_ref_delta,press_ref_trop_log, &
                 vmr_ref,                                        &
                 play,tlay,col_gas,                              &
-                jtemp,fmajor,fminor,col_mix,tropo,jeta,jpress,play_log) bind(C, name="interpolation")
+                jtemp,fmajor,fminor,col_mix,tropo,jeta,jpress) bind(C, name="interpolation")
     ! input dimensions
     integer,                            intent(in) :: ncol, nlay
     integer,                            intent(in) :: ngas,nflav,neta,npres,ntemp
@@ -70,10 +186,10 @@ contains
     real(wp),    dimension(2,    nflav,nlay, ncol), intent(out) :: col_mix
     real(wp),    dimension(2,2,2,nflav,nlay, ncol), intent(out) :: fmajor
     real(wp),    dimension(2,2,  nflav,nlay, ncol), intent(out) :: fminor
-    real(wp),    dimension(nlay, ncol),             intent(out) :: play_log
     ! -----------------
     ! local
-    real(wp), dimension(nlay, ncol) :: ftemp, fpress ! interpolation fraction for temperature, pressure
+    real(wp),    dimension(nlay, ncol)  :: play_log
+    real(wp), dimension(nlay, ncol)     :: ftemp, fpress ! interpolation fraction for temperature, pressure
     real(wp) :: locpress ! needed to find location in pressure grid
     real(wp) :: ratio_eta_half ! ratio of vmrs of major species that defines eta=0.5
                                ! for given flavor and reference temperature level
@@ -723,7 +839,9 @@ contains
     integer  :: ilay, icol, ibnd
     real(wp), parameter                             :: delta_Tsurf = 1.0_wp
 
-
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_source_bybnd')
+#endif
     do icol = 1, ncol
       !
       ! Planck function by band for the surface
@@ -737,7 +855,9 @@ contains
         lev_source_bnd(:,ilay+1,icol)  = interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk)
       end do ! ilay
     end do ! icol
-
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_source_bybnd')
+#endif
     end subroutine compute_source_bybnd
 
   ! --------------------------------------------------------------------------------------
@@ -747,26 +867,30 @@ contains
   !
   subroutine predict_nn_lw_blas_mp(                  &
                     ncol, nlay, ngpt, ninputs,       & 
-                    nn_inputs,                    &
+                    nn_inputs, col_dry_wk,                   &
                     neural_nets,                  &
                     tau, pfrac)
     ! inputs
     integer,                              intent(in)    :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                           intent(in)    :: nn_inputs 
+    real(dp), dimension(nlay,ncol),       intent(in)    :: col_dry_wk
     ! The neural network models
     type(network_type), dimension(2),     intent(in)    :: neural_nets
 
-    real(dp), dimension(ngpt,nlay,ncol),  intent(out) :: pfrac, tau
+    real(dp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac, tau
     ! local
-    real(sp), dimension(:,:), contiguous, &
-                              pointer   :: input
-    real(sp), dimension(ngpt,nlay*ncol) :: tmp_output
-    integer                             :: nobs
+    real(sp), dimension(:,:), contiguous, pointer :: input
+    real(sp), dimension(:), contiguous,   pointer :: input_coldry          
+    real(sp), dimension(nlay,ncol),       target  :: col_dry_wk_sp                                          
+    real(sp), dimension(ngpt,nlay*ncol)           :: tmp_output
+    integer                                       :: nobs
 
     nobs = nlay*ncol
     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
-    
+
+    col_dry_wk_sp = real(col_dry_wk, sp)
+    call C_F_POINTER (C_LOC(col_dry_wk_sp), input_coldry, [nobs])
 #ifdef USE_TIMING
     ret =  gptlstart('tmp_init')
 #endif
@@ -775,25 +899,27 @@ contains
     ret =  gptlstop('tmp_init')
 #endif
 #ifdef USE_TIMING
-    ret =  gptlstart('compute_pfrac')
-#endif
-    call neural_nets(1) % nn_kernel_m(ninputs, ngpt, nobs, input, tmp_output)
-    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))
-
-#ifdef USE_TIMING
-    ret =  gptlstop('compute_pfrac')
     ret =  gptlstart('compute_tau')
 #endif
-    call neural_nets(2) % nn_kernel_m(ninputs, ngpt, nobs, input, tmp_output)
+    ! call neural_nets(1) % nn_kernel_m(ninputs, ngpt, nobs, input, tmp_output)
+    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                        input_coldry, ymeans_lw_tau, ysigma_lw_tau, tmp_output)
+    tau = reshape(tmp_output,(/ngpt,nlay,ncol/))
+
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau')
+    ret =  gptlstart('compute_pfrac')
+#endif
+    call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, tmp_output)                      
 #ifdef USE_TIMING
     ret =  gptlstart('output_reshape')
 #endif
-    tau = reshape(tmp_output,(/ngpt,nlay,ncol/))  
+    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))  
 #ifdef USE_TIMING
     ret =  gptlstop('output_reshape')
 #endif
 #ifdef USE_TIMING
-    ret =  gptlstop('compute_tau')
+    ret =  gptlstop('compute_pfrac')
 #endif
 
   end subroutine predict_nn_lw_blas_mp
@@ -805,13 +931,15 @@ contains
   !
   subroutine predict_nn_lw_blas_sp(               &
                     ncol, nlay, ngpt, ninputs,       & 
-                    nn_inputs,                    &
+                    nn_inputs, col_dry_wk,                    &
                     neural_nets,                  &
                     tau, pfrac)
     ! inputs
     integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                         intent(in)    :: nn_inputs 
+    real(sp), dimension(nlay,ncol), target, &     
+                                          intent(in)    :: col_dry_wk                                    
     ! The neural network models
     type(network_type), dimension(2),   intent(in)    :: neural_nets
 
@@ -820,6 +948,7 @@ contains
                                         intent(out) :: pfrac, tau
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:), contiguous,   pointer     :: input_coldry   
     integer                                           :: ilay, icol, nobs
 
     
@@ -827,12 +956,15 @@ contains
     nobs = nlay*ncol
     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
     
+    call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau')
 #endif
     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
 
-    call neural_nets(2) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
+    !call neural_nets(1) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
+    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, ymeans_lw_tau, ysigma_lw_tau, output)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau')
 #endif
@@ -841,13 +973,123 @@ contains
 #endif
     call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
 
-    call neural_nets(1) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
-
+    !call neural_nets(2) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
+    call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, output)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_pfrac')
 #endif
 
   end subroutine predict_nn_lw_blas_sp
+
+  subroutine predict_nn_sw_blas_sp(               &
+                    ncol, nlay, ngpt, ninputs,       & 
+                    nn_inputs, col_dry_wk,                    &
+                    neural_nets,                  &
+                    tau, ssa)
+    ! inputs
+    integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+    real(sp), dimension(ninputs,nlay,ncol), target, &     
+                                        intent(in)    :: nn_inputs 
+    real(sp), dimension(nlay,ncol), target, &     
+                                          intent(in)    :: col_dry_wk                                    
+    ! The neural network models
+    type(network_type), dimension(2),   intent(in)    :: neural_nets
+
+    ! outputs
+    real(sp), dimension(ngpt,nlay,ncol), target, &
+                                        intent(out) :: tau, ssa !
+    ! local
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
+    integer                                           :: ilay, icol, nobs
+
+    
+    ! PREDICT PLANCK FRACTIONS
+    nobs = nlay*ncol
+    call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
+    
+    call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau_abs')
+#endif
+    call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
+
+    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_abs')
+    ret =  gptlstart('compute_tau_ray')
+#endif
+    call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
+
+    call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_ray')
+    ret =  gptlstart('combine_taus_compute_ssa')
+#endif
+    ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+    ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
+    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+#ifdef USE_TIMING
+    ret =  gptlstop('combine_taus_compute_ssa')
+#endif
+  end subroutine predict_nn_sw_blas_sp
+
+
+  subroutine predict_nn_sw_blas_mp(               &
+                    ncol, nlay, ngpt, ninputs,       & 
+                    nn_inputs, col_dry_wk,                    &
+                    neural_nets,                  &
+                    tau, ssa)
+    ! inputs
+    integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+    real(sp), dimension(ninputs,nlay,ncol), target, &     
+                                        intent(in)    :: nn_inputs 
+    real(dp), dimension(nlay,ncol), target, &     
+                                          intent(in)    :: col_dry_wk                                    
+    ! The neural network models
+    type(network_type), dimension(2),   intent(in)    :: neural_nets
+
+    ! outputs
+    real(dp), dimension(ngpt,nlay,ncol), target, &
+                                        intent(out) :: tau, ssa !
+    ! local
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
+    integer                                           :: ilay, icol, nobs
+
+    
+!     ! PREDICT PLANCK FRACTIONS
+!     nobs = nlay*ncol
+!     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
+    
+!     call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
+! #ifdef USE_TIMING
+!     ret =  gptlstart('compute_tau_abs')
+! #endif
+!     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
+
+!     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+!                           input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
+! #ifdef USE_TIMING
+!     ret =  gptlstop('compute_tau_abs')
+! #endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('compute_tau_ray')
+! #endif
+!     call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
+
+!     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+!                           input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
+! #ifdef USE_TIMING
+!     ret =  gptlstop('compute_tau_ray')
+! #endif
+!     ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+!     ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
+!     call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+
+  end subroutine predict_nn_sw_blas_mp
 
   ! ----------------------------------------------------------
   !
@@ -1003,6 +1245,34 @@ contains
       end do
     end do
   end subroutine combine_2str
+
+  pure subroutine combine_2str_opt(ncol, nlay, ngpt, tau, tau_ray) &
+      bind(C, name="combine_2str_opt")
+    integer,                                intent(in)    :: ncol, nlay, ngpt
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
+    ! -----------------------
+    integer  :: icol, ilay, igpt
+    real(wp) :: t
+    ! -----------------------
+
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        do igpt = 1, ngpt
+           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
+           if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+            ! ssa = tau_rayleigh / tau_tot
+              tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+              tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_wp)
+           else
+              tau_ray(igpt,ilay,icol) = 0._wp
+           end if
+
+        end do
+      end do
+    end do
+  end subroutine combine_2str_opt
   ! ----------------------------------------------------------
   !
   ! Combine absoprtion and Rayleigh optical depths for total tau, ssa, p
