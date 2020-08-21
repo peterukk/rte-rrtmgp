@@ -89,6 +89,10 @@ program rrtmgp_rfmip_lw
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
   use mod_network
+#ifdef USE_OPENACC  
+  use cublas
+  use openacc
+#endif
 #ifdef USE_TIMING
   !
   ! Timing library
@@ -109,25 +113,26 @@ program rrtmgp_rfmip_lw
   character(len=132) :: flxdn_file, flxup_file, inp_outp_file, flx_file, flx_file_ref, flx_file_lbl
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical             :: top_at_1
-  integer            :: b, icol, ibnd, igpt, count_rate, iTime1, iTime2, ncid, ninputs
+  integer            :: b, icol, ibnd, igpt, count_rate, iTime1, iTime2, ncid, ninputs, istat, igas
   character(len=4)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
-  
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
-  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn, rlu_lbl, rld_lbl, rldu_ref, rldu_nn, rldu_lbl
+  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn, rlu_lbl, rld_lbl, rldu_ref, rldu_nn, rldu_lbl, col_dry
   real(sp), dimension(:,:,:,:),       allocatable :: tau_lw, planck_frac
   real(sp), dimension(:,:,:,:),       allocatable :: nn_input
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis_spec    ! nbands, block_size (spectrally-resolved emissivity)
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
-
   character (len = 80)                :: modelfile_tau, modelfile_source
-  type(network_type), dimension(2)    :: neural_nets ! One model for predicting planck fractions, one for optical depths
+  type(network_type), dimension(2)    :: neural_nets ! First model for predicting optical depths, second for planck fractions
+  logical 		                        :: use_nn, save_output, save_input, compare_flux, save_flux
+  integer(i4)                         :: check          ! PAPI's error flag WHICH SHOULD BE CHECKED!
+#ifdef USE_OPENACC   
+  type(cublasHandle) :: h
+#endif
 
-  logical 		:: use_nn, save_output, save_input, compare_flux, save_flux, tlev_provided
-  integer(i4)                               :: check          ! PAPI's error flag WHICH SHOULD BE CHECKED!
   !
   ! Classes used by rte+rrtmgp
   !
@@ -155,12 +160,16 @@ program rrtmgp_rfmip_lw
 #endif  
   ret = gptlinitialize()
 #endif
+#ifdef USE_OPENACC  
+  istat = cublasCreate(h) 
+  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
+#endif
 
   ! -------------------------------------------------------------------------------------------------
   !
   ! Code starts
   !   all arguments are optional
-
+  !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
   use_nn      = .true.
@@ -197,22 +206,19 @@ program rrtmgp_rfmip_lw
   ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
 
   if (use_nn) then
-	  print *, 'loading planck fraction model from ', modelfile_source
-    call neural_nets(1) % load(modelfile_source)
-
 	  print *, 'loading tau model from ', modelfile_tau
-    call neural_nets(2) % load(modelfile_tau)
-        
+    call neural_nets(1) % load(modelfile_tau)
+    print *, 'loading planck fraction model from ', modelfile_source
+    call neural_nets(2) % load(modelfile_source)
+
     ! Here we can change the neural network computational kernels (SGEMM is fastest, but requires a BLAS library)
     ! If BLAS is not available, output_opt_flatmodel is the fastest kernel
-
-#ifndef USE_OPENACC
-    call change_kernel(neural_nets(1),  output_opt_flatmodel, output_sgemm_pfrac) ! custom pfrac kernel (outputs are post-processed inside kernel)
-    call change_kernel(neural_nets(2),  output_opt_flatmodel, output_sgemm_tau)   ! custom tau kernel 
-#endif
+! #ifndef USE_OPENACC
+!     call change_kernel(neural_nets(1),  output_opt_flatmodel, output_sgemm_pfrac) ! custom pfrac kernel (outputs are post-processed inside kernel)
+!     call change_kernel(neural_nets(2),  output_opt_flatmodel, output_sgemm_tau)   ! custom tau kernel 
+! #endif
   end if  
 
-  !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
   nargs = command_argument_count()
 
@@ -320,16 +326,7 @@ program rrtmgp_rfmip_lw
            flux_dn(    	nlay+1, block_size, nblocks))
   allocate(sfc_emis_spec(nbnd, block_size))
 
-  if (save_output) then 
-    allocate(tau_lw(    	ngpt, nlay, block_size, nblocks))
-    !tau_lw = 0.0_sp
-    allocate(planck_frac(	ngpt, nlay, block_size, nblocks))
-    !planck_frac = 0.0_sp
-  end if
-  if (save_input) then
-    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! dry air + gases + temperature + pressure
-  end if
-
+  ! OpenACC: Arrays are allocated on device inside constructor
   call stop_on_err(source%alloc            (block_size, nlay, k_dist))   
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
 
@@ -341,8 +338,20 @@ program rrtmgp_rfmip_lw
   !$acc enter data create(sfc_emis_spec)
   !$acc enter data create(optical_props, optical_props%tau)
 
-  ! already created in constructor?
+    ! already created in constructor?
   ! ! $acc enter data create(source, source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
+
+  if (save_output) then 
+    allocate(tau_lw(    	ngpt, nlay, block_size, nblocks))
+    !tau_lw = 0.0_sp
+    allocate(planck_frac(	ngpt, nlay, block_size, nblocks))
+    !planck_frac = 0.0_sp
+  end if
+  if (save_input) then
+    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
+    allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
+  end if
+
   ! --------------------------------------------------
 
 #ifdef USE_OPENMP
@@ -395,34 +404,32 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (LW)')
 #endif
-optical_props%tau = 0.0
+    optical_props%tau = 0.0
     if (use_nn) then
-      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),          &
-                                          p_lev(:,:,b),         &
-                                          t_lay(:,:,b),         &
-                                          sfc_t(:  ,b),         &
-                                          gas_conc_array(b),    &
-                                          optical_props,        &
-                                          source,               &
-                                          neural_nets,          & !net_pfrac, net_tau
-                                         tlev = t_lev(:,:,b)))
-
-    else 
+        call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
+                                          p_lev(:,:,b),       &
+                                          t_lay(:,:,b),       &
+                                          sfc_t(:  ,b),       &
+                                          gas_conc_array(b),  &
+                                          optical_props,      &
+                                          source,            &
+                                          tlev = t_lev(:,:,b), neural_nets=neural_nets))
+    else         
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
                                         sfc_t(:  ,b),       &
                                         gas_conc_array(b),  &
                                         optical_props,      &
-                                        source,             &
-                                        tlev = t_lev(:,:,b)))!, nn_inputs= nn_input(:,:,:,b)))
+                                        source,            &
+                                        tlev = t_lev(:,:,b))) !nn_inputs= nn_input(:,:,:,b), col_dry_arr=col_dry(:,:,b)))
     end if
 
   !  !$acc update self(optical_props%tau)
   !   print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
 
-  !! !$acc update self(source%planck_frac)  
-    ! print *," max, min (pfrac)", maxval(source%planck_frac), minval(source%planck_frac)
+  !   !$acc update self(source%planck_frac)  
+  !   print *," max, min (pfrac)", maxval(source%planck_frac), minval(source%planck_frac)
 
 
 #ifdef USE_TIMING
@@ -435,8 +442,8 @@ optical_props%tau = 0.0
 #ifdef USE_TIMING
     ret =  gptlstart('rte_lw')
 #endif
-   ! !$acc enter data create(fluxes)
-   ! !$acc enter data create(fluxes%flux_up,fluxes%flux_dn)
+  ! !$acc enter data create(fluxes)
+  ! !$acc enter data create(fluxes%flux_up,fluxes%flux_dn)
     call stop_on_err(rte_lw(optical_props,   &
                             top_at_1,        &
                             source,          &
@@ -507,12 +514,13 @@ call source%finalize()
   end if
 
   ! Save neural network inputs ?
-  if (save_input) then
-    print *, "Attempting to save neural network inputs to ", inp_outp_file
-    ! This function also deallocates the input 
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
-    print *, "inputs saved to ", inp_outp_file
-  end if
+  ! if (save_input) then
+  !   print *, "Attempting to save neural network inputs to ", inp_outp_file
+  !   ! This function also deallocates the input 
+  !   call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
+  !   call unblock_and_write(trim(inp_outp_file), 'col_dry',col_dry)
+  !   print *, "inputs saved to ", inp_outp_file
+  ! end if
 
   ! Save fluxes ?
   if (save_flux) then
@@ -687,6 +695,7 @@ call source%finalize()
   end if
 
   deallocate(flux_up, flux_dn)
+  !$acc exit data delete(fluxes%flux_up,fluxes%flux_dn)
   print *, "SUCCESS!"
 
   contains
