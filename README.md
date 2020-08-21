@@ -1,5 +1,5 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics computations 
-August 2020 update: Shortwave NN model added. Similar performance benefit and accuracy as longwave model. Cleaner RRTMGP code: now only interface which takes NN models as optional input to enable NN kernel. OpenACC code not tested and probably broken again.
+August 2020 update: Shortwave NN models added. Similar performance benefit and accuracy as longwave model. Cleaner RRTMGP code: now only one interface which takes NN models as optional input to enable NN kernel. OpenACC code not tested and probably broken again.
 
 July 2020 update: The neural networks now predict **molecular absorption** from which the optical depth is retrieved by multiplying with the dry air column amount Ndry. This does not change accuracy but makes the model robust to changes in vertical resolution since Ndry is no longer an input.
 
