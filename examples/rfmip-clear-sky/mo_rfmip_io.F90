@@ -34,7 +34,7 @@ module mo_rfmip_io
   private
   public :: read_kdist_gas_names, determine_gas_names, read_size, read_and_block_pt, &
             read_and_block_sw_bc, read_and_block_lw_bc, read_and_block_gases_ty, &
-            unblock_and_write, unblock_and_write_3D, unblock_and_write_3D_sp, unblock
+            unblock_and_write, unblock_and_write_3D, unblock_and_write_3D_sp, unblock, unblock_and_write2
 
   integer :: ncol_l = 0, nlay_l = 0, nexp_l = 0 ! Local copies
 contains
@@ -722,7 +722,6 @@ contains
     !
     ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
     !
-
     if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
     call stop_on_err(write_field(ncid, varName,  &
@@ -731,6 +730,38 @@ contains
     ncid = nf90_close(ncid)
     deallocate(temp2d)
   end subroutine unblock_and_write
+
+  subroutine unblock_and_write2(fileName, varName, values)
+    character(len=*),           intent(in   ) :: fileName, varName
+    real(wp), dimension(:,:,:),  & ! [blocksize, nlay/+1, nblocks]
+                                intent(in   ) :: values
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks
+    real(wp), dimension(:,:), allocatable :: temp2d
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
+    nlev      = size(values,1)
+    blocksize = size(values,2)
+    nblocks   = size(values,3)
+    if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
+
+    allocate(temp2D(nlev, ncol_l*nexp_l))
+    do b = 1, nblocks
+      temp2D(1:nlev, ((b-1)*blocksize+1):(b*blocksize)) = values(1:nlev,1:blocksize,b)
+    end do
+    !
+    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
+    !
+    if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
+    call stop_on_err(write_field(ncid, varName,  &
+                                 reshape(temp2d, shape = [nlev, ncol_l, nexp_l])))
+
+    ncid = nf90_close(ncid)
+    deallocate(temp2d)
+  end subroutine unblock_and_write2
 
   subroutine unblock(values, values_unblocked)
     real(wp), dimension(:,:,:),  & ! [blocksize, nlay/+1, nblocks]
@@ -765,18 +796,18 @@ contains
                                 intent(in   ) :: values
     ! ---------------------------
     integer :: ncid
-    integer :: b, blocksize, nlev, nblocks, nbnd, ibnd
+    integer :: b, blocksize, nlev, nblocks, nfirst, ibnd
     real(wp), dimension(:,:,:), allocatable :: temp3D
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
-    nbnd      = size(values,1)
+    nfirst      = size(values,1)
     nlev      = size(values,2)
     blocksize = size(values,3)
     nblocks   = size(values,4)
     if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
     if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
 
-    allocate(temp3D(nbnd, nlev, ncol_l*nexp_l))
+    allocate(temp3D(nfirst, nlev, ncol_l*nexp_l))
 
     do b = 1, nblocks
        temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
@@ -788,7 +819,7 @@ contains
     if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
     call stop_on_err(write_field(ncid, varName,  &
-                                 reshape(temp3D, shape = [nbnd, nlev, ncol_l, nexp_l])))
+                                 reshape(temp3D, shape = [nfirst, nlev, ncol_l, nexp_l])))
 
     ncid = nf90_close(ncid)
     deallocate(temp3D)

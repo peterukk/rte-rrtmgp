@@ -1221,6 +1221,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       k(:) = sqrt(max((gamma1(:) - gamma2(:)) * &
                            (gamma1(:) + gamma2(:)),  &
                            1.e-12_dp))
+
       exp_minusktau(:) = exp_fast_double(-tau(:,j)*k(:))
 
       !
@@ -1265,8 +1266,8 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
              2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j))
 
         !
-        ! Equation 15, multiplying top and bottom by exp_fast(-k*tau),
-        !   multiplying through by exp_fast(-tau/mu0) to
+        ! Equation 15, multiplying top and bottom by exp(-k*tau),
+        !   multiplying through by exp(-tau/mu0) to
         !   prefer underflow to overflow
         ! Omitting direct transmittance
         !

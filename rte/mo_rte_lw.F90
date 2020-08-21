@@ -220,6 +220,9 @@ contains
     !
     computing_gpoint_fluxes = .false.
     if(present(compute_gpoint_fluxes)) computing_gpoint_fluxes = compute_gpoint_fluxes
+#ifdef USE_OPENACC
+    computing_gpoint_fluxes = .true.
+#endif
 
     !
     ! Checking that optional arguements are consistent with one another and with optical properties
@@ -293,9 +296,6 @@ contains
     !
     ! Compute the radiative transfer...
     !
-  
-    !$acc data present(optical_props%tau, sources%planck_frac, sources%lay_source_bnd, sources%lev_source_bnd, sources%sfc_source_bnd, sources%sfc_source_bnd_Jac, inc_flux_toa, fluxes%flux_up, fluxes%flux_dn)
-
     if (.not. computing_gpoint_fluxes) then
 
       select type (optical_props)
@@ -470,7 +470,7 @@ contains
 
     end if 
 
-    !$acc end data                
+    ! !$acc end data                
   
     if (error_msg /= '') return
 

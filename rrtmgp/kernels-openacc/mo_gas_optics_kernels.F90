@@ -757,7 +757,7 @@ contains
   ! (avoids temporary output array, which is faster)
   !
 
-    subroutine predict_nn_lw_blas_sp(               &
+  subroutine predict_nn_lw_blas_sp(               &
                     ncol, nlay, ngpt, ninputs,       & 
                     nn_inputs,                    &
                     neural_nets,                  &
@@ -783,13 +783,57 @@ contains
 
     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
 
-    call neural_nets(2) % output_sgemm_tau_flat_acc(ninputs, ngpt, nobs, input, output)
+    call neural_nets(1) % output_sgemm_tau_flat_acc(ninputs, ngpt, nobs, input, output)
 
-    ! call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
+    call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
 
-    ! call neural_nets(1) %  output_sgemm_pfrac_flat_acc(ninputs,ngpt,nobs,input, output)
+    call neural_nets(2) %  output_sgemm_pfrac_flat_acc(ninputs,ngpt,nobs,input, output)
 
   end subroutine predict_nn_lw_blas_sp
+
+  ! subroutine predict_nn_lw_blas_direct(               &
+  !                   ncol, nlay, ngpt, ninputs,       & 
+  !                   nn_inputs,                    &
+  !                   neural_nets,                  &
+  !                   tau, pfrac)
+  !   use cublas
+  !   use openacc 
+  !   ! inputs
+  !   integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+  !   real(sp), dimension(ninputs,nlay,ncol), target, &     
+  !                                       intent(in)    :: nn_inputs 
+  !   ! The neural network models
+  !   type(network_type), dimension(2), target,  intent(in)    :: neural_nets
+
+  !   ! outputs
+  !   real(sp), dimension(ngpt,nlay,ncol), target, &
+  !                                       intent(out) :: pfrac, tau
+  !   ! local
+  !   real(sp), dimension(:,:), contiguous, pointer     :: input, output
+  !   integer                                           :: ilay, icol, nobs
+  !   real(sp), dimension(size(neural_nets(2) % layers(1) % w_transposed, 1), nlay*ncol), &
+  !                                         target  :: a1, a2  
+  !   real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
+  !   real(sp), dimension(:,:), contiguous, pointer :: wt
+  !   real(sp), dimension(:),   contiguous, pointer :: b
+  !   integer,  dimension(:),   allocatable         :: layersizes
+  !   integer      :: n, isample, neurons, nlayers, layersize, i, istat
+  !   type(cublasHandle) :: h
+
+  !   ! PREDICT PLANCK FRACTIONS
+  !   nobs = nlay*ncol
+  !   ! call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
+
+  !   ! call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
+
+  !   neurons = size(neural_nets(2) % layers(1) % w_transposed, 1)
+  !   nlayers = size(neural_nets(2) % layers)
+  !   allocate(layersizes(nlayers))
+  !   do i = 1, nlayers
+  !     layersizes(i) = size(neural_nets(2)%layers(i) % b)
+  !   end do
+
+  ! end subroutine predict_nn_lw_blas_direct
 
   ! subroutine predict_nn_lw_blas_sp(               &
   !                   ncol, nlay, ngpt, ninputs,       & 
