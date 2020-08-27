@@ -162,7 +162,6 @@ program rrtmgp_rfmip_sw
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
 
-  modelfile_tau           = "../../neural/data/tau-sw-abs-7-36-36.txt" 
   modelfile_tau           = "../../neural/data/tau-sw-abs-7-16-16.txt" 
   modelfile_tau           = "../../neural/data/tau-sw-abs-7-28-28.txt" 
   modelfile_tau           = "../../neural/data/tau-sw-abs-7-28-28-mae.txt" 
