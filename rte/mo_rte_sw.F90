@@ -35,8 +35,13 @@ module mo_rte_sw
   use mo_rte_solver_kernels, &
                         only: apply_BC, sw_solver_noscat, sw_solver_2stream, sw_solver_noscat_broadband, sw_solver_2stream_broadband
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
-
-  implicit none
+#ifdef USE_TIMING
+  !
+  ! Timing library
+  !
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+                                   gptlpercent, gptloverhead
+#endif  implicit none
   private
 
   public :: rte_sw
@@ -68,7 +73,7 @@ contains
     ! Local variables
     !
     integer :: ncol, nlay, ngpt, nband
-    integer :: icol, igpt
+    integer :: icol, igpt, ret
     logical :: computing_gpoint_fluxes
 
     real(wp), dimension(:,:,:), allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dir
@@ -173,7 +178,6 @@ contains
     ! else
     !   call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl),                gpt_flux_dn )
     ! end if
-
 
 
     if (.not. computing_gpoint_fluxes) then ! only broadband fluxes desired, don't bother allocating gpt_flux_x
@@ -285,8 +289,13 @@ contains
       !
       ! ...and reduce spectral fluxes to desired output quantities
       !
+#ifdef USE_TIMING
+    ret =  gptlstart('sum_broadband_')
+#endif  
       error_msg = fluxes%reduce(gpt_flux_up, gpt_flux_dn, atmos, top_at_1, gpt_flux_dir)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('sum_broadband_')
+#endif  
       !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
     end if
 

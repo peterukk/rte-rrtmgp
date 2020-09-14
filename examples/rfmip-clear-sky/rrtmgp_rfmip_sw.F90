@@ -158,28 +158,19 @@ program rrtmgp_rfmip_sw
   inp_outp_file =  "../../../../rrtmgp_dev/inputs_outputs/inp_outp_sw_Garand-big_1f1.nc"
 
   ! Save fluxes
-  save_flux    = .false.
+  save_flux    = .true.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
 
-  modelfile_tau           = "../../neural/data/tau-sw-abs-7-16-16.txt" 
-  modelfile_tau           = "../../neural/data/tau-sw-abs-7-28-28.txt" 
-  modelfile_tau           = "../../neural/data/tau-sw-abs-7-28-28-mae.txt" 
-  modelfile_tau           = "../../neural/data/tau-sw-abs-7-16-16-mae.txt" 
 
-  modelfile_ray           = "../../neural/data/tau-sw-ray-7-16-16.txt" 
+  modelfile_tau           = "../../neural/data/tau-sw-abs-7-16-16-mae_2.txt" 
+  modelfile_ray           = "../../neural/data/tau-sw-ray-7-16-16_2.txt" 
 
   if (use_nn) then
 	  print *, 'loading tau model from ', modelfile_tau
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading rayleigh model from ', modelfile_ray
     call neural_nets(2) % load(modelfile_ray)
-    ! Here we can change the neural network computational kernels (SGEMM is fastest, but requires a BLAS library)
-    ! If BLAS is not available, output_opt_flatmodel is the fastest kernel
-! #ifndef USE_OPENACC
-!     call change_kernel(neural_nets(1),  output_opt_flatmodel, output_sgemm_pfrac) ! custom pfrac kernel (outputs are post-processed inside kernel)
-!     call change_kernel(neural_nets(2),  output_opt_flatmodel, output_sgemm_tau)   ! custom tau kernel 
-! #endif
   end if  
 
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
@@ -207,10 +198,11 @@ program rrtmgp_rfmip_sw
   if(forcing_index < 1 .or. forcing_index > 4) &
     stop "Forcing index is invalid (must be 1,2 or 3)"
 
-  
-  flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
-  flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
-
+  if (use_nn) then
+    flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
+  else
+    flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
+  end if
   !
   ! Identify the set of gases used in the calculation based on the forcing index
   !   A gas might have a different name in the k-distribution than in the files
@@ -590,6 +582,17 @@ do i = 1, 10
      mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)])) 
 
     print *, "---------"
+
+    print *, "MAE in net fluxes at TOA of NN and RRTMGP, future:             ", &
+     mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,4), shape = [1*ncol*(1)])), &
+     mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,4), shape = [1*ncol*(1)]))
+
+     print *, "MAE in net fluxes at TOA of NN and RRTMGP, present-day:        ", &
+     mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,1), shape = [1*ncol*(1)])), &
+     mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,1), shape = [1*ncol*(1)]))
+
+     print *, "---------"
+
 
     print *, "RMSE in net fluxes of NN and RRTMGP, present-day, PBL:         ", &
      rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_nn(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)])), &

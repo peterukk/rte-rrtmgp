@@ -84,7 +84,7 @@ program rrtmgp_rfmip_lw
   !
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
-                                   unblock_and_write_3D, unblock_and_write_3D_sp, unblock, &
+                                   unblock_and_write_3D, unblock_and_write_3D_sp, unblock, unblock_and_write2, &
                                    read_and_block_lw_bc, determine_gas_names
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
@@ -127,7 +127,7 @@ program rrtmgp_rfmip_lw
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
   character (len = 80)                :: modelfile_tau, modelfile_source
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting optical depths, second for planck fractions
-  logical 		                        :: use_nn, save_output, save_input, compare_flux, save_flux
+  logical 		                        :: use_nn, save_input_output, compare_flux, save_flux
   integer(i4)                         :: check          ! PAPI's error flag WHICH SHOULD BE CHECKED!
 #ifdef USE_OPENACC   
   type(cublasHandle) :: h
@@ -174,22 +174,18 @@ program rrtmgp_rfmip_lw
   ! Use neural networks for gas optics? 
   use_nn      = .true.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
-  save_input  = .false.
-  save_output = .false.
+  save_input_output  = .false.
   ! Save fluxes
-  save_flux    = .false.
+  save_flux    = .true.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
 
   ! ------------ Neural network model weights -----------------
   ! Planck model
-  ! modelfile_source        = "../../neural/data/pfrac-19-16-16-pow2-minmax2.txt" 
-  modelfile_source        = "../../neural/data/pfrac-18-16-16_new2.txt" 
-  ! Optical depth model
-  ! modelfile_tau           = "../../neural/data/tau-lw-19-64-64-ynorm-pow8-minmax3.txt"  
-  modelfile_tau           = "../../neural/data/tau-lw-18-58-58_new.txt" 
+  modelfile_source        = "../../neural/data/pfrac-18-16-16.txt"  ! best
 
-  ! modelfile_tau           = "../../neural/data/tau-lw-tmp.txt"
+  ! Optical depth model
+  modelfile_tau           = "../../neural/data/tau-lw-18-58-58_goodfluxes.txt"   
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'
@@ -200,7 +196,6 @@ program rrtmgp_rfmip_lw
   ! Where to save neural network inputs (using NN code) and target outputs (planck fractions and optical depths, using reference code)
 
   ninputs = 18
-  ! inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_CKDMIP-MM-2.0_1f1.nc"
   ! inp_outp_file =  "../../../rrtmgp_dev/inputs_outputs/inp_outp_lw_RFMIP-Halton-rnd-0.4-2.0_1f1.nc"
 
   ! The coefficients for scaling the INPUTS are currently still hard-coded in mo_gas_optics_rrtmgp.F90
@@ -210,7 +205,6 @@ program rrtmgp_rfmip_lw
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading planck fraction model from ', modelfile_source
     call neural_nets(2) % load(modelfile_source)
-
     ! Here we can change the neural network computational kernels (SGEMM is fastest, but requires a BLAS library)
     ! If BLAS is not available, output_opt_flatmodel is the fastest kernel
 ! #ifndef USE_OPENACC
@@ -228,7 +222,13 @@ program rrtmgp_rfmip_lw
   if(nargs >= 3) call get_command_argument(3, kdist_file)
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
   if(nargs >= 5) call get_command_argument(5, physics_index_char)
-
+  if(nargs >= 6) then 
+    call get_command_argument(6, inp_outp_file)
+    save_input_output   = .true.
+    use_nn              = .false.
+    save_flux           = .false.
+    compare_flux        = .false.
+  end if 
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
   call read_size(rfmip_file, ncol, nlay, nexp)
@@ -341,15 +341,12 @@ program rrtmgp_rfmip_lw
     ! already created in constructor?
   ! ! $acc enter data create(source, source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
 
-  if (save_output) then 
+  if (save_input_output) then
+    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
+    allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
     allocate(tau_lw(    	ngpt, nlay, block_size, nblocks))
     !tau_lw = 0.0_sp
     allocate(planck_frac(	ngpt, nlay, block_size, nblocks))
-    !planck_frac = 0.0_sp
-  end if
-  if (save_input) then
-    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
-    allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
   end if
 
   ! --------------------------------------------------
@@ -376,7 +373,7 @@ do i = 1, 10
 #endif
   do b = 1, nblocks
     
-    ! print *, b, "/", nblocks
+
 #ifdef USE_OPENMP
     ! PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
     ! print *, "my t_lay(5,5,b) for b:",b,"  is", t_lay(5,5,b)
@@ -404,8 +401,8 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (LW)')
 #endif
-    optical_props%tau = 0.0
     if (use_nn) then
+#ifndef DEV_MODE
         call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                           p_lev(:,:,b),       &
                                           t_lay(:,:,b),       &
@@ -414,7 +411,9 @@ do i = 1, 10
                                           optical_props,      &
                                           source,            &
                                           tlev = t_lev(:,:,b), neural_nets=neural_nets))
-    else         
+#endif   
+    else        
+      optical_props%tau = 0.0 
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -422,15 +421,15 @@ do i = 1, 10
                                         gas_conc_array(b),  &
                                         optical_props,      &
                                         source,            &
-                                        tlev = t_lev(:,:,b))) !nn_inputs= nn_input(:,:,:,b), col_dry_arr=col_dry(:,:,b)))
+                                        tlev = t_lev(:,:,b) &
+#ifdef DEV_MODE
+                                        ,nn_inputs= nn_input(:,:,:,b), col_dry_arr=col_dry(:,:,b) &
+#endif
+                                        )) 
     end if
 
-  !  !$acc update self(optical_props%tau)
-  !   print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
-
-  !   !$acc update self(source%planck_frac)  
-  !   print *," max, min (pfrac)", maxval(source%planck_frac), minval(source%planck_frac)
-
+    !$acc update self(optical_props%tau)
+    !print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
 
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
@@ -454,7 +453,7 @@ do i = 1, 10
     ret =  gptlstop('rte_lw')
 #endif
     ! Save optical depths
-    if (save_output) then
+    if (save_input_output) then
       tau_lw(:,:,:,b)      = optical_props%tau(:,:,:)
       planck_frac(:,:,:,b) = source%planck_frac(:,:,:)
     end if
@@ -495,32 +494,27 @@ call source%finalize()
   print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
   deallocate(temparray)
 
-  if (save_output) then 
+  if (save_input_output) then 
+    print *,"max, min (nn_inputs)", maxval(nn_input), minval(nn_input)
+    print *, "Attempting to save neural network inputs to ", inp_outp_file
+    ! This function also deallocates its input 
+    call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
+    call unblock_and_write2(trim(inp_outp_file),       'col_dry', col_dry)
+    print *, "Inputs were saved to ", inp_outp_file
+
     allocate(temparray(   block_size*nlay*ngpt*nblocks)) 
     temparray = pack(tau_lw(:,:,:,:),.true.)
-    print *, "mean of tau is", sum(temparray, dim=1)/size(temparray, dim=1)
-    print *, "max of tau is", maxval(tau_lw)
-    print *, "min of tau is", minval(tau_lw)
-      ! Save optical depths and planck fractions
-    print *, "Attempting to save outputs to" , inp_outp_file
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_lw',tau_lw)
+    print *, "mean of tau is",      sum(temparray, dim=1)/size(temparray, dim=1)
+    print *, "max, min of tau is",  maxval(tau_lw), minval(tau_lw)
     temparray = pack(planck_frac(:,:,:,:),.true.)
-    print *, "mean of pfrac is", sum(temparray, dim=1)/size(temparray, dim=1)
-    print *, "max of pfrac is", maxval(planck_frac)
-    print *, "min of pfrac is", minval(planck_frac)
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'planck_frac',planck_frac)
-    print *, "outputs saved to ", inp_outp_file
+    print *, "mean of pfrac is",    sum(temparray, dim=1)/size(temparray, dim=1)
     deallocate(temparray)
-  end if
 
-  ! Save neural network inputs ?
-  ! if (save_input) then
-  !   print *, "Attempting to save neural network inputs to ", inp_outp_file
-  !   ! This function also deallocates the input 
-  !   call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
-  !   call unblock_and_write(trim(inp_outp_file), 'col_dry',col_dry)
-  !   print *, "inputs saved to ", inp_outp_file
-  ! end if
+    print *, "Attempting to save outputs to" , inp_outp_file
+    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_lw', tau_lw)
+    call unblock_and_write_3D_sp(trim(inp_outp_file), 'planck_frac', planck_frac)
+    print *, "Outputs were saved to ", inp_outp_file
+  end if
 
   ! Save fluxes ?
   if (save_flux) then
