@@ -64,6 +64,7 @@ endif
 
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
 #FCFLAGS += -fpp
+
 ifeq ($(USE_TIMING),yes)
 	#
 	# Timing library
@@ -71,9 +72,10 @@ ifeq ($(USE_TIMING),yes)
 	FCINCLUDE += -I$(TIME_DIR)/include
 	# Compiler specific
 	FCFLAGS += -DUSE_TIMING
-	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
-	LIBS      += -lgptl  -rdynamic  
+	LDFLAGS   += -L$(TIME_DIR)/lib
+	LIBS      += -lgptl
 endif
+
 ifeq ($(USE_FULL_TIMING),yes)
 	#
 	# Timing library
@@ -83,6 +85,13 @@ ifeq ($(USE_FULL_TIMING),yes)
 	FCFLAGS += -DUSE_TIMING -DUSE_PAPI
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl  -rdynamic  -lpapi
+endif
+
+
+
+ifeq ($(DEV_MODE),yes)
+	# Modify RRTMGP interface so it outputs the neural network inputs and col_dry
+	FCFLAGS += -DDEV_MODE 
 endif
 VPATH = ../
 

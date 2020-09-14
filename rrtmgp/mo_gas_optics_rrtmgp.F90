@@ -237,7 +237,11 @@ contains
   function gas_optics_int(this,                             &
                           play, plev, tlay, tsfc, gas_desc, &
                           optical_props, sources,          &
-                          col_dry, tlev, neural_nets) result(error_msg)
+                          col_dry, tlev, neural_nets       &
+#ifdef DEV_MODE
+                          ,nn_inputs, col_dry_arr          &
+#endif
+                          ) result(error_msg)
     ! inputs
     class(ty_gas_optics_rrtmgp), intent(in) :: this
     real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
@@ -258,17 +262,21 @@ contains
     ! Optional input: neural network model (uses NN kernel if present)
     type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                                
     ! Outputs for neural network model development
-    ! real(sp), dimension(:,:,:), intent(inout), optional     :: nn_inputs
-    ! real(sp), dimension(:,:),   intent(inout), optional     :: col_dry_arr
+#ifdef DEV_MODE
+    real(sp), dimension(:,:,:), intent(inout)         :: nn_inputs
+    real(sp), dimension(:,:),   intent(inout), target :: col_dry_arr
+#else
+    real(sp), dimension(:,:,:), allocatable           :: nn_inputs
     real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
+#endif
     real(wp), dimension(:,:),   pointer               :: col_dry_wk => NULL()
     ! ----------------------------------------------------------
     ! Local variables
-
+    ! real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
+    ! real(wp), dimension(:,:),   pointer               :: col_dry_wk => NULL()
     real(wp), dimension(size(play,dim=1)+1, size(play,dim=2)), &
                                target         :: tlev_arr
     real(wp), dimension(:,:),   pointer       :: tlev_wk
-    real(sp), dimension(:,:,:), allocatable   :: nn_inputs
 
     integer :: ncol, nlay, ngpt, nband, ngas, ninputs, nflav, icol, ilay, idx_h2o
     ! ----------------------------------------------------------
@@ -343,9 +351,30 @@ contains
       !$acc enter data copyin(col_dry_arr)
       col_dry_wk => col_dry
     else
+#ifndef DEV_MODE
       allocate(col_dry_arr(nlay,ncol))
+#endif
       !$acc enter data create(col_dry_arr)
       idx_h2o = string_loc_in_array('h2o', this%gas_names)
+
+      ! print *, "GAS NAMES, this-gas-names:" ,this%gas_names
+      ! print *, "GAS NAMES, gas_desc%gas_name ", gas_desc%gas_name
+      ! print *, "idx_h2o", idx_h2o
+
+      ! UNRESOLVED ISSUE: It's confusing that the gas optics class and gas concentration class both have their own
+      ! gas name array. Probably a good reason for it..however,
+      ! accessing the gas concentration directly from gas_conc like below is much faster for the neural network code than 
+      ! the original method of filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
+      ! Unfortunately the gas names order in "this%gas_names" and "gas_desc" are not guaranteed to match (noticed this with CKDMIP)
+      ! Temporary fix for CKDMIP: set gas_names in das_Desc to match the gas optics order
+      ! !! Come back to this later !!
+      
+      ! Original code:
+      ! if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
+      !   error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
+      !   if (error_msg /= '') return
+      ! endif
+
       call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
     end if
@@ -371,7 +400,9 @@ contains
       sources%lay_source_bnd, sources%lev_source_bnd)  
 
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
+#ifndef DEV_MODE
       allocate(nn_inputs(ninputs,nlay,ncol))
+#endif
       !$acc enter data create(nn_inputs)
 
       error_msg = compute_nn_inputs(this,             &
@@ -404,10 +435,12 @@ contains
       if(error_msg  /= '') return
       ! ----------------------------------------------------------
       ! Use this code block to compute nn inputs for model development, commented out as default
-      ! error_msg = compute_nn_inputs(this,                         &
-      !                 ncol, nlay, ngas, size(nn_inputs,dim=1),    &
-      !                 play, tlay, gas_desc,  nn_inputs)   
-      ! if(error_msg  /= '') return  
+#ifdef DEV_MODE
+      error_msg = compute_nn_inputs(this,                         &
+                      ncol, nlay, ngas, size(nn_inputs,dim=1),    &
+                      play, tlay, gas_desc,  nn_inputs)   
+      if(error_msg  /= '') return  
+#endif
       ! ----------------------------------------------------------
 
       ! ----------------------------------------------------------------------------------

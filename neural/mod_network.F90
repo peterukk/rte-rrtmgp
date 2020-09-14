@@ -9,60 +9,7 @@ module mod_network
 #endif
 
   implicit none
-  ! real(sp), parameter :: ysigma_lw_tau = 0.0008864219_sp
-  ! real(sp), parameter, dimension(256) :: ymeans_lw_tau = (/ &
-  ! 0.0007013_sp, 0.00081638_sp, 0.00088407_sp, 0.0009376_sp, 0.00100272_sp,  &
-  ! 0.00108871_sp, 0.00119965_sp, 0.00136057_sp, 0.00162019_sp, 0.00185225_sp,&
-  ! 0.00195079_sp, 0.00206555_sp, 0.00220559_sp, 0.00240607_sp, 0.00271468_sp,&
-  ! 0.00301905_sp, 0.00046654_sp, 0.00051556_sp, 0.00058341_sp, 0.00065088_sp,&
-  ! 0.00070464_sp, 0.00076876_sp, 0.00085896_sp, 0.00097935_sp, 0.00119935_sp,&
-  ! 0.00141034_sp, 0.00151006_sp, 0.00163442_sp, 0.00180711_sp, 0.00204042_sp,&
-  ! 0.00242276_sp, 0.00280669_sp, 0.00042887_sp, 0.00046485_sp, 0.00051584_sp,&
-  ! 0.00058201_sp, 0.00065572_sp, 0.00072477_sp, 0.00080584_sp, 0.00091423_sp,&
-  ! 0.00110042_sp, 0.00127067_sp, 0.00134649_sp, 0.00144005_sp, 0.00155864_sp,&
-  ! 0.0017359_sp, 0.00192395_sp, 0.00202425_sp, 0.00089971_sp, 0.00101015_sp,&
-  ! 0.0010735_sp, 0.00113382_sp, 0.00121697_sp, 0.00131415_sp, 0.0014548_sp,&
-  ! 0.00166414_sp, 0.00201406_sp, 0.0023286_sp, 0.00248189_sp, 0.0026516_sp,&
-  ! 0.0028395_sp, 0.00309552_sp, 0.00329059_sp, 0.00340846_sp, 0.00040419_sp,&
-  ! 0.00044149_sp, 0.00049501_sp, 0.00057646_sp, 0.00065665_sp, 0.00072959_sp,&
-  ! 0.0008178_sp, 0.00092567_sp, 0.00110577_sp, 0.00127773_sp, 0.00135464_sp,&
-  ! 0.00144639_sp, 0.00155456_sp, 0.00172624_sp, 0.00195144_sp, 0.00219249_sp,&
-  ! 0.00037311_sp, 0.00038832_sp, 0.00039876_sp, 0.00039357_sp, 0.00039073_sp,&
-  ! 0.00039439_sp, 0.00040139_sp, 0.00041544_sp, 0.00045041_sp, 0.00048733_sp,&
-  ! 0.00050021_sp, 0.000511_sp, 0.0005222_sp, 0.00053226_sp, 0.00053905_sp,&
-  ! 0.00053686_sp, 0.00045033_sp, 0.00050789_sp, 0.00056031_sp, 0.0006055_sp,&
-  ! 0.00064596_sp, 0.0006884_sp, 0.00073842_sp, 0.00080476_sp, 0.00091462_sp,&
-  ! 0.00100837_sp, 0.00104174_sp, 0.00107803_sp, 0.00112003_sp, 0.00116588_sp,&
-  ! 0.00121704_sp, 0.00124574_sp, 0.00043096_sp, 0.00044609_sp, 0.00045882_sp,&
-  ! 0.00047328_sp, 0.00049173_sp, 0.00051617_sp, 0.00055129_sp, 0.00060892_sp,&
-  ! 0.00070759_sp, 0.00078732_sp, 0.00081574_sp, 0.00084897_sp, 0.00089626_sp,&
-  ! 0.00096228_sp, 0.00103707_sp, 0.00107244_sp, 0.00044382_sp, 0.00047923_sp,&
-  ! 0.00052424_sp, 0.00056825_sp, 0.00061594_sp, 0.00066949_sp, 0.00073642_sp,&
-  ! 0.00083537_sp, 0.00099988_sp, 0.00115576_sp, 0.00122428_sp, 0.00130514_sp,&
-  ! 0.0013967_sp, 0.00150886_sp, 0.00164095_sp, 0.00173281_sp, 0.0005398_sp,&
-  ! 0.00058346_sp, 0.00061954_sp, 0.00065103_sp, 0.00069784_sp, 0.00076837_sp,&
-  ! 0.00086104_sp, 0.00099005_sp, 0.00119531_sp, 0.00135744_sp, 0.00142613_sp,&
-  ! 0.00151644_sp, 0.00163775_sp, 0.0017866_sp, 0.00194151_sp, 0.00203961_sp,&
-  ! 0.00062092_sp, 0.00068568_sp, 0.00072482_sp, 0.00076629_sp, 0.00081684_sp,&
-  ! 0.00088733_sp, 0.00098261_sp, 0.00111583_sp, 0.00132001_sp, 0.00149657_sp,&
-  ! 0.00157718_sp, 0.00167974_sp, 0.00181246_sp, 0.00196578_sp, 0.00211621_sp,&
-  ! 0.00222501_sp, 0.00027775_sp, 0.00031307_sp, 0.00034595_sp, 0.00037792_sp,&
-  ! 0.00040985_sp, 0.00044745_sp, 0.00049738_sp, 0.00056636_sp, 0.00068384_sp,&
-  ! 0.00079073_sp, 0.00083684_sp, 0.00089007_sp, 0.00094933_sp, 0.00101663_sp,&
-  ! 0.00109136_sp, 0.00115981_sp, 0.00041082_sp, 0.00047212_sp, 0.0005221_sp,&
-  ! 0.00057267_sp, 0.00062689_sp, 0.00068311_sp, 0.00074801_sp, 0.00083137_sp,&
-  ! 0.0009249_sp, 0.00097404_sp, 0.00098701_sp, 0.0009677_sp, 0.00091862_sp,&
-  ! 0.00092232_sp, 0.00097919_sp, 0.00099403_sp, 0.00082178_sp, 0.00097702_sp,&
-  ! 0.00115414_sp, 0.00134279_sp, 0.00149137_sp, 0.00160743_sp, 0.00175431_sp,&
-  ! 0.00198898_sp, 0.00242579_sp, 0.00281907_sp, 0.00299135_sp, 0.00319233_sp,&
-  ! 0.00345435_sp, 0.00384145_sp, 0.00410627_sp, 0.00420549_sp, 0.00022183_sp,&
-  ! 0.00025186_sp, 0.00027004_sp, 0.0002846_sp, 0.0003047_sp, 0.00032399_sp,&
-  ! 0.00034067_sp, 0.00035919_sp, 0.00038545_sp, 0.00040524_sp, 0.00041355_sp,&
-  ! 0.00042393_sp, 0.00043629_sp, 0.00045243_sp, 0.0004797_sp, 0.00050912_sp,&
-  ! 0.00030737_sp, 0.00035681_sp, 0.00039763_sp, 0.00043568_sp, 0.00047533_sp,&
-  ! 0.00052387_sp, 0.00058468_sp, 0.00066867_sp, 0.00081455_sp, 0.00094435_sp,&
-  ! 0.00099829_sp, 0.00107121_sp, 0.00117441_sp, 0.00127705_sp, 0.00135903_sp,0.00142707 /)
-
+ 
 #ifdef USE_TIMING
   integer, private :: ret, i
 #endif
@@ -630,8 +577,9 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
     real(sp), dimension(ny, nsample), &
                               intent(out)   :: output ! (outputs, nsample)
     ! Local variables
-    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample) &
-                                            :: a, a_next
+    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample), &
+                                          target  :: a1, a2  
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
 
     real(sp)                                :: alpha, beta
     integer                                 :: n, isample, i, neurons, layersize
@@ -645,6 +593,7 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
 #ifdef USE_TIMING
       ret =  gptlstart('sgemm_pfrac')
 #endif
+      a  => a1
       ! First layer: multiply input matrix with weights in the first layer
       call sgemm("N","N", neurons, nsample, nx, alpha, layers(1) % w_transposed, neurons, x, nx, beta, a, neurons)
 #ifdef USE_TIMING
@@ -660,6 +609,8 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
         ! end do
       end do
 
+      ! INTERMEDIATE LAYERS
+      a_next => a2
       ! Intermediate layers: in each layer, multiply the signal matrix a with weights in that layer, add biases, and activation
       do n = 3, size(layers)-1
 #ifdef USE_TIMING
@@ -675,7 +626,15 @@ subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
           a_next(i, isample) = a_next(i, isample ) + layers(n) % b(i)
           call softsignn(a_next(i, isample))
         end do 
-        a = a_next
+        ! Swap pointers
+        if(mod(n,2) .EQ. 1) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+
       end do
 #ifdef USE_TIMING
       ret =  gptlstart('sgemm_pfrac')
@@ -710,10 +669,11 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, coldry, ymeans, ysigma, ou
     real(sp),                         intent(in)  :: ysigma
     real(sp), dimension(ny, nsample), intent(out) :: output ! (outputs, nsample)
 
-    ! LOCAL VARIABLES
+    ! LOCAL VARIABLESoutput_sgemm_tau
     ! The "signal" i.e. output of hidden layers, assumed to not change shape
-    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample) &
-                                                  :: a, a_next
+    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample), &
+                                          target  :: a1, a2  
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
     
     real(sp)                :: alpha, beta
     integer                 :: n, isample, neurons, layersize, i
@@ -726,6 +686,7 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, coldry, ymeans, ysigma, ou
 #ifdef USE_TIMING
       ret =  gptlstart('sgemm_tau')
 #endif
+      a  => a1
       call sgemm("N","N",neurons, nsample, nx, alpha, layers(1) % w_transposed, neurons, x, nx, beta, a, neurons)
       ! First layer :  (nneur x nx) * (nx * nsamp )   = (nneur * nsamp)   
 
@@ -745,14 +706,16 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, coldry, ymeans, ysigma, ou
       ret =  gptlstop('add_signal_bias_and_activation')
 #endif
       ! INTERMEDIATE LAYERS
+      a_next => a2 
+
       do n = 3, size(layers)-1
 #ifdef USE_TIMING
       ret =  gptlstart('sgemm_tau')
 #endif
         call sgemm("N","N",neurons,nsample,neurons,alpha,layers(n-1) % w_transposed, neurons, a, neurons, beta, a_next, neurons)
 #ifdef USE_TIMING
-      ret =  gptlstop('sgemm_tau')
-      ret =  gptlstart('add_signal_bias_and_activation')
+        ret =  gptlstop('sgemm_tau')
+        ret =  gptlstart('add_signal_bias_and_activation')
 #endif
         layersize = size(layers(n) % b)
         !dir$ vector aligned
@@ -761,10 +724,18 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, coldry, ymeans, ysigma, ou
             call softsignn(a_next(i, isample))
         end do 
 #ifdef USE_TIMING
-      ret =  gptlstop('add_signal_bias_and_activation')
+        ret =  gptlstop('add_signal_bias_and_activation')
 #endif
-      a = a_next
-
+      ! a = a_next
+        ! swap pointers
+        if(mod(n,2) .EQ. 1) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+        
       end do
 #ifdef USE_TIMING
       ret =  gptlstart('sgemm_tau_lastlayer')
@@ -784,6 +755,7 @@ subroutine output_sgemm_tau(self, nx, ny, nsample, x, coldry, ymeans, ysigma, ou
         ! In one line: add bias for get model output, standard-scale and power-scale to obtain molecular absorption, 
         ! and finally multiply with coldry to get optical depth
         output(i, isample) = ((ysigma* (output(i, isample) + layers(n) % b(i)) + ymeans(i))**8) *coldry(isample)
+        ! output(i, isample) = ((ysigmas_lw_tau(i)* (output(i, isample) + layers(n) % b(i)) + ymeans(i))**8) *coldry(isample)
       end do
 #ifdef USE_TIMING
       ret =  gptlstop('add_output_bias_and_scale')
