@@ -21,23 +21,27 @@ VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL
 
 
 ifeq ($(USE_TIMING),yes)
-	#
 	# Timing library GPTL
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
 endif
 
 ifeq ($(USE_FULL_TIMING),yes)
-	#
 	# GPTL + PAPI 
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
 endif
 
-ifdef USE_FAST_EXPONENTIAL
+ifdef FAST_EXPONENTIAL
+    # Approximation for exp function (longwave only) significantly faster on non-intel compilers
 	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
 ifeq ($(USE_BLIS),yes)
 	FCFLAGS += -I$(BLAS_DIR)/include/blis
+endif
+
+ifeq ($(DEV_MODE),yes)
+	# Modify RRTMGP interface so it outputs the neural network inputs and col_dry
+	FCFLAGS += -DDEV_MODE 
 endif
 
 all: librte.a librrtmgp.a libneural.a

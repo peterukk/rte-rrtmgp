@@ -121,7 +121,11 @@ module mo_gas_optics
     function gas_optics_int_abstract(this,                             &
                                      play, plev, tlay, tsfc, gas_desc, &
                                      optical_props, sources,           &
-                                     col_dry, tlev, neural_nets) result(error_msg)
+                                    col_dry, tlev, neural_nets       &
+#ifdef DEV_MODE
+                                    ,nn_inputs, col_dry_arr          &
+#endif
+                                      ) result(error_msg)
       import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw, network_type
       class(ty_gas_optics),     intent(in   ) :: this
       real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
@@ -140,7 +144,11 @@ module mo_gas_optics
     ! Optional input: neural network model (uses NN kernel if present)
       type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model 
       ! real(sp), dimension(:,:,:),     intent(inout), optional          :: nn_inputs             
-      ! real(sp), dimension(:,:),       intent(inout), optional          :: col_dry_arr                                 
+      ! real(sp), dimension(:,:),       intent(inout), optional          :: col_dry_arr     
+#ifdef DEV_MODE
+    real(sp), dimension(:,:,:), intent(inout)         :: nn_inputs
+    real(sp), dimension(:,:),   intent(inout),target  :: col_dry_arr
+#endif                       
     end function gas_optics_int_abstract
 
     !--------------------------------------------------------------------------------------------------------------------
