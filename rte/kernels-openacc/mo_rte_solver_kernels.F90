@@ -27,7 +27,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_rte_solver_kernels
   use,  intrinsic :: iso_c_binding
-  use mo_rte_kind, only: wp, wl
+  use mo_rte_kind, only: wp, dp, wl
   implicit none
   private
 
@@ -138,7 +138,6 @@ contains
                   planck_frac, lay_source_bnd, lev_source_bnd, &
                   sfc_source_bnd, sfc_source_bnd_Jac, &
                   sfc_src, sfc_src_Jac, lay_source, lev_source_dec, lev_source_inc)
-    !$acc exit data delete(planck_frac)
 
     !$acc enter data create (source_sfc, source_sfcJac, sfc_albedo) 
 
@@ -255,17 +254,15 @@ contains
 
     real(wp), dimension(:,:,:),  allocatable      :: rad_up, rad_dn ! Fluxes per quad angle  (nlay+1, ncol)
     real(wp), dimension(:,:,:),  allocatable      :: rad_up_Jac      ! perturbed Fluxes per quad angle
-    integer :: imu, icol, sfc_lay, igpt, ilay
+    integer :: imu, icol, sfc_lay, igpt, ilev
     ! ------------------------------------
+
     !
     ! For the first angle output arrays store total flux
     !
 
     !$acc enter data copyin(Ds, weights) create (Ds_ngpt)
-
-    !$acc data present(band_limits, tau, planck_frac, lay_source_bnd, lev_source_bnd, sfc_emis, sfc_source_bnd, sfc_source_bnd_Jac, flux_up, flux_dn, flux_up_Jac)
-
-    !$acc  parallel loop collapse(2)
+    !$acc  parallel loop collapse(2) present(Ds)
     do icol = 1, ncol
       do igpt = 1, ngpt
         Ds_ngpt(igpt, icol) = Ds(1)
@@ -288,7 +285,12 @@ contains
 
     do imu = 2, nmus
 
-      Ds_ngpt(:,:) = Ds(imu)
+      !$acc  parallel loop collapse(2) 
+      do icol = 1, ncol
+        do igpt = 1, ngpt
+          Ds_ngpt(igpt, icol) = Ds(imu)
+        end do
+      end do
 
       call lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, &
         Ds_ngpt, weights(imu), &
@@ -297,18 +299,21 @@ contains
         sfc_source_bnd, sfc_emis, &
         rad_up, rad_dn, sfc_source_bnd_Jac, rad_up_Jac)
 
-      flux_up = flux_up + rad_up
-      flux_dn = flux_dn + rad_dn
-      flux_up_Jac = flux_up_Jac + rad_up_Jac
+      !$acc  parallel loop collapse(3) present(flux_up, flux_dn, rad_up, rad_dn, flux_up_Jac, rad_up_Jac)
+      do icol = 1, ncol
+        do ilev = 1, nlay+1
+          do igpt = 1, ngpt
+            flux_up(igpt,ilev,icol)     = flux_up(igpt,ilev,icol) + rad_up(igpt,ilev,icol) 
+            flux_dn(igpt,ilev,icol)     = flux_dn(igpt,ilev,icol) + rad_dn(igpt,ilev,icol) 
+            flux_up_Jac(igpt,ilev,icol) = flux_up_Jac(igpt,ilev,icol) + rad_up_Jac(igpt,ilev,icol) 
+          end do
+        end do
+      end do
+
     end do                      
 
-    !$acc end data
-
     !$acc exit data delete(Ds, weights, Ds_ngpt)
-
   end subroutine lw_solver_noscat_GaussQuad
-
-
 
  subroutine lw_solver_noscat_broadband(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, inc_flux, band_limits, &
                               tau, planck_frac, &
@@ -650,17 +655,17 @@ contains
     integer,                    intent(in   ) :: ngpt, nlay, ncol ! Number of columns, layers, g-points
     logical(wl),                intent(in   ) :: top_at_1
     real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau          ! Absorption optical thickness []
-    real(wp), dimension(ngpt            ), intent(in   ) :: mu0          ! cosine of solar zenith angle
+    real(wp), dimension(ncol            ), intent(in   ) :: mu0          ! cosine of solar zenith angle
     real(wp), dimension(ngpt,nlay+1,ncol), intent(inout) :: flux_dir     ! Direct-beam flux, spectral [W/m2]
                                                                           ! Top level must contain incident flux boundary condition
     integer :: igpt, ilev, icol
-    real(wp) :: mu0_inv(ngpt)
+    real(wp) :: mu0_inv(ncol)
     ! ------------------------------------
     ! ------------------------------------
     !$acc enter data copyin(tau, mu0) create(mu0_inv, flux_dir)
     !$acc parallel loop
-    do igpt = 1, ngpt
-      mu0_inv(igpt) = 1._wp/mu0(igpt)
+    do icol = 1, ncol
+      mu0_inv(icol) = 1._wp/mu0(icol)
     enddo
     ! Indexing into arrays for upward and downward propagation depends on the vertical
     !   orientation of the arrays (whether the domain top is at the first or last index)
@@ -676,7 +681,7 @@ contains
       do icol = 1, ncol
         do igpt = 1, ngpt
           do ilev = 2, nlay+1
-            flux_dir(igpt,ilev,icol) = flux_dir(igpt,ilev-1,icol) * exp(-tau(igpt,ilev,icol)*mu0_inv(igpt))
+            flux_dir(igpt,ilev,icol) = flux_dir(igpt,ilev-1,icol) * exp(-tau(igpt,ilev,icol)*mu0_inv(icol))
           end do
         end do
       end do
@@ -687,7 +692,7 @@ contains
       do icol = 1, ncol
         do igpt = 1, ngpt
           do ilev = nlay, 1, -1
-            flux_dir(igpt,ilev,icol) = flux_dir(igpt,ilev+1,icol) * exp(-tau(igpt,ilev,icol)*mu0_inv(igpt))
+            flux_dir(igpt,ilev,icol) = flux_dir(igpt,ilev+1,icol) * exp(-tau(igpt,ilev,icol)*mu0_inv(icol))
           end do
         end do
       end do
@@ -711,7 +716,7 @@ contains
     real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau, &  ! Optical thickness,
                                                             ssa, &  ! single-scattering albedo,
                                                             g       ! asymmetry parameter []
-    real(wp), dimension(ngpt            ), intent(in   ) :: mu0     ! cosine of solar zenith angle
+    real(wp), dimension(ncol            ), intent(in   ) :: mu0     ! cosine of solar zenith angle
     real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_alb_dir, sfc_alb_dif
                                                                   ! Spectral albedo of surface to direct and diffuse radiation
     real(wp), dimension(ngpt,nlay+1,ncol), &
@@ -727,21 +732,28 @@ contains
     !
     ! Cell properties: transmittance and reflectance for direct and diffuse radiation
     !
-    !$acc enter data copyin(tau, ssa, g, mu0, sfc_alb_dir, sfc_alb_dif, flux_dn, flux_dir)
-    !$acc enter data create(Rdif, Tdif, Rdir, Tdir, Tnoscat, source_up, source_dn, source_srf, flux_up)
+
+    !$acc enter data create(Rdif, Tdif, Rdir, Tdir, Tnoscat)
     call sw_two_stream(ngpt, nlay, ncol, mu0, &
                         tau , ssa , g   ,      &
                         Rdif, Tdif, Rdir, Tdir, Tnoscat)
+
+    !$acc enter data create(source_up, source_dn, source_srf)                    
     call sw_source_2str(ngpt, nlay, ncol, top_at_1,       &
                         Rdir, Tdir, Tnoscat, sfc_alb_dir, &
                         source_up, source_dn, source_srf, flux_dir)
+    !$acc exit data delete(Rdir, Tdir, Tnoscat)     
+
     call adding(ngpt, nlay, ncol, top_at_1,   &
                 sfc_alb_dif, Rdif, Tdif,      &
                 source_dn, source_up, source_srf, flux_up, flux_dn)
+    !$acc exit data delete(source_up, source_dn, source_srf)  
+    !$acc exit data delete(Rdif, Tdif)     
+
     !
     ! adding computes only diffuse flux; flux_dn is total
     !
-    !$acc  parallel loop collapse(3)
+    !$acc parallel loop collapse(3) present(flux_dn, flux_dir)
     do icol = 1, ncol
       do ilay = 1, nlay+1
         do igpt = 1, ngpt
@@ -749,9 +761,7 @@ contains
         end do
       end do
     end do
-    !$acc exit data copyout(flux_up, flux_dn, flux_dir)
-    !$acc exit data delete (tau, ssa, g, mu0, sfc_alb_dir, sfc_alb_dif, Rdif, Tdif, Rdir, Tdir, Tnoscat, source_up, source_dn, source_srf)
-
+    
   end subroutine sw_solver_2stream
 
 pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
@@ -1249,10 +1259,10 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! Equations are developed in Meador and Weaver, 1980,
   !    doi:10.1175/1520-0469(1980)037<0630:TSATRT>2.0.CO;2
   !
-    subroutine sw_two_stream(ngpt, nlay, ncol, mu0, tau, w0, g, &
+  subroutine sw_two_stream(ngpt, nlay, ncol, mu0, tau, w0, g, &
                                   Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
       integer,                             intent(in)  :: ngpt, nlay, ncol
-      real(wp), dimension(ngpt),           intent(in)  :: mu0
+      real(wp), dimension(ncol),           intent(in)  :: mu0
       real(wp), dimension(ngpt,nlay,ncol), intent(in)  :: tau, w0, g
       real(wp), dimension(ngpt,nlay,ncol), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
 
@@ -1266,21 +1276,20 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       ! Ancillary variables
       real(wp) :: RT_term
       real(wp) :: exp_minusktau, exp_minus2ktau
-      real(wp) :: k_mu, k_gamma3, k_gamma4
-      real(wp) :: mu0_inv(ngpt)
+      real(wp) :: k_mu !, k_gamma3, k_gamma4
+      real(dp) :: k_gamma3, k_gamma4  ! Need to be in double precision
+      real(wp) :: mu0_inv(ncol)
       ! ---------------------------------
       ! ---------------------------------
-      !$acc enter data copyin (mu0, tau, w0, g)
-      !$acc enter data create(Rdif, Tdif, Rdir, Tdir, Tnoscat, mu0_inv)
+
+      !$acc data present(mu0, tau, w0, g, Rdif, Tdif, Rdir, Tdir, Tnoscat)
+      !$acc enter data create(mu0_inv)
 
       !$acc parallel loop
-      do igpt = 1, ngpt
-        mu0_inv(igpt) = 1._wp/mu0(igpt)
+      do icol = 1, ncol
+        mu0_inv(icol) = 1._wp/mu0(icol)
       enddo
 
-      ! NOTE: this kernel appears to cause small (10^-6) differences between GPU
-      ! and CPU. This *might* be floating point differences in implementation of
-      ! the exp function.
       !$acc  parallel loop collapse(3)
       do icol = 1, ncol
         do ilay = 1, nlay
@@ -1290,7 +1299,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             !
             gamma1= (8._wp - w0(igpt,ilay,icol) * (5._wp + 3._wp * g(igpt,ilay,icol))) * .25_wp
             gamma2=  3._wp *(w0(igpt,ilay,icol) * (1._wp -         g(igpt,ilay,icol))) * .25_wp
-            gamma3= (2._wp - 3._wp * mu0(igpt)  *                  g(igpt,ilay,icol) ) * .25_wp
+            gamma3= (2._wp - 3._wp * mu0(icol)  *                  g(igpt,ilay,icol) ) * .25_wp
             gamma4=  1._wp - gamma3
 
             alpha1 = gamma1 * gamma4 + gamma2 * gamma3           ! Eq. 16
@@ -1302,7 +1311,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             !   of < 0.1% in Rdif down to tau = 10^-9
             k = sqrt(max((gamma1 - gamma2) * &
                          (gamma1 + gamma2),  &
-                         1.e-12_wp))
+                         1.e-9_wp))
             exp_minusktau = exp(-tau(igpt,ilay,icol)*k)
             !
             ! Diffuse reflection and transmission
@@ -1322,12 +1331,12 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             !
             ! Transmittance of direct, unscattered beam. Also used below
             !
-            Tnoscat(igpt,ilay,icol) = exp(-tau(igpt,ilay,icol)*mu0_inv(igpt))
+            Tnoscat(igpt,ilay,icol) = exp(-tau(igpt,ilay,icol)*mu0_inv(icol))
 
             !
             ! Direct reflect and transmission
             !
-            k_mu     = k * mu0(igpt)
+            k_mu     = k * mu0(icol)
             k_gamma3 = k * gamma3
             k_gamma4 = k * gamma4
 
@@ -1340,9 +1349,9 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
                                                          abs(1._wp - k_mu*k_mu) >= epsilon(1._wp))
 
             Rdir(igpt,ilay,icol) = RT_term  *                                    &
-               ((1._wp - k_mu) * (alpha2 + k_gamma3)                  - &
-                (1._wp + k_mu) * (alpha2 - k_gamma3) * exp_minus2ktau - &
-                2.0_wp * (k_gamma3 - alpha2 * k_mu)  * exp_minusktau  * Tnoscat(igpt,ilay,icol))
+               ((1._dp - k_mu) * (alpha2 + k_gamma3)                  - &
+                (1._dp + k_mu) * (alpha2 - k_gamma3) * exp_minus2ktau - &
+                2.0_dp * (k_gamma3 - alpha2 * k_mu)  * exp_minusktau  * Tnoscat(igpt,ilay,icol))
 
             !
             ! Equation 15, multiplying top and bottom by exp(-k*tau),
@@ -1351,17 +1360,18 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             ! Omitting direct transmittance
             !
             Tdir(igpt,ilay,icol) = &
-                     -RT_term * ((1._wp + k_mu) * (alpha1 + k_gamma4) * Tnoscat(igpt,ilay,icol) - &
-                                 (1._wp - k_mu) * (alpha1 - k_gamma4) * exp_minus2ktau * Tnoscat(igpt,ilay,icol) - &
-                                  2.0_wp * (k_gamma4 + alpha1 * k_mu)  * exp_minusktau )
+                     -RT_term * ((1._dp + k_mu) * (alpha1 + k_gamma4) * Tnoscat(igpt,ilay,icol) - &
+                                 (1._dp - k_mu) * (alpha1 - k_gamma4) * exp_minus2ktau * Tnoscat(igpt,ilay,icol) - &
+                                  2.0_dp * (k_gamma4 + alpha1 * k_mu)  * exp_minusktau )
 
           end do
         end do
       end do
-      !$acc exit data delete (mu0, tau, w0, g, mu0_inv)
-      !$acc exit data copyout(Rdif, Tdif, Rdir, Tdir, Tnoscat)
+      !$acc exit data delete(mu0_inv)
+      !$acc end data
 
     end subroutine sw_two_stream
+  
   ! ---------------------------------------------------------------
   !
   ! Direct beam source for diffuse radiation in layers and at surface;
@@ -1381,8 +1391,8 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     integer :: igpt, ilev, icol
     ! ---------------------------------
     ! ---------------------------------
-    !$acc enter data copyin (Rdir, Tdir, Tnoscat, sfc_albedo, flux_dn_dir)
-    !$acc enter data create(source_dn, source_up, source_sfc)
+
+    !$acc data present(Rdir, Tdir, Tnoscat, sfc_albedo, flux_dn_dir, source_dn, source_up, source_sfc)
 
     if(top_at_1) then
       !$acc  parallel loop collapse(2)
@@ -1411,8 +1421,8 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         end do
       end do
     end if
-    !$acc exit data copyout(source_dn, source_up, source_sfc, flux_dn_dir)
-    !$acc exit data delete(Rdir, Tdir, Tnoscat, sfc_albedo)
+
+    !$acc end data 
 
   end subroutine sw_source_2str
 ! ---------------------------------------------------------------
@@ -1456,8 +1466,10 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     !   orientation of the arrays (whether the domain top is at the first or last index)
     ! We write the loops out explicitly so compilers will have no trouble optimizing them.
     !
-    !$acc enter data copyin(albedo_sfc, rdif, tdif, src_dn, src_up, src_sfc, flux_dn)
-    !$acc enter data create(flux_up, albedo, src, denom)
+
+    !$acc data present(albedo_sfc, rdif, tdif, src_dn, src_up, src_sfc, flux_up, flux_dn)
+
+    !$acc enter data create(albedo, src, denom)
 
     if(top_at_1) then
       !$acc parallel loop gang vector collapse(2)
@@ -1553,8 +1565,9 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         end do
       end do
     end if
-    !$acc exit data delete(albedo_sfc, rdif, tdif, src_dn, src_up, src_sfc, albedo, src, denom)
-    !$acc exit data copyout(flux_up, flux_dn)
+    !$acc exit data delete(albedo, src, denom)
+    !$acc end data
+
   end subroutine adding
   ! -------------------------------------------------------------------------------------------------
   !
