@@ -1,9 +1,11 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics computations 
-August 2020 update: Shortwave NN models added. Similar performance benefit and accuracy as longwave model. Cleaner RRTMGP code: now only one interface which takes NN models as optional input to enable NN kernel. OpenACC code not tested and probably broken again.
+September 2020: GPU code fully working again, fixes to gas optics code to support OpenMP from an outer loop (see rrtmgp_rfmip_lw.F90)
 
-July 2020 update: The neural networks now predict **molecular absorption** from which the optical depth is retrieved by multiplying with the dry air column amount Ndry. This does not change accuracy but makes the model robust to changes in vertical resolution since Ndry is no longer an input.
+August 2020: Shortwave NN models added. Similar performance benefit and accuracy as longwave model. Cleaner RRTMGP code: now only one interface which takes NN models as optional input to enable NN kernel. OpenACC code not tested and probably broken again.
 
-June 2020 update: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has been submitted to JAMES. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been refactored to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) can make the solver 80% faster. When NN are additionally switched on, computing clear-sky longwave fluxes is up to 3 times faster. These results are for intel compilers and MKL - expect smaller speed-ups on other platforms and other BLAS libraries. 
+July 2020: The neural networks now predict **molecular absorption** from which the optical depth is retrieved by multiplying with the dry air column amount Ndry. This does not change accuracy but makes the model robust to changes in vertical resolution since Ndry is no longer an input.
+
+June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has been submitted to JAMES. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been refactored to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) can make the solver 80% faster. When NN are additionally switched on, computing clear-sky longwave fluxes is up to 3 times faster. These results are for intel compilers and MKL - expect smaller speed-ups on other platforms and other BLAS libraries. 
 
 No neural network has been developed for the **shortwave** yet. Because of the refactoring, also the shortwave code is faster (but the fluxes differ slightly in single precision?)
 

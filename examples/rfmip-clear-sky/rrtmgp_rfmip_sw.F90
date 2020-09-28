@@ -107,7 +107,7 @@ program rrtmgp_rfmip_sw
   character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, inp_outp_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, use_nn, save_input_output, compare_flux, save_flux
-  integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs
+  integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_games
@@ -288,7 +288,6 @@ program rrtmgp_rfmip_sw
     allocate(ssa(	        ngpt,   nlay, block_size, nblocks))
   end if
 
-  ! --------------------------------------------------
 #ifdef USE_TIMING
   !
   ! Initialize timers
@@ -300,6 +299,16 @@ program rrtmgp_rfmip_sw
 #endif  
   ret =  gptlinitialize()
 #endif
+
+  ! --------------------------------------------------
+
+  if (use_nn) then
+    print *, "starting computations, using neural networks for RRTMGP kernel"
+  else
+    print *, "starting computations"
+  end if
+  call system_clock(count_rate=count_rate)
+  call system_clock(iTime1)
   !
   ! Loop over blocks
   !
@@ -316,7 +325,7 @@ do i = 1, 10
     !
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
-    !
+    !true
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (SW)')
 #endif
@@ -339,6 +348,9 @@ do i = 1, 10
                                         optical_props,      &
                                         toa_flux))
     end if
+    ! !$acc update self(optical_props%tau, optical_props%ssa)
+    ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
+    ! print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (SW)')
 #endif
@@ -387,6 +399,9 @@ do i = 1, 10
       mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
     end do
 
+    ! !$acc update self(mu0)
+    ! print *," max, min (mu0)",   maxval(mu0), minval(mu0)
+
     !
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
     !    via ty_fluxes_broadband
@@ -432,6 +447,10 @@ do i = 1, 10
   ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
+
+  call system_clock(iTime2)
+  print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
+
   ! print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,:)), maxval(flux_dn(:,:,:))
 
   allocate(temparray(   block_size*(nlay+1)*nblocks)) 
@@ -440,6 +459,9 @@ do i = 1, 10
   temparray = pack(flux_up(:,:,:),.true.)
   print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
   deallocate(temparray)
+
+  ! mean of flux_down is:   292.71945410963957     
+  ! mean of flux_up is:   41.835381782065106 
 
   !$acc exit data delete(optical_props%tau, optical_props%ssa, optical_props%g, optical_props)
   !$acc exit data delete(sfc_alb_spec, mu0)

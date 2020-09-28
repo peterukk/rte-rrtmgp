@@ -27,7 +27,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_rte_solver_kernels
   use,  intrinsic :: iso_c_binding
-  use mo_rte_kind, only: wp, dp, wl
+  use mo_rte_kind, only: wp, sp, dp, wl
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
 #ifdef USE_TIMING
   !
@@ -38,6 +38,12 @@ module mo_rte_solver_kernels
 #endif
   implicit none
   private
+
+  ! Temporary solution until a single kernel robust to lower precision is developed. 
+  ! sw_two_stream_sp is called when wp=sp and uses dp for some critical variables
+  interface sw_two_stream
+    module procedure sw_two_stream_sp, sw_two_stream_dp
+  end interface sw_two_stream
 
   interface apply_BC
     module procedure apply_BC, apply_BC_old, apply_BC_nocol, apply_BC_factor, apply_BC_0
@@ -375,29 +381,11 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     ret =  gptlstop('compute_trans_exp()')
 #endif  
       !
-      ! Compute the source function per g-point from source function per band
-      !
-! #ifdef USE_TIMING
-!     ret =  gptlstart('gpt_source')
-! #endif
-      ! call lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, band_limits, &
-      !               planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
-      !               sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), &
-      !               sfc_src, sfc_srcJac, lay_source, lev_source_dec, lev_source_inc)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('gpt_source')
-! #endif
-
-      !
-      ! Source function for diffuse radiation, and transport 
+      ! Source function for diffuse radiation, plus transport without scattering
       !
 #ifdef USE_TIMING
     ret =  gptlstart('lw_source_transport_noscat')
 #endif  
-      ! call lw_source_noscat(ngpt, nlay, &
-      !                       lay_source, lev_source_up, lev_source_dn, &
-      !                       tau_loc, trans, source_dn, source_up)
-
       call lw_source_transport_noscat(nbnd, ngpt, nlay, sfc_lay, top_at_1, band_limits, &
                           planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
                           sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), & 
@@ -406,19 +394,6 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 #ifdef USE_TIMING
     ret =  gptlstop('lw_source_transport_noscat')
 #endif  
-!       !
-!       ! Transport
-!       !
-! #ifdef USE_TIMING
-!     ret =  gptlstart('lw_transport_noscat')
-! #endif        
-!       ! call lw_transport_noscat(ngpt, nlay, top_at_1,  &
-!       !                          tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
-!       !                          radn_up, radn_dn, &
-!       !                          source_sfcJac, radn_up_Jac)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('lw_transport_noscat')
-! #endif  
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
@@ -539,20 +514,13 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
                                                             ssa, &  ! single-scattering albedo,
                                                             g, &        ! asymmetry parameter []
                                                             planck_frac ! planck fraction
-    ! real(wp), dimension(ngpt,nlay,ncol),   intent(in   ) :: lay_source   ! Planck source at layer average temperature [W/m2]
-    ! real(wp), dimension(ngpt,nlay,ncol), target, &
-    !                                        intent(in   ) :: lev_source_inc, lev_source_dec
-                                        ! Planck source at layer edge for radiation in increasing/decreasing ilay direction [W/m2]
-                                        ! Includes spectral weighting that accounts for state-dependent frequency to g-space mapping
     integer, dimension(2,nbnd),            intent(in   ) :: band_limits
     real(wp), dimension(nbnd,nlay,  ncol),  intent(in   ) ::  lay_source_bnd
     real(wp), dimension(nbnd,nlay+1,ncol),  intent(in   ) ::  lev_source_bnd ! Planck source function at layers and levels by band [W/m2]
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd    ! Surface source function by band[W/m2]
-
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_emis         ! Surface emissivity      []
-    !real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_src          ! Surface source function [W/m2]
+    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd ! Surface source function by band[W/m2]
+    real(wp), dimension(ngpt,       ncol), intent(in   )  ::  sfc_emis         ! Surface emissivity      []
     real(wp), dimension(ngpt,nlay+1,ncol), &
-                                           intent(  out) :: flux_up   ! Fluxes [W/m2]
+                                           intent(  out)  :: flux_up   ! Fluxes [W/m2]
     real(wp), dimension(ngpt,nlay+1,ncol), &
                                            intent(inout) :: flux_dn   ! Top level (= merge(1, nlay+1, top_at_1)
                                                                       ! must contain incident flux boundary condition
@@ -575,7 +543,6 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     if(top_at_1) then
       top_level = 1
       sfc_lay = nlay
-
     else
       top_level = nlay+1
       sfc_lay = 1
@@ -710,9 +677,10 @@ pure subroutine sw_solver_noscat(ngpt, nlay, ncol, &
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
       !
-      call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-                         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-                         Rdif, Tdif, Rdir, Tdir, Tnoscat)      
+      call sw_two_stream(ngpt, nlay, mu0(icol),                             &
+                         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol),       &
+                         Rdif, Tdif, Rdir, Tdir, Tnoscat)   
+                         
       !
       ! Direct-beam and source for diffuse radiation
       !
@@ -1331,50 +1299,39 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! Equations are developed in Meador and Weaver, 1980,
   !    doi:10.1175/1520-0469(1980)037<0630:TSATRT>2.0.CO;2
   !
-  pure subroutine sw_two_stream(ngpt, nlay, mu0, tau, w0, g, &
-                                Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
+  pure subroutine sw_two_stream_sp(ngpt, nlay, mu0, tau, w0, g, &
+                                Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream_sp")
     integer,                        intent(in)  :: ngpt, nlay
-    real(wp),                       intent(in)  :: mu0
-    real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
-    real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+    real(sp),                       intent(in)  :: mu0
+    real(sp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
+    real(sp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
     ! -----------------------
     integer  :: i, j
 
     ! Variables used in Meador and Weaver
-    real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+    real(sp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
     ! Ancillary variables
-    real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+    real(sp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
     real(dp) :: k_gamma3, k_gamma4  ! Need to be in double precision
-    real(wp) :: k_mu, k_mu2, mu0_inv
+    real(sp) :: k_mu, k_mu2, mu0_inv
     ! ---------------------------------
-    mu0_inv = 1._wp/mu0
+    mu0_inv = 1._sp/mu0
 
     do j = 1, nlay
       do i = 1, ngpt
         ! Zdunkowski Practical Improved Flux Method "PIFM"
         !  (Zdunkowski et al., 1980;  Contributions to Atmospheric Physics 53, 147-66)
         !
-        gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
-        gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
-        gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
-        gamma4(i)=  1._wp - gamma3(i)
+        gamma1(i)= (8._sp - w0(i,j) * (5._sp + 3._sp * g(i,j))) * .25_sp
+        gamma2(i)=  3._sp *(w0(i,j) * (1._sp -         g(i,j))) * .25_sp
+        gamma3(i)= (2._sp - 3._sp * mu0 *              g(i,j) ) * .25_sp
+        gamma4(i)=  1._sp - gamma3(i)
 
         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
 
-        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-10_wp))
+        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-9_sp))
       end do
-      ! Written to encourage vectorization of exponential, square root
-      ! Eq 18;  k = SQRT(gamma1**2 - gamma2**2), limited below to avoid div by 0.
-      !   k = 0 for isotropic, conservative scattering; this lower limit on k
-      !   gives relative error with respect to conservative solution
-      !   of < 0.1% in Rdif down to tau = 10^-9
-      ! k(:) = sqrt(max((gamma1(:) - gamma2(:)) * &
-      !                      (gamma1(:) + gamma2(:)),  &
-      !                      1.e-12_wp))
-      ! k(:) = sqrt(max((gamma1(:) - gamma2(:)) * &
-      !                      (gamma1(:) + gamma2(:)),  &    
-      !                      1.e-10_wp))
       ! After increasing the lower limit to e-10 from e-12,
       !  k and the exp computation below can be in single precision. Also moved the k computation to gpt loop
       exp_minusktau(:) = exp_fast_double(-tau(:,j)*k(:))
@@ -1386,13 +1343,13 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-        RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
+        RT_term(i) = 1._sp / (k(i) * (1._sp + exp_minus2ktau(i)) + gamma1(i) * (1._sp - exp_minus2ktau(i)) )
 
         ! Equation 25
-        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
+        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._sp - exp_minus2ktau(i))
 
         ! Equation 26
-        Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
+        Tdif(i,j) = RT_term(i) * 2._sp * k(i) * exp_minusktau(i)
       end do
 
       !
@@ -1411,7 +1368,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
         !   and rearranging to avoid div by 0.         
         RT_term(i) =  w0(i,j) *  &
-        RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
+        RT_term(i) / merge(1._sp - k_mu2, epsilon(1._sp), abs(1._sp - k_mu2) >= epsilon(1._sp))
         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
 
         Rdir(i,j) = RT_term(i)  *                              &
@@ -1419,7 +1376,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
                    (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
              2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
 
-        ! temp(i) =  (1._wp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
+        ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
         ! this term must be in dp
         ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
 
@@ -1432,44 +1389,44 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         Tdir(i,j) = -RT_term(i) *                                                                 &
                     ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
                      (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-                     2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+                     2.0_sp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
       end do
     end do
 
-  end subroutine sw_two_stream
+  end subroutine sw_two_stream_sp
 
-  pure subroutine sw_two_stream_sp(ngpt, nlay, mu0, tau, w0, g, &
+  pure subroutine sw_two_stream_dp(ngpt, nlay, mu0, tau, w0, g, &
                                 Rdif, Tdif, Rdir, Tdir, Tnoscat)
     integer,                        intent(in)  :: ngpt, nlay
-    real(wp),                       intent(in)  :: mu0
-    real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
-    real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+    real(dp),                       intent(in)  :: mu0
+    real(dp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
+    real(dp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
     ! -----------------------
     integer  :: i, j
 
     ! Variables used in Meador and Weaver
-    real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+    real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
     ! Ancillary variables
-    real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
-    real(wp) :: k_gamma3, k_gamma4  ! Need to be in double precision
-    real(wp) :: k_mu, k_mu2, mu0_inv
+    real(dp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+    real(dp) :: k_gamma3, k_gamma4  ! Need to be in double precision
+    real(dp) :: k_mu, k_mu2, mu0_inv
     ! ---------------------------------
-    mu0_inv = 1._wp/mu0
+    mu0_inv = 1._dp/mu0
 
     do j = 1, nlay
       do i = 1, ngpt
         ! Zdunkowski Practical Improved Flux Method "PIFM"
         !  (Zdunkowski et al., 1980;  Contributions to Atmospheric Physics 53, 147-66)
         !
-        gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
-        gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
-        gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
-        gamma4(i)=  1._wp - gamma3(i)
+        gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
+        gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
+        gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
+        gamma4(i)=  1._dp - gamma3(i)
 
         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
 
-        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-9_wp))
+        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-12_dp))
       end do
       exp_minusktau(:) = exp_fast_double(-tau(:,j)*k(:))
       !
@@ -1479,11 +1436,11 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-        RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
+        RT_term(i) = 1._dp / (k(i) * (1._dp + exp_minus2ktau(i)) + gamma1(i) * (1._dp - exp_minus2ktau(i)) )
         ! Equation 25
-        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
+        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
         ! Equation 26
-        Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
+        Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
       end do
 
       !
@@ -1502,26 +1459,26 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
         !   and rearranging to avoid div by 0.         
         RT_term(i) =  w0(i,j) *  &
-        RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
+        RT_term(i) / merge(1._dp - k_mu2, epsilon(1._dp), abs(1._dp - k_mu2) >= epsilon(1._dp))
         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
 
         Rdir(i,j) = RT_term(i)  *                              &
-                (   (1._wp - k_mu) * (alpha2(i) + k_gamma3) -  &
-                   (1._wp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-             2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
+                (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
+                   (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
+             2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
         ! Equation 15, multiplying top and bottom by exp(-k*tau),
         !   multiplying through by exp(-tau/mu0) to
         !   prefer underflow to overflow
         ! Omitting direct transmittance
         !
         Tdir(i,j) = -RT_term(i) *                                                                 &
-                    ((1._wp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-                     (1._wp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-                     2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+                    ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+                     (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+                     2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
       end do
     end do
 
-  end subroutine sw_two_stream_sp
+  end subroutine sw_two_stream_dp
 
   pure subroutine sw_two_stream_ecrad(ngpt, nlay, mu0, tau, w0, g, &
                                 Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream_ecrad")
@@ -2260,7 +2217,6 @@ end subroutine apply_BC_old
       allocate( radn_dn(ngpt, nlay+1, ncol) )
       allocate( radn_up_Jac(ngpt, nlay+1, ncol) )
       allocate( radn_dn_Jac(ngpt, nlay+1, ncol) )
-
     end if 
 
     do imu = 2, nmus

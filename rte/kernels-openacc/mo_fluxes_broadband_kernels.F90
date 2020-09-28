@@ -49,7 +49,6 @@ contains
       end do
     end do
     !$acc exit data copyout(broadband_flux)
-    ! !$acc end data
 
   end subroutine sum_broadband
 

@@ -128,7 +128,7 @@ program rrtmgp_rfmip_lw
   character (len = 80)                :: modelfile_tau, modelfile_source
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting optical depths, second for planck fractions
   logical 		                        :: use_nn, save_input_output, compare_flux, save_flux
-  integer(i4)                         :: check          ! PAPI's error flag WHICH SHOULD BE CHECKED!
+  integer                         :: ret, i
 #ifdef USE_OPENACC   
   type(cublasHandle) :: h
 #endif
@@ -148,7 +148,6 @@ program rrtmgp_rfmip_lw
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
 
 #ifdef USE_TIMING
-  integer :: ret, i
   print *, "using GPTL timing library"
   !
   ! Initialize timers
@@ -335,17 +334,13 @@ program rrtmgp_rfmip_lw
   ! NOTE: these are causing problems right now, most likely due to a compiler
   ! bug related to the use of Fortran classes on the GPU.
   !
-  !$acc enter data create(sfc_emis_spec)
+  !$acc enter data create(sfc_emis_spec) copyin(sfc_emis)
   !$acc enter data create(optical_props, optical_props%tau)
-
-    ! already created in constructor?
-  ! ! $acc enter data create(source, source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
 
   if (save_input_output) then
     allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
     allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
     allocate(tau_lw(    	ngpt, nlay, block_size, nblocks))
-    !tau_lw = 0.0_sp
     allocate(planck_frac(	ngpt, nlay, block_size, nblocks))
   end if
 
@@ -365,15 +360,15 @@ program rrtmgp_rfmip_lw
   ! Loop over blocks
   !
 
-!bo $OMP PARALLEL shared(neural_nets, k_dist) firstprivate(sfc_emis_spec,fluxes,optical_props,source)
-!bo $OMP DO 
+
 
 #ifdef USE_TIMING
 do i = 1, 10
 #endif
+ !$OMP PARALLEL shared(neural_nets, k_dist) firstprivate(sfc_emis_spec,fluxes,optical_props,source)
+ !$OMP DO 
   do b = 1, nblocks
     
-
 #ifdef USE_OPENMP
     ! PRINT *, "Hello from process: ", OMP_GET_THREAD_NUM()
     ! print *, "my t_lay(5,5,b) for b:",b,"  is", t_lay(5,5,b)
@@ -386,7 +381,7 @@ do i = 1, 10
     ! Expand the spectrally-constant surface emissivity to a per-band emissivity for each column
     !   (This is partly to show how to keep work on GPUs using OpenACC)
     !
-    !$acc parallel loop collapse(2) copyin(sfc_emis)
+    !$acc parallel loop collapse(2)
     do icol = 1, block_size
       do ibnd = 1, nbnd
         sfc_emis_spec(ibnd,icol) = sfc_emis(icol,b)
@@ -427,10 +422,9 @@ do i = 1, 10
 #endif
                                         )) 
     end if
-
-    !$acc update self(optical_props%tau)
-    !print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
-
+    ! !$acc update self(optical_props%tau, source%planck_frac)
+    ! print *," max, min (tau) 2",   maxval(optical_props%tau), minval(optical_props%tau)
+    ! print *," max, min (pfrac)",   maxval(source%planck_frac), minval(source%planck_frac)
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
 #endif
@@ -441,13 +435,12 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('rte_lw')
 #endif
-  ! !$acc enter data create(fluxes)
-  ! !$acc enter data create(fluxes%flux_up,fluxes%flux_dn)
     call stop_on_err(rte_lw(optical_props,   &
                             top_at_1,        &
                             source,          &
                             sfc_emis_spec,   &
-                            fluxes, n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .false.))
+                            fluxes,          &
+                            n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .false.) )
 
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
@@ -459,20 +452,21 @@ do i = 1, 10
     end if
 
   end do ! blocks
+  !$OMP END DO
+  !$OMP END PARALLEL
+  !$OMP barrier
 
 #ifdef USE_TIMING
 end do
 #endif
 
-!bo $OMP END DO
-!bo $OMP END PARALLEL
-!bo $OMP barrier
 
 call source%finalize()
 !$acc exit data delete(source)
 
-  !$acc exit data delete(sfc_emis_spec)
-  !$acc exit data delete(optical_props%tau, optical_props)
+
+!$acc exit data delete(sfc_emis_spec, sfc_emis)
+!$acc exit data delete(optical_props%tau, optical_props)
 
   ! deallocate(sfc_emis_spec, gas_conc_array, optical_props%tau, source%planck_frac, source%lay_source_bnd, source%lev_source_bnd,source%sfc_source_bnd)
 
@@ -483,6 +477,7 @@ call source%finalize()
   ret = gptlfinalize()
 #endif
   call system_clock(iTime2)
+  print *, "-----------------------------------------------------------------------------------------"
   print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
 
   ! --------------------------------------------------m
@@ -496,6 +491,7 @@ call source%finalize()
 
   if (save_input_output) then 
     print *,"max, min (nn_inputs)", maxval(nn_input), minval(nn_input)
+    print *, "-----------------------------------------------------------------------------------------"
     print *, "Attempting to save neural network inputs to ", inp_outp_file
     ! This function also deallocates its input 
     call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
