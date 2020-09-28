@@ -162,8 +162,8 @@ contains
     real(wp),    dimension(2,2,  nflav,nlay, ncol), intent(out) :: fminor
     ! -----------------
     ! local
-    real(wp),    dimension(nlay, ncol)  :: play_log
-    real(wp), dimension(nlay, ncol)     :: ftemp, fpress ! interpolation fraction for temperature, pressure
+    real(wp),    dimension(nlay, ncol)      :: play_log
+    real(wp),    dimension(nlay, ncol)      :: ftemp, fpress ! interpolation fraction for temperature, pressure
     real(wp) :: locpress ! needed to find location in pressure grid
     real(wp) :: ratio_eta_half ! ratio of vmrs of major species that defines eta=0.5
                                ! for given flavor and reference temperature level
@@ -835,6 +835,62 @@ contains
 
   ! --------------------------------------------------------------------------------------
   !
+  ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as single precision
+  ! (avoids temporary output array, which is faster)
+  !
+  subroutine predict_nn_lw_blas_sp(               &
+                    ncol, nlay, ngpt, ninputs,    & 
+                    nn_inputs, col_dry_wk,        &
+                    neural_nets,                  &
+                    tau, pfrac)
+    ! inputs
+    integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+    real(sp), dimension(ninputs,nlay,ncol), target, &     
+                                        intent(in)    :: nn_inputs     
+    real(sp), dimension(:,:), target, contiguous,  &     
+                                        intent(in)    :: col_dry_wk     ! needs to be assumed-shape (and explicit shaped in parent code) for OpenMP                                                             
+    ! The neural network models
+    type(network_type), dimension(2),   intent(in)    :: neural_nets
+
+    ! outputs
+    real(sp), dimension(ngpt,nlay,ncol), target, &
+                                        intent(out) :: pfrac, tau
+    ! local
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:), contiguous,   pointer     :: input_coldry   
+    integer                                           :: ilay, icol, nobs
+
+    !  PREDICT PLANCK FRACTIONS
+    nobs = nlay*ncol
+    call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
+    
+    call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau')
+#endif
+    call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
+
+    !call neural_nets(1) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
+    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, ymeans_lw_tau, ysigma_lw_tau, output)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_pfrac')
+#endif
+    call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
+
+    !call neural_nets(2) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
+    call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, output)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_pfrac')
+#endif
+
+  end subroutine predict_nn_lw_blas_sp  
+
+  ! --------------------------------------------------------------------------------------
+  !
   ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as double precision
   ! (does computations in single precision but has to use temporary output array)
   !
@@ -867,7 +923,7 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('tmp_init')
 #endif
-    tmp_output = 0.0_sp
+    ! tmp_output = 0.0_sp
 #ifdef USE_TIMING
     ret =  gptlstop('tmp_init')
 #endif
@@ -894,65 +950,7 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('compute_pfrac')
 #endif
-
   end subroutine predict_nn_lw_blas_mp
-
-  ! --------------------------------------------------------------------------------------
-  !
-  ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as single precision
-  ! (avoids temporary output array, which is faster)
-  !
-  subroutine predict_nn_lw_blas_sp(               &
-                    ncol, nlay, ngpt, ninputs,       & 
-                    nn_inputs, col_dry_wk,                    &
-                    neural_nets,                  &
-                    tau, pfrac)
-    ! inputs
-    integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
-    real(sp), dimension(ninputs,nlay,ncol), target, &     
-                                        intent(in)    :: nn_inputs 
-    real(sp), dimension(nlay,ncol), target, &     
-                                          intent(in)    :: col_dry_wk                                    
-    ! The neural network models
-    type(network_type), dimension(2),   intent(in)    :: neural_nets
-
-    ! outputs
-    real(sp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(out) :: pfrac, tau
-    ! local
-    real(sp), dimension(:,:), contiguous, pointer     :: input, output
-    real(sp), dimension(:), contiguous,   pointer     :: input_coldry   
-    integer                                           :: ilay, icol, nobs
-
-    
-    ! PREDICT PLANCK FRACTIONS
-    nobs = nlay*ncol
-    call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
-    
-    call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
-#ifdef USE_TIMING
-    ret =  gptlstart('compute_tau')
-#endif
-    call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
-
-    !call neural_nets(1) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
-    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                          input_coldry, ymeans_lw_tau, ysigma_lw_tau, output)
-#ifdef USE_TIMING
-    ret =  gptlstop('compute_tau')
-#endif
-#ifdef USE_TIMING
-    ret =  gptlstart('compute_pfrac')
-#endif
-    call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
-
-    !call neural_nets(2) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
-    call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, output)
-#ifdef USE_TIMING
-    ret =  gptlstop('compute_pfrac')
-#endif
-
-  end subroutine predict_nn_lw_blas_sp
 
   subroutine predict_nn_sw_blas_sp(               &
                     ncol, nlay, ngpt, ninputs,       & 
@@ -989,6 +987,7 @@ contains
 
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
+                          
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_abs')
     ret =  gptlstart('compute_tau_ray')
@@ -1002,13 +1001,12 @@ contains
     ret =  gptlstart('combine_taus_compute_ssa')
 #endif
     ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
-    ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
-    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+    ! inputs: tau_abs (called tau) and tau_ray (called ssa), outputs tau_tot and ssa without further allocations
+    call combine_2str_opt_sp(ncol, nlay, ngpt, tau, ssa) 
 #ifdef USE_TIMING
     ret =  gptlstop('combine_taus_compute_ssa')
 #endif
   end subroutine predict_nn_sw_blas_sp
-
 
   subroutine predict_nn_sw_blas_mp(               &
                     ncol, nlay, ngpt, ninputs,       & 
@@ -1019,8 +1017,7 @@ contains
     integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                         intent(in)    :: nn_inputs 
-    real(dp), dimension(nlay,ncol), target, &     
-                                          intent(in)    :: col_dry_wk                                    
+    real(dp), dimension(nlay,ncol),     intent(in)    :: col_dry_wk                                    
     ! The neural network models
     type(network_type), dimension(2),   intent(in)    :: neural_nets
 
@@ -1028,39 +1025,39 @@ contains
     real(dp), dimension(ngpt,nlay,ncol), target, &
                                         intent(out) :: tau, ssa !
     ! local
-    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(nlay,ncol),       target      :: col_dry_wk_sp                                     
+    real(sp), dimension(:,:), contiguous, pointer     :: input
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
+    real(sp), dimension(ngpt,nlay*ncol)               :: tmp_output
     integer                                           :: ilay, icol, nobs
 
-    
-!     ! PREDICT PLANCK FRACTIONS
-!     nobs = nlay*ncol
-!     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
-    
-!     call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
-! #ifdef USE_TIMING
-!     ret =  gptlstart('compute_tau_abs')
-! #endif
-!     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
+    nobs = nlay*ncol
+    call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
 
-!     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-!                           input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('compute_tau_abs')
-! #endif
-! #ifdef USE_TIMING
-!     ret =  gptlstart('compute_tau_ray')
-! #endif
-!     call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
+    col_dry_wk_sp = real(col_dry_wk, sp)
+    call C_F_POINTER (C_LOC(col_dry_wk_sp), input_coldry, [nobs])
 
-!     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-!                           input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('compute_tau_ray')
-! #endif
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau_abs')
+#endif
+    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                        input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, tmp_output)
+    tau = reshape(tmp_output,(/ngpt,nlay,ncol/))
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_abs')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau_ray')
+#endif
+    call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, tmp_output)
+    ssa = reshape(tmp_output,(/ngpt,nlay,ncol/))
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_ray')
+#endif
 !     ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
 !     ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
-!     call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+    call combine_2str_opt_dp(ncol, nlay, ngpt, tau, ssa) 
 
   end subroutine predict_nn_sw_blas_mp
 
@@ -1219,33 +1216,61 @@ contains
     end do
   end subroutine combine_2str
 
-  pure subroutine combine_2str_opt(ncol, nlay, ngpt, tau, tau_ray) &
-      bind(C, name="combine_2str_opt")
+  pure subroutine combine_2str_opt_dp(ncol, nlay, ngpt, tau, tau_ray) &
+      bind(C, name="combine_2str_opt_dp")
     integer,                                intent(in)    :: ncol, nlay, ngpt
-    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
-    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
+    real(dp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
+    real(dp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
     ! -----------------------
     integer  :: icol, ilay, igpt
-    real(wp) :: t
+    real(dp) :: t
     ! -----------------------
 
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
            tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
-           if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+           if(tau(igpt,ilay,icol) > 2._dp * tiny( tau(igpt,ilay,icol))) then
             ! ssa = tau_rayleigh / tau_tot
               tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
             ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
-              tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_wp)
+              tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_dp)
            else
-              tau_ray(igpt,ilay,icol) = 0._wp
+              tau_ray(igpt,ilay,icol) = 0._dp
            end if
 
         end do
       end do
     end do
-  end subroutine combine_2str_opt
+  end subroutine combine_2str_opt_dp
+
+  pure subroutine combine_2str_opt_sp(ncol, nlay, ngpt, tau, tau_ray) &
+      bind(C, name="combine_2str_opt_sp")
+    integer,                                intent(in)    :: ncol, nlay, ngpt
+    real(sp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
+    real(sp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
+    ! -----------------------
+    integer  :: icol, ilay, igpt
+    real(sp) :: t
+    ! -----------------------
+
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        do igpt = 1, ngpt
+           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
+           if(tau(igpt,ilay,icol) > 2._sp * tiny( tau(igpt,ilay,icol))) then
+            ! ssa = tau_rayleigh / tau_tot
+              tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+              tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_sp)
+           else
+              tau_ray(igpt,ilay,icol) = 0._sp
+           end if
+
+        end do
+      end do
+    end do
+  end subroutine combine_2str_opt_sp
   ! ----------------------------------------------------------
   !
   ! Combine absoprtion and Rayleigh optical depths for total tau, ssa, p

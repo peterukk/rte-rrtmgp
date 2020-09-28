@@ -100,7 +100,6 @@ contains
     integer, dimension(2,optical_props%get_nband())   :: band_limits
     real(wp), dimension(:,:), contiguous, pointer     :: inc_flux_toa
     real(wp), dimension(:,:), allocatable, target     :: inc_flux_zero
-    real(wp), dimension(:),   allocatable             :: Ds, weights
 
     real(wp), dimension(:,:,:), allocatable           :: gpt_flux_up, gpt_flux_dn
     real(wp), dimension(:,:), allocatable             :: sfc_emis_gpt
@@ -140,7 +139,7 @@ contains
     ngpt  = optical_props%get_ngpt()
     nband = optical_props%get_nband()
     band_limits = optical_props%get_band_lims_gpoint()
-    !$acc enter data copyin(band_limits) 
+    
     error_msg = ""
 
     ! ------------------------------------------------------------------------------------
@@ -246,6 +245,8 @@ contains
           error_msg = "rte_lw: using_2stream=true incompatible with specifying n_gauss_angles"
         if (using_2stream .and. (present(flux_up_Jac) .or. present(flux_up_Jac))) &
           error_msg = "rte_lw: can't provide Jacobian of fluxes w.r.t surface temperature with 2-stream"
+        ! Broadband kernels not yet implemented for calculations with scattering
+        computing_gpoint_fluxes = .true.
       class default
         call stop_on_err("rte_lw: lw_solver(...ty_optical_props_nstr...) not yet implemented")
     end select
@@ -268,14 +269,11 @@ contains
     !
     allocate(sfc_emis_gpt(ngpt,         ncol))
     allocate(flux_upJac  (nlay+1,       ncol))
+    !$acc enter data copyin(band_limits)
     !$acc enter data create(flux_upJac) 
     !$acc enter data create(sfc_emis_gpt) 
 
-    call expand(optical_props, sfc_emis, sfc_emis_gpt)
-
-    ! allocate(Ds(n_quad_angs), weights(n_quad_angs))
-    ! Ds      = gauss_Ds(1:n_quad_angs,n_quad_angs)
-    ! weights = gauss_wts(1:n_quad_angs,n_quad_angs)
+    call expand(nband, ngpt, ncol, band_limits, sfc_emis, sfc_emis_gpt)
 
     if(present(inc_flux)) then
       !$acc enter data copyin(inc_flux)
@@ -325,17 +323,17 @@ contains
       end if
 
       class is (ty_optical_props_2str)
-        if (using_2stream) then
-          !
-          ! two-stream calculation with scattering
-          !
+        if (using_2stream) then    ! BROADBAND VERSIONS NOT YET IMPLEMENTED
+        !
+        ! two-stream calculation with scattering
+        !
         !  error_msg =  optical_props%validate()
         !   if(len_trim(error_msg) > 0) return
         !   call lw_solver_2stream_broadband(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
         !                          optical_props%tau, optical_props%ssa, optical_props%g,              &
         !                          sources%lay_source, sources%lev_source_inc, sources%lev_source_dec, &
         !                          sfc_emis_gpt, sources%sfc_source,       &
-        !                          gpt_flux_up, gpt_flux_dn)
+        !                          fluxes%flux_up, fluxes%flux_dn)
         ! else
         !   !
         !   ! Re-scaled solution to account for scattering
@@ -348,7 +346,7 @@ contains
         !                          sources%lay_source, sources%lev_source_inc, &
         !                          sources%lev_source_dec, &
         !                          sfc_emis_gpt, sources%sfc_source,&
-        !                          gpt_flux_up, gpt_flux_dn)
+        !                          fluxes%flux_up, fluxes%flux_dn)
         endif
         !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)
       class is (ty_optical_props_nstr)
@@ -386,15 +384,15 @@ contains
 
       else
 
-          call lw_solver_noscat_GaussQuad(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
-                          n_quad_angs, &
-                          gauss_Ds(1:n_quad_angs,n_quad_angs), &
-                          gauss_wts(1:n_quad_angs,n_quad_angs), &
-                          band_limits, optical_props%tau,      &
-                          sources%planck_frac, sources%lay_source_bnd,      &
-                          sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                          sfc_emis_gpt, &
-                          gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac)
+        call lw_solver_noscat_GaussQuad(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
+                              n_quad_angs, &
+                              gauss_Ds(1:n_quad_angs,n_quad_angs), &
+                              gauss_wts(1:n_quad_angs,n_quad_angs), &
+                              band_limits, optical_props%tau,      &
+                              sources%planck_frac, sources%lay_source_bnd,      &
+                              sources%lev_source_bnd,  sources%sfc_source_bnd,  &
+                              sfc_emis_gpt, &
+                              gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac)
 
       end if
 
@@ -461,9 +459,9 @@ contains
                 deallocate(gpt_flux_dnJac)
             end if
           end if
-      end select
+        end select
 
-        end if
+      end if
 
       !$acc exit data delete(gpt_flux_dn, gpt_flux_up)
       !$acc exit data delete(gpt_flux_upJac)
@@ -474,7 +472,7 @@ contains
   
     if (error_msg /= '') return
 
-    !$acc exit data detach(inc_flux_toa) delete(band_limits, inc_flux_zero, inc_flux_toa, inc_flux, sfc_emis_gpt)
+    !$acc exit data detach(inc_flux_toa) delete(band_limits, inc_flux_zero, inc_flux_toa, inc_flux, flux_upJac, sfc_emis_gpt)
     deallocate(sfc_emis_gpt, inc_flux_zero)
 
   end function rte_lw
@@ -482,20 +480,16 @@ contains
   !
   ! Expand from band to g-point dimension, transpose dimensions (nband, ncol) -> (ncol,ngpt)
   !
-  subroutine expand(ops,arr_in,arr_out)
-    class(ty_optical_props),  intent(in ) :: ops
-    real(wp), dimension(:,:), intent(in ) :: arr_in  ! (nband, ncol)
-    real(wp), dimension(:,:), intent(out) :: arr_out ! (ngpt, ncol)
+  subroutine expand(nband, ngpt, ncol, band_limits, arr_in, arr_out)
+    integer,                          intent(in)  :: ncol, nband, ngpt
+    integer,  dimension(2,nband),     intent(in)  :: band_limits
+    real(wp), dimension(nband,ncol),  intent(in)  :: arr_in  ! (nband, ncol)
+    real(wp), dimension(ngpt,ncol),   intent(out) :: arr_out ! (ngpt, ncol)
     ! -------------
-    integer :: ncol, nband, ngpt
     integer :: icol, iband, igpt
-    integer, dimension(2,ops%get_nband()) :: band_limits
 
-    ncol  = size(arr_in, 2)
-    nband = ops%get_nband()
-    ngpt  = ops%get_ngpt()
-    band_limits = ops%get_band_lims_gpoint()
-    !$acc parallel loop collapse(2) copyin(arr_in, band_limits)
+    !$acc data present(arr_in, arr_out, band_limits)
+    !$acc parallel loop collapse(2)
     do icol = 1, ncol
       do iband = 1, nband
         do igpt = band_limits(1, iband), band_limits(2, iband)
@@ -503,7 +497,7 @@ contains
         end do
       end do
     end do
-
+    !$acc end data
   end subroutine expand
   !--------------------------------------------------------------------------------------------------------------------
 

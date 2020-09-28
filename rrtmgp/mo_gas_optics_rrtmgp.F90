@@ -267,9 +267,10 @@ contains
     real(sp), dimension(:,:),   intent(inout), target :: col_dry_arr
 #else
     real(sp), dimension(:,:,:), allocatable           :: nn_inputs
-    real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
+    real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
+                                              target  :: col_dry_arr
 #endif
-    real(wp), dimension(:,:),   pointer               :: col_dry_wk => NULL()
+    real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
     ! ----------------------------------------------------------
     ! Local variables
     ! real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
@@ -348,35 +349,34 @@ contains
     ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
     !
     if (present(col_dry)) then
-      !$acc enter data copyin(col_dry_arr)
+      !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
-#ifndef DEV_MODE
-      allocate(col_dry_arr(nlay,ncol))
-#endif
       !$acc enter data create(col_dry_arr)
-      idx_h2o = string_loc_in_array('h2o', this%gas_names)
 
+      ! idx_h2o needs to be obtained from gas_desc%gas_names and NOT this%gas_names, since these 
+      ! can be in different order.
+      ! It's confusing that the gas optics class and gas concentration class both have their own
+      ! gas name array. Probably a good reason for it? If not, the gas optics name array should be removed.
+
+      !idx_h2o = string_loc_in_array('h2o', this%gas_names)
+      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
       ! print *, "GAS NAMES, this-gas-names:" ,this%gas_names
       ! print *, "GAS NAMES, gas_desc%gas_name ", gas_desc%gas_name
       ! print *, "idx_h2o", idx_h2o
 
-      ! UNRESOLVED ISSUE: It's confusing that the gas optics class and gas concentration class both have their own
-      ! gas name array. Probably a good reason for it..however,
-      ! accessing the gas concentration directly from gas_conc like below is much faster for the neural network code than 
-      ! the original method of filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
-      ! Unfortunately the gas names order in "this%gas_names" and "gas_desc" are not guaranteed to match (noticed this with CKDMIP)
-      ! Temporary fix for CKDMIP: set gas_names in das_Desc to match the gas optics order
-      ! !! Come back to this later !!
-      
+      ! NOTE: The above change was necessary since in the NN code gas concentrations are accessed directly from gas_conc 
+      ! like below, instead of the original method filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
+      ! This is much faster (input preprocessing previously had a significant cost at small block sizes)
+            
       ! Original code:
       ! if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
       !   error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
       !   if (error_msg /= '') return
       ! endif
-
       call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
+
     end if
     !$acc enter data attach(col_dry_wk)
 
@@ -392,12 +392,12 @@ contains
       ! Use neural network for gas optics
 
       call  compute_source_bybnd(                                     &
-      ncol, nlay, nband,                                        &
-      this%get_ntemp(),this%get_nPlanckTemp(),                  &
-      tlay, tlev_wk , tsfc,                                     &
-      this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
-      sources%sfc_source_bnd, sources%sfc_source_bnd_Jac,       &
-      sources%lay_source_bnd, sources%lev_source_bnd)  
+            ncol, nlay, nband,                                        &
+            this%get_ntemp(),this%get_nPlanckTemp(),                  &
+            tlay, tlev_wk , tsfc,                                     &
+            this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
+            sources%sfc_source_bnd, sources%sfc_source_bnd_Jac,       &
+            sources%lay_source_bnd, sources%lev_source_bnd)  
 
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
 #ifndef DEV_MODE
@@ -449,7 +449,7 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('compute_gas_opticss')
 #endif
-    !$acc exit data delete(tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk)
+    !$acc exit data delete(col_dry_arr, tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk)
 
   end function gas_optics_int
   !------------------------------------------------------------------------------------------
@@ -483,8 +483,10 @@ contains
     ! real(sp), dimension(:,:),   intent(inout), optional     :: col_dry_arr
     ! ----------------------------------------------------------
     ! Local variables
-    real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
-    real(wp), dimension(:,:),   pointer               :: col_dry_wk => NULL()
+    ! real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
+    real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
+                                                target  :: col_dry_arr
+    real(wp), dimension(:,:),   pointer, contiguous     :: col_dry_wk => NULL()
     real(sp), dimension(:,:,:), allocatable   :: nn_inputs
 
     integer :: ncol, nlay, ngpt, nband, ngas, idx_h2o, ninputs
@@ -497,7 +499,7 @@ contains
     ngas  = this%get_ngas()
 
       ! OpenACC: copy everything in here, remove in the end?
-    !$acc enter data copyin(tlay, tlev, tsfc, plev, play) 
+    !$acc enter data copyin(tlay, plev, play) 
 
     !
     ! check arrays sizes and values
@@ -527,12 +529,12 @@ contains
     ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
     !
     if (present(col_dry)) then
-      !$acc enter data copyin(col_dry_arr)
+      !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
-      allocate(col_dry_arr(nlay,ncol))
       !$acc enter data create(col_dry_arr)
-      idx_h2o = string_loc_in_array('h2o', this%gas_names)
+      !idx_h2o = string_loc_in_array('h2o', this%gas_names)
+      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
       call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
     end if
@@ -618,7 +620,7 @@ contains
           toa_src(igpt,icol) = this%solar_source(igpt)
        end do
     end do
-    !$acc exit data copyout(toa_src)
+    !$acc exit data copyout(toa_src) delete(col_dry_arr, tlay, play, plev, plev) detach(col_dry_wk)
   end function gas_optics_ext
 
 !------------------------------------------------------------------------------------------
@@ -668,7 +670,7 @@ contains
     character(32),  dimension(ninputs-2) :: nn_gas_names
     real(sp),       dimension(ninputs)   :: input_maxvals, input_minvals
 
-    all_gases_exist = .true.
+    all_gases_exist = .false.
 
     error_msg = ''
     ! Check for initialization
@@ -837,7 +839,7 @@ contains
                                                        plev, &   ! level pressures [Pa, mb]; (nlay+1,ncol)
                                                        tlay      ! layer temperatures [K]; (nlay,ncol)
     type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
-    real(wp), dimension(nlay,ncol), intent(in   )   :: col_dry ! Column dry amount; dim(nlay,ncol)
+    real(wp), dimension(nlay,ncol),   intent(in   ) :: col_dry ! Column dry amount; dim(nlay,ncol)
     class(ty_optical_props_arry),     intent(inout) :: optical_props !inout because components are allocated
     ! Optional inputs used for long-wave
     class(ty_source_func_lw    ),     intent(inout), &
@@ -902,7 +904,7 @@ contains
     nminorupper  = size(this%minor_scales_with_density_upper)
     nminorkupper = size(this%kminor_upper, 1)
 
-    !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta)
+    !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta, col_gas)
 
     !
     ! compute column gas amounts [molec/cm^2]
@@ -919,15 +921,14 @@ contains
       endif
     end do
   
-    !$acc enter data create(col_gas)
-    !$acc parallel loop gang vector collapse(2) 
+    !$acc parallel loop gang vector collapse(2) present(col_dry)
     do icol = 1, ncol
       do ilay = 1, nlay
         col_gas(ilay,icol,0) = col_dry(ilay,icol)
       end do
     end do
     
-    !$acc parallel loop gang vector collapse(3)
+    !$acc parallel loop gang vector collapse(3) present(col_gas, vmr, col_dry)
     do igas = 1, ngas
       do icol = 1, ncol
         do ilay = 1, nlay
@@ -935,6 +936,7 @@ contains
         end do
       end do
     end do
+    !$acc exit data delete(vmr)
 
     !
     ! ---- calculate gas optical depths ----
@@ -964,8 +966,8 @@ contains
             tropo,        &
             jeta,jpress)
 
-    idx_h2o = string_loc_in_array('h2o', this%gas_names)
-
+    !idx_h2o = string_loc_in_array('h2o', this%gas_names)
+    idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
 
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_kernel')
@@ -1015,7 +1017,7 @@ contains
             this%gpoint_flavor,          &
             this%get_band_lims_gpoint(), &
             this%krayl,                  & ! inputs from object
-            idx_h2o, col_gas(:,:,0),col_gas, &
+            idx_h2o, col_dry ,col_gas, &
             fminor,jeta,tropo,jtemp,     & ! local input
             tau_rayleigh)
 #ifdef USE_TIMING
@@ -1031,7 +1033,7 @@ contains
 #endif
     end if
 
-    !$acc exit data delete(col_gas, col_mix, fminor)
+    !$acc exit data delete(col_mix, fminor)
 
     if(present(sources)) then
 #ifdef USE_TIMING
@@ -1055,7 +1057,8 @@ contains
     if (error_msg /= '') return
 
     !$acc exit data delete(this%gpoint_flavor)
-    !$acc exit data delete(jtemp, jpress, jeta, tropo, fmajor)
+    !$acc exit data delete(jtemp, jpress, jeta, tropo, fmajor, col_gas)
+    
   end function compute_gas_optics
 
   !------------------------------------------------------------------------------------------
@@ -2105,7 +2108,6 @@ contains
   nlay = size(optical_props%tau, 2)
   ngpt = size(optical_props%tau, 1)
 
-  !$acc enter data copyin(optical_props)
   if (.not. has_rayleigh) then
     select type(optical_props)
       type is (ty_optical_props_1scl)
@@ -2124,28 +2126,20 @@ contains
       end select
   else
     ! combine optical depth and rayleigh scattering
-    !$acc enter data copyin(tau_rayleigh)
     select type(optical_props)
       type is (ty_optical_props_1scl)
         ! User is asking for absorption optical depth
         ! do nothing
-
       type is (ty_optical_props_2str)
-        !$acc enter data create(optical_props%ssa, optical_props%g)
         call combine_2str(ncol, nlay, ngpt,        tau_rayleigh, &
                                       optical_props%tau, optical_props%ssa, optical_props%g)
                         
-        !$acc exit data copyout(optical_props%tau, optical_props%ssa, optical_props%g)
       type is (ty_optical_props_nstr) ! We ought to be able to combine this with above
         nmom = size(optical_props%p, 1)
-        !$acc enter data create(optical_props%ssa, optical_props%p)
         call combine_nstr(ncol, nlay, ngpt, nmom, tau_rayleigh, &
                                       optical_props%tau, optical_props%ssa, optical_props%p)
-        !$acc exit data copyout(optical_props%tau, optical_props%ssa, optical_props%p)
     end select
-    !$acc exit data delete(tau_rayleigh)
   end if
-  !$acc exit data copyout(optical_props)
 end subroutine combine
 
 
