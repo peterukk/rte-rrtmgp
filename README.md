@@ -7,12 +7,6 @@ July 2020: The neural networks now predict **molecular absorption** from which t
 
 June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has been submitted to JAMES. Besides accelerating the long-wave gas optics computations (RRTMGP) by a factor of 2-4 by using neural networks, the solver (RTE) has been refactored to use g-points in the first dimension to be consistent with RRTMGP. This and other optimizations (e.g. Planck sources by g-point are now computed in-place in the solver) can make the solver 80% faster. When NN are additionally switched on, computing clear-sky longwave fluxes is up to 3 times faster. These results are for intel compilers and MKL - expect smaller speed-ups on other platforms and other BLAS libraries. 
 
-No neural network has been developed for the **shortwave** yet. Because of the refactoring, also the shortwave code is faster (but the fluxes differ slightly in single precision?)
-
-The **cloud optics** extension is still broken.
-
-**GPU** acceleration is supported (openACC+cuBLAS), but the code is currently slow due to spurious CUDA (de)allocations (help with this would be most welcome).
-
 ------------
 
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "major" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for given atmospheric conditions and gas concentrations, which includes all minor long-wave gases supported by RRTMGP. The neural network predicts optical properties (optical depth or Planck fraction) for all 256 g-points from one input vector (the atmospheric conditions for one atmospheric layer), therefore avoiding loops over g-point or band. The model has been trained on very diverse data so that it may be used for both weather and climate applications. 
@@ -25,12 +19,13 @@ The **cloud optics** extension is still broken.
 The code should work very similarly to the end-user as the original, but the neural network models need to be provided at runtime: see examples/rfmip-clear-sky . Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
 
 **to-do**
-- "missing gases" -how to handle these? Assume some default concentrations but what? A range of models for various use cases (e.g. GCM, GCM-lite, NWP...)? **done**
-- related to this, offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate) **simpler models using less gases do not seem much faster, but the code now supports using less gases as input (CKDMIP-gases only with CFC11-eq) - these models need to be updated**
-- implement neural networks for shortwave
-- GPU kernels - should be easy and very fast with openacc_cublas **done, but the code is slow due to spurious CUDA memory and deallocations on the device. needs to be looked into**
-- post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
 
+- [x] implement neural networks for shortwave
+- [x] GPU kernels - should be easy and very fast with openacc_cublas **done, but note that host CUDA call overhead (includes CudaFree) was very large for small problem sizes on one tested platform (Kepler). Probably normal behaviour**
+- [ ] fix cloud optics extension
+- [x] "missing gases" -how to handle these? Assume some default concentrations but what? **assumed zero by default, also present-day and pre-industrial scalar concentrations available in table, toggled in gas_optics_rrtmgp. 
+- [x] offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate) **tested, but as described in paper, the minor gases can be accounted for with negligible cost with NNs. The currently implemented models support CKDMIP-style gases with CFC11-eq)**
+- [ ] post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
 
 # RTE+RRTMGP
 
