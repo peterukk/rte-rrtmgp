@@ -369,7 +369,6 @@ contains
       ! like below, instead of the original method filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
       ! This is much faster (input preprocessing previously had a significant cost at small block sizes)
             
-      ! Original code:
       ! if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
       !   error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
       !   if (error_msg /= '') return
@@ -572,19 +571,15 @@ contains
                   nn_inputs, col_dry_wk,        &  ! data inputs
                   neural_nets,                  &  ! NN models (input)
                   optical_props%tau, optical_props%ssa)    ! outputs    
-#ifdef USE_TIMING
-    ret =  gptlstart('set_g_to_zero')
-#endif
+
           optical_props%g = 0.0_wp
-#ifdef USE_TIMING
-    ret =  gptlstop('set_g_to_zero')
-#endif
+
       end select
       !$acc exit data delete(nn_inputs) 
      
     else
     ! ----------------------------------------------------------------------------------
-    ! Use interpolation routine for gas optics, NOT neural network
+    ! Use interpolation routine for gas optics, NOT neural networks
 
       error_msg = compute_gas_optics(this,                     &
                                   ncol, nlay, ngpt, nband,             &
@@ -1000,6 +995,7 @@ contains
             play,tlay,col_gas,                       &
             jeta,jtemp,jpress,                       &
             optical_props%tau)
+
     !$acc exit data delete(this%kmajor)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_kernel')

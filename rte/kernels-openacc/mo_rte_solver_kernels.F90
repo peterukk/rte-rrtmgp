@@ -1277,13 +1277,19 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       real(wp) :: RT_term
       real(wp) :: exp_minusktau, exp_minus2ktau
       real(wp) :: k_mu !, k_gamma3, k_gamma4
-      real(dp) :: k_gamma3, k_gamma4  ! Need to be in double precision
-      real(wp) :: mu0_inv(ncol)
+      real(wp) :: k_gamma3, k_gamma4  ! Need to be in double precision
+      real(wp) :: mu0_inv(ncol),  k_floor
       ! ---------------------------------
       ! ---------------------------------
 
       !$acc data present(mu0, tau, w0, g, Rdif, Tdif, Rdir, Tdir, Tnoscat)
       !$acc enter data create(mu0_inv)
+
+      if (wp == dp) then ! double precision
+        k_floor = 1.e-12_wp 
+       else              ! single precision
+        k_floor = 1.e-4_wp
+      end if
 
       !$acc parallel loop
       do icol = 1, ncol
@@ -1311,7 +1317,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             !   of < 0.1% in Rdif down to tau = 10^-9
             k = sqrt(max((gamma1 - gamma2) * &
                          (gamma1 + gamma2),  &
-                         1.e-9_wp))
+                         k_floor)) !  1.e-12_wp))
             exp_minusktau = exp(-tau(igpt,ilay,icol)*k)
             !
             ! Diffuse reflection and transmission
@@ -1349,9 +1355,9 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
                                                          abs(1._wp - k_mu*k_mu) >= epsilon(1._wp))
 
             Rdir(igpt,ilay,icol) = RT_term  *                                    &
-               ((1._dp - k_mu) * (alpha2 + k_gamma3)                  - &
-                (1._dp + k_mu) * (alpha2 - k_gamma3) * exp_minus2ktau - &
-                2.0_dp * (k_gamma3 - alpha2 * k_mu)  * exp_minusktau  * Tnoscat(igpt,ilay,icol))
+               ((1._wp - k_mu) * (alpha2 + k_gamma3)                  - &
+                (1._wp + k_mu) * (alpha2 - k_gamma3) * exp_minus2ktau - &
+                2.0_wp * (k_gamma3 - alpha2 * k_mu)  * exp_minusktau  * Tnoscat(igpt,ilay,icol))
 
             !
             ! Equation 15, multiplying top and bottom by exp(-k*tau),
@@ -1360,9 +1366,9 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             ! Omitting direct transmittance
             !
             Tdir(igpt,ilay,icol) = &
-                     -RT_term * ((1._dp + k_mu) * (alpha1 + k_gamma4) * Tnoscat(igpt,ilay,icol) - &
-                                 (1._dp - k_mu) * (alpha1 - k_gamma4) * exp_minus2ktau * Tnoscat(igpt,ilay,icol) - &
-                                  2.0_dp * (k_gamma4 + alpha1 * k_mu)  * exp_minusktau )
+                     -RT_term * ((1._wp + k_mu) * (alpha1 + k_gamma4) * Tnoscat(igpt,ilay,icol) - &
+                                 (1._wp - k_mu) * (alpha1 - k_gamma4) * exp_minus2ktau * Tnoscat(igpt,ilay,icol) - &
+                                  2.0_wp * (k_gamma4 + alpha1 * k_mu)  * exp_minusktau )
 
           end do
         end do

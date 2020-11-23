@@ -308,7 +308,7 @@ contains
     integer,  dimension(            nlay,ncol       ), intent(in) :: jpress
     ! ---------------------
     ! output - optical depth
-    real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: tau
     
     ! ---------------------
     ! Local variables
@@ -430,7 +430,7 @@ contains
     integer,     dimension(nlay, ncol), intent(in) :: jtemp, jpress
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: tau
     ! -----------------
     ! local variables
     real(wp) :: tau_major ! major species optical depth
@@ -447,12 +447,13 @@ contains
           ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
           itropo = merge(1,2,tropo(ilay,icol))
           iflav = gpoint_flavor(itropo, igpt) !eta interpolation depends on band's flavor
-          tau_major = &
+          tau(igpt,ilay,icol) = &
             ! interpolation in temperature, pressure, and eta
             interpolate3D(col_mix(:,iflav,ilay,icol),                   &
                                  fmajor(:,:,:,iflav,ilay,icol), kmajor, &
                                  igpt, jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)
-          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_major
+          ! tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_major
+          ! tau(igpt,ilay,icol) = tau_major
         end do ! igpt
       end do
     end do ! ilay
