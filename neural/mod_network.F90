@@ -238,20 +238,15 @@ contains
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
     real(sp), dimension(:,:), contiguous, pointer :: wt
     real(sp), dimension(:),   contiguous, pointer :: b
-    integer,  dimension(:),   allocatable         :: layersizes
-    integer                       :: n, isample, neurons, nlayers, layersize, i
+    integer                       :: n, isample, neurons, nlayers, i
 
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
-    allocate(layersizes(nlayers))
-    do i = 1, nlayers
-      layersizes(i) = size(self%layers(i) % b)
-    end do
 
     !$acc enter data create(a1, a2)    
-    !$acc enter data copyin(nlayers, layersizes, neurons, nsample, nx, ny, ymeans, ysigma)
+    !$acc enter data copyin(nlayers, neurons, nsample, nx, ny, ymeans, ysigma)
 
-    !$acc data present(layersizes, x, output, a1, a2, coldry)
+    !$acc data present(x, output, a1, a2, coldry)
     associate(layers=>self%layers)
       
       wt => layers(1) % w_transposed
@@ -265,7 +260,7 @@ contains
       !$acc data present(a, b)
       !$acc parallel loop gang vector collapse(2)
       do isample = 1, nsample
-        do i = 1, layersizes(2)  
+        do i = 1, neurons
           a(i, isample) = a(i, isample ) + b(i)
           call softsignn(a(i, isample))
         end do
@@ -286,7 +281,7 @@ contains
         !$acc data present(a_next, b)
         !$acc parallel loop gang vector collapse(2) 
         do isample = 1, nsample
-          do i = 1 , layersizes(n)  
+          do i = 1 , neurons 
             a_next(i, isample) = a_next(i, isample ) + b(i)
             call softsignn(a_next(i, isample))
           end do
@@ -315,18 +310,21 @@ contains
 
       !$acc parallel loop collapse(2) present(b)
       do isample = 1, nsample
-        do i = 1, layersizes(n)
+        do i = 1, ny
           ! Compute outputs and scale them to obtain molecular absorption 
-          ! output(i, isample) = (ysigma_lw_tau*(output(i, isample)+b(i)) + ymeans_lw_tau(i))**8
+          ! output(i, isample) = (ysigma_lw_tau*(output(i, isample) + b(i)) + ymeans_lw_tau(i))**8
           ! Scale with number of dry air molecules to obtain optical depth
-          output(i, isample) = ((ysigma* (output(i, isample) + layers(n) % b(i)) + ymeans(i))**8) *coldry(isample)
+          ! output(i, isample) =  output(i, isample) * coldry(isample)
+
+          ! One-line solution
+          output(i, isample) = ((ysigma* (output(i, isample) + layers(n) % b(i)) + ymeans(i))**8) * coldry(isample)
         end do
       end do
 
     end associate
     !$acc end data 
                                            
-    !$acc exit data delete(nlayers, layersizes, neurons, nsample, nx, ny, ymeans, ysigma)
+    !$acc exit data delete(nlayers, neurons, nsample, nx, ny, ymeans, ysigma)
     !$acc exit data delete(a1, a2, a, a_next)
     
   end subroutine
@@ -342,25 +340,20 @@ contains
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
     real(sp), dimension(:,:), contiguous, pointer :: wt
     real(sp), dimension(:),   contiguous, pointer :: b
-    integer,  dimension(:),   allocatable         :: layersizes
-    integer                       :: n, isample, neurons, nlayers, layersize, i
+    integer                       :: n, isample, neurons, nlayers, i
 
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
-    allocate(layersizes(nlayers))
-    do i = 1, nlayers
-      layersizes(i) = size(self%layers(i) % b)
-    end do
 
     !$acc enter data create(a1, a2)                                              
-    !$acc enter data copyin(nlayers, layersizes, neurons, nsample, nx, ny)
+    !$acc enter data copyin(nlayers, neurons, nsample, nx, ny)
 
-    !$acc data present(layersizes, x, output, a1, a2)
+    !$acc data present(x, output, a1, a2)
     associate(layers=>self%layers)
       
       wt => layers(1) % w_transposed
       a  => a1
-      b => layers(2) % b
+      b  => layers(2) % b
 
       !$acc host_data use_device(wt, x, a)
       call sgemm('N','N', neurons, nsample, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
@@ -369,7 +362,7 @@ contains
       !$acc data present(a, b)
       !$acc parallel loop gang vector collapse(2)
       do isample = 1, nsample
-        do i = 1, layersizes(2)  
+        do i = 1, neurons
           a(i, isample) = a(i, isample ) + b(i)
           call softsignn(a(i, isample))
         end do
@@ -391,7 +384,7 @@ contains
         !$acc data present(a_next, b)
         !$acc parallel loop gang vector collapse(2) 
         do isample = 1, nsample
-          do i = 1 , layersizes(n)  
+          do i = 1 , neurons 
             a_next(i, isample) = a_next(i, isample ) + b(i)
             call softsignn(a_next(i, isample))
           end do
@@ -420,7 +413,7 @@ contains
 
       !$acc parallel loop gang vector collapse(2) present(b)
       do isample = 1, nsample
-        do i = 1, layersizes(n)
+        do i = 1, ny
           output(i, isample) = output(i, isample ) + b(i)
           output(i, isample) = max(0.0_sp, output(i, isample))
           output(i, isample) = output(i, isample)*output(i, isample)
@@ -430,7 +423,7 @@ contains
       end associate
       !$acc end data 
 
-    !$acc exit data delete(nlayers, layersizes, neurons, nsample, nx, ny)
+    !$acc exit data delete(nlayers, neurons, nsample, nx, ny)
     !$acc exit data delete(a1, a2, a, a_next)
 
   end subroutine

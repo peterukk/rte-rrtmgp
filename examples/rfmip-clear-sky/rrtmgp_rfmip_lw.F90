@@ -112,8 +112,8 @@ program rrtmgp_rfmip_lw
   character(len=132) :: rfmip_file,kdist_file
   character(len=132) :: flxdn_file, flxup_file, inp_outp_file, flx_file, flx_file_ref, flx_file_lbl
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
-  logical             :: top_at_1
-  integer            :: b, icol, ibnd, igpt, count_rate, iTime1, iTime2, ncid, ninputs, istat, igas
+  logical            :: top_at_1
+  integer            :: b, icol, ibnd, igpt, count_rate, iTime1, iTime2, ncid, ninputs, istat, igas, ret, i
   character(len=4)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
@@ -128,7 +128,6 @@ program rrtmgp_rfmip_lw
   character (len = 80)                :: modelfile_tau, modelfile_source
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting optical depths, second for planck fractions
   logical 		                        :: use_nn, save_input_output, compare_flux, save_flux
-  integer                         :: ret, i
 #ifdef USE_OPENACC   
   type(cublasHandle) :: h
 #endif
@@ -171,7 +170,7 @@ program rrtmgp_rfmip_lw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .true.
+  use_nn      = .false.
   ! Save outputs (tau, planck fracs) and inputs (scaled gases)
   save_input_output  = .false.
   ! Save fluxes
@@ -180,11 +179,9 @@ program rrtmgp_rfmip_lw
   compare_flux = .true.
 
   ! ------------ Neural network model weights -----------------
-  ! Planck model
-  modelfile_source        = "../../neural/data/pfrac-18-16-16.txt"  ! best
 
-  ! Optical depth model
-  modelfile_tau           = "../../neural/data/tau-lw-18-58-58_goodfluxes.txt"   
+  modelfile_source        = "../../neural/data/BEST_pfrac-18-16-16.txt"   ! Planck model
+  modelfile_tau           = "../../neural/data/BEST_tau-lw-18-58-58.txt"  ! Optical depth model
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'
@@ -206,7 +203,7 @@ program rrtmgp_rfmip_lw
     call neural_nets(2) % load(modelfile_source)
   end if  
 
-  print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
+  print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)] [optional gas optics input_output file]"
   nargs = command_argument_count()
 
   call get_command_argument(1, block_size_char)
@@ -242,8 +239,6 @@ program rrtmgp_rfmip_lw
   if(physics_index < 1 .or. physics_index > 2) &
     stop "Physics index is invalid (must be 1 or 2)"
   if(physics_index == 2) n_quad_angles = 3
-
-  n_quad_angles = 1
                 
   !
   ! Identify the set of gases used in the calculation based on the forcing index
@@ -252,8 +247,8 @@ program rrtmgp_rfmip_lw
   !
   call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
   print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  print *, "-----------------"
-  print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
+  ! print *, "-----------------"
+  ! print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
 
   ! --------------------------------------------------
   !
@@ -262,9 +257,8 @@ program rrtmgp_rfmip_lw
   !
   ! Allocation on assignment within reading routines
   !
-  
   call read_and_block_pt(rfmip_file, block_size, p_lay, p_lev, t_lay, t_lev)
-  print *, "shape t_lay, min, max", shape(t_lay), maxval(t_lay), minval(t_lay)
+  ! print *, "shape t_lay, min, max", shape(t_lay), maxval(t_lay), minval(t_lay)
 
   ! Are the arrays ordered in the vertical with 1 at the top or the bottom of the domain?
   !
@@ -284,11 +278,9 @@ program rrtmgp_rfmip_lw
   !
   call load_and_init(k_dist, trim(kdist_file), gas_conc_array(1))
 
-  print *, "min of play", minval(p_lay), "p_lay = k_dist%get_press_min()", k_dist%get_press_min() 
+  ! print *, "min of play", minval(p_lay), "p_lay = k_dist%get_press_min()", k_dist%get_press_min() 
 
   where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
-
-  print *, "min of play", minval(p_lay)
 
   if(.not. k_dist%source_is_internal()) &
     stop "rrtmgp_rfmip_lw: k-distribution file isn't LW"
@@ -383,7 +375,6 @@ do i = 1, 10
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
     !
-
 #ifdef USE_TIMING
     ret =  gptlstart('gas_optics (LW)')
 #endif
@@ -459,7 +450,7 @@ call source%finalize()
 !$acc exit data delete(sfc_emis_spec, sfc_emis)
 !$acc exit data delete(optical_props%tau, optical_props)
 
-  ! deallocate(sfc_emis_spec, gas_conc_array, optical_props%tau, source%planck_frac, source%lay_source_bnd, source%lev_source_bnd,source%sfc_source_bnd)
+! deallocate(sfc_emis_spec, gas_conc_array, optical_props%tau, source%planck_frac, source%lay_source_bnd, source%lev_source_bnd,source%sfc_source_bnd)
 
 #ifdef USE_TIMING
   ! End timers
@@ -675,8 +666,8 @@ call source%finalize()
 
   end if
 
-  deallocate(flux_up, flux_dn)
   !$acc exit data delete(fluxes%flux_up,fluxes%flux_dn)
+  deallocate(flux_up, flux_dn)
   print *, "SUCCESS!"
 
   contains
