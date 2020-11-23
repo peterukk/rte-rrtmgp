@@ -12,8 +12,11 @@ June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has b
 **How it works**: instead of the original 3D interpolation routine and "eta" parameter to handle the overlapping absorption of "major" gases in a given band, this fork implements neural networks to predict the optical depths and planck fractions for given atmospheric conditions and gas concentrations, which includes all minor long-wave gases supported by RRTMGP. The neural network predicts optical properties (optical depth or Planck fraction) for all 256 g-points from one input vector (the atmospheric conditions for one atmospheric layer), therefore avoiding loops over g-point or band. The model has been trained on very diverse data so that it may be used for both weather and climate applications. 
 
 **Speed**: The optical depth kernel is up to 4 times faster than the original on ifort+MKL when using single precision and neural network with 2 hidden layers which takes as input scaled temperature, pressure and all non-constant RRTMGP gases (19 inputs in total) and predict optical depth and planck fraction (256 outputs), using two separate models. The fastest implementation uses BLAS/MKL where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time (replacing the matrix-vector dot product of a feed-forward neural network with a matrix-matrix call).
+![Image](https://github.com/peterukk/rte-rrtmgp-nn/figure_timings.png)
 
-**Accuracy**: The errors in the downwelling and up-welling fluxes are similar to the original scheme in the tests done so far using RFMIP and GCM data. CKDMIP evaluation coming soon. 
+**Accuracy**: The errors in the downwelling and up-welling fluxes are similar to the original scheme in evaluation using RFMIP and GCM data, as well as the [CKDMIP evaluation](https://confluence.ecmwf.int/display/CKDMIP/CKDMIP%3A+Correlated+K-Distribution+Model+Intercomparison+Project+Home). 
+
+![Image](https://github.com/peterukk/rte-rrtmgp-nn/figure_heatingrates.png)
 
 **Building the libraries + clear-sky example** 
 The code should work very similarly to the end-user as the original, but the neural network models need to be provided at runtime: see examples/rfmip-clear-sky . Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
