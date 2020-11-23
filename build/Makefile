@@ -9,7 +9,8 @@ include Makefile.conf
 #
 # Choose kernels depending on environment variable
 #
-ifeq ($(USE_OPENACC), yes)
+
+ifdef USE_OPENACC
   RTE_KERNEL_DIR    = ../rte/kernels-openacc
   RRTMGP_KERNEL_DIR = ../rrtmgp/kernels-openacc
   FCFLAGS += -DUSE_OPENACC
@@ -19,13 +20,12 @@ RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 NEURAL_DIR = ../neural
 VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL_DIR)
 
-
-ifeq ($(USE_TIMING),yes)
+ifdef USE_TIMING
 	# Timing library GPTL
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
 endif
 
-ifeq ($(USE_FULL_TIMING),yes)
+ifdef USE_FULL_TIMING
 	# GPTL + PAPI 
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
 endif
@@ -35,11 +35,7 @@ ifdef FAST_EXPONENTIAL
 	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
-ifeq ($(USE_BLIS),yes)
-	FCFLAGS += -I$(BLAS_DIR)/include/blis
-endif
-
-ifeq ($(DEV_MODE),yes)
+ifdef DEV_MODE
 	# Modify RRTMGP interface so it outputs the neural network inputs and col_dry
 	FCFLAGS += -DDEV_MODE 
 endif
