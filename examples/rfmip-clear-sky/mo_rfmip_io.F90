@@ -482,8 +482,8 @@ contains
     do b = 1, nblocks
       call stop_on_err(gas_conc_array(b)%init(gas_names))
     end do
-    print *, "gas names:", gas_names
-    print *, "------------"
+    ! print *, "gas names:", gas_names
+    ! print *, "------------"
     ! print *, gas_conc_array(b)%get_gas_names()
     !
     ! Which gases are known to the k-distribution and available in the files?

@@ -27,9 +27,10 @@ The code should work very similarly to the end-user as the original, but the neu
 2. Set required environment variables in Makefile.conf, curently using a Gfortran+BLIS platform:`FC` (the Fortran 2003 compiler),`FCFLAGS` (compiler flags). You also need specify the BLAS Library (default and recommended is BLIS) and location `BLASLIB`, `BLAS_DIR`, as well as NetCDF C and Fortran library locations  `NCHOME`,`NFHOME`. See Makefile.conf.ifort for an Intel Fortran + MKL example.
 3. (Optional) Set environment variable `USE_TIMING` (to anything) to use GPTL timing library, or  `USE_FULL_TIMING` for GPTL+PAPI instrumentation. Need to also set `TIME_DIR` in Makefile.conf
 4. (Optional) Set environment variable `USE_OPENACC` if you want to use OpenACC+CUDA for GPU acceleration. See Makefile.conf.nvfortran for an example.
-5. `make`
-6. If you have problems you might have to tinker with build/Makefile, build/Makefile.conf and examples/rfmip-clear-sky/Makefile a bit.
-
+5. (Optional) For even more speed on non-Intel platforms (40-200% faster solver on GNU), set environment variable `FAST_EXPONENTIAL` to use an approximation to the exponential function. This only lead to a max. 0.2 W/m2 deviation in net shortwave fluxes, in the longwave much less.
+6. `make`. If you have problems with building you might have to tinker with build/Makefile, build/Makefile.conf and/or examples/rfmip-clear-sky/Makefile a bit.
+7. `cd ../examples/rfmip-clear-sky/; make`
+8. Set options such as whether NNs are used and fluxes compared to reference in rrttmgp_rfmip_X.F90, and run like: ` ./rrtmgp_rfmip_lw 18 inputs_RFMIP.nc ../../rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc 1 1`. 
 
 **to-do**
 

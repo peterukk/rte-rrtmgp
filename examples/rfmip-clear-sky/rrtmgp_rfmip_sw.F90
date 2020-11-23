@@ -107,10 +107,10 @@ program rrtmgp_rfmip_sw
   character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, inp_outp_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, use_nn, save_input_output, compare_flux, save_flux
-  integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2
+  integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, ret, i
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
-            dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_games
+            dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
     character (len = 80)                :: modelfile_tau, modelfile_ray
   
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting optical depths, second for planck fractions          
@@ -139,10 +139,6 @@ program rrtmgp_rfmip_sw
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
   real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
-#ifdef USE_TIMING
-  integer :: ret, i
-#endif
-
 
   ! -------------------------------------------------------------------------------------------------
   !
@@ -151,8 +147,7 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
-  ninputs     =  7
+  use_nn      = .true.
   ! Save neural network inputs (gas concentrations) and target outputs (tau, ssa)
   save_input_output  = .false.
   inp_outp_file =  "../../../../rrtmgp_dev/inputs_outputs/inp_outp_sw_Garand-big_1f1.nc"
@@ -162,15 +157,16 @@ program rrtmgp_rfmip_sw
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
 
-
-  modelfile_tau           = "../../neural/data/tau-sw-abs-7-16-16-mae_2.txt" 
-  modelfile_ray           = "../../neural/data/tau-sw-ray-7-16-16_2.txt" 
+  ! Neural network models
+  modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
+  modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
 
   if (use_nn) then
 	  print *, 'loading tau model from ', modelfile_tau
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading rayleigh model from ', modelfile_ray
     call neural_nets(2) % load(modelfile_ray)
+    ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
   end if  
 
   print *, "Usage: rrtmgp_rfmip_sw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
@@ -208,9 +204,10 @@ program rrtmgp_rfmip_sw
   !   A gas might have a different name in the k-distribution than in the files
   !   provided by RFMIP (e.g. 'co2' and 'carbon_dioxide')
   !
-  call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_games)
-  print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_games(b)) // " ", b = 1, size(rfmip_gas_games))
-
+  call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
+  print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
+  ! print *, "-----------------"
+  ! print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
   ! --------------------------------------------------
   !
   ! Prepare data for use in rte+rrtmgp
@@ -219,7 +216,6 @@ program rrtmgp_rfmip_sw
   ! Allocation on assignment within reading routines
   !
   call read_and_block_pt(rfmip_file, block_size, p_lay, p_lev, t_lay, t_lev)
-  print *, "shape t_lay, min, max", shape(t_lay), maxval(t_lay), minval(t_lay)
   !
   ! Are the arrays ordered in the vertical with 1 at the top or the bottom of the domain?
   !
@@ -228,7 +224,7 @@ program rrtmgp_rfmip_sw
   !
   ! Read the gas concentrations and surface properties
   !
-  call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_games, gas_conc_array)
+  call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_names, gas_conc_array)
 
   call read_and_block_sw_bc(rfmip_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
   !
@@ -318,7 +314,6 @@ do i = 1, 10
   do b = 1, nblocks
     ! print *, b, "/", nblocks
 
-
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
     fluxes%flux_dn_dir => flux_dn_dir(:,:,b)
@@ -330,16 +325,13 @@ do i = 1, 10
     ret =  gptlstart('gas_optics (SW)')
 #endif
 
-
-      ! print *,  "min col_dry, max input", minval(col_dry), maxval(nn_input(:,:,:,b))
-
     if (use_nn) then
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
       p_lev(:,:,b),       &
       t_lay(:,:,b),       &
       gas_conc_array(b),  &
       optical_props,      &
-      toa_flux,neural_nets=neural_nets))
+      toa_flux, neural_nets=neural_nets))
     else
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                         p_lev(:,:,b),       &
@@ -400,9 +392,6 @@ do i = 1, 10
     do icol = 1, block_size
       mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
     end do
-
-    ! !$acc update self(mu0)
-    ! print *," max, min (mu0)",   maxval(mu0), minval(mu0)
 
     !
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
