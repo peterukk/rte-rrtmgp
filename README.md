@@ -9,7 +9,7 @@ June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has b
 
 ------------
 
-**How it works**: Instead of the original lookup-table interpolation routine and "eta" parameter to handle the overlapping absorption of gases in a given band, this fork implements neural networks (NNs) to predict the optical depths and planck fractions for given atmospheric conditions and gas concentrations, which includes all minor long-wave gases supported by RRTMGP. The NNs predict optical properties (molecular absorption, scattering or emission) for all spectral points from an input vector consisting of the atmospheric conditions and gas concentrations of an atmospheric layer. The models have been trained on 6-7 million samples (longwave) spanning a wide range of conditions (pre-industrial, present-day, future...) so that they may be used for both weather and climate applications. 
+**How it works**: Instead of the original lookup-table interpolation routine and "eta" parameter to handle the overlapping absorption of gases in a given band, this fork implements neural networks (NNs) to predict optical properties for given atmospheric conditions and gas concentrations, which includes all minor longwave (LW) gases supported by RRTMGP. The NNs predict molecular absorption (LW/SW), scattering (SW) or emission (LW) for all spectral points from an input vector consisting of temperature, pressure and gas concentrations of an atmospheric layer. The models have been trained on 6-7 million samples (LW) spanning a wide range of conditions (pre-industrial, present-day, future...) so that they may be used for both weather and climate applications. 
 
 **Speed**: The optical depth kernel alone is 1-6 times faster while the computation of clear-sky fluxes using NNs and refactored code is 2-3 times faster. This is when all gases are included, which in the longwave results in a NN with 18 inputs in total. Expect large speedups with a fast BLAS library such as MKL and when comparing against a full computation (minor gases are expensive in the original code, "for free" with NNs"), otherwise smaller.  The NN implementation uses BLAS where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time.
 Clear-sky timings: 
@@ -28,9 +28,8 @@ The code should work very similarly to the end-user as the original, but the neu
 3. (Optional) Set environment variable `USE_TIMING` (to anything) to use GPTL timing library, or  `USE_FULL_TIMING` for GPTL+PAPI instrumentation. Need to also set `TIME_DIR` in Makefile.conf
 4. (Optional) Set environment variable `USE_OPENACC` if you want to use OpenACC+CUDA for GPU acceleration. See Makefile.conf.nvfortran for an example.
 5. (Optional) For even more speed on non-Intel platforms (40-200% faster solver on GNU), set environment variable `FAST_EXPONENTIAL` to use an approximation to the exponential function. This only lead to a max. 0.2 W/m2 deviation in net shortwave fluxes, in the longwave much less.
-6. `make`. If you have problems with building you might have to tinker with build/Makefile, build/Makefile.conf and/or examples/rfmip-clear-sky/Makefile a bit.
-7. `cd ../examples/rfmip-clear-sky/; make`
-8. Set options such as whether NNs are used and fluxes compared to reference in rrttmgp_rfmip_X.F90, and run like: ` ./rrtmgp_rfmip_lw 18 inputs_RFMIP.nc ../../rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc 1 1`. 
+6. `make; cd ../examples/rfmip-clear-sky/; make`. If you have problems with building you might have to tinker with build/Makefile, build/Makefile.conf and/or examples/rfmip-clear-sky/Makefile a bit.
+7. Set options such as whether NNs are used and fluxes compared to reference in rrttmgp_rfmip_X.F90, and run like: ` ./rrtmgp_rfmip_lw 18 inputs_RFMIP.nc ../../rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc 1 1`. 
 
 **to-do**
 
@@ -41,7 +40,9 @@ The code should work very similarly to the end-user as the original, but the neu
 - [ ] fix cloud optics extension
 - [ ] post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
 
-# RTE+RRTMGP
+------------
+
+# original RTE+RRTMGP
 
 This is the repository for RTE+RRTMGP, a set of codes for computing radiative fluxes in planetary atmospheres. RTE+RRTMGP is described in a [paper](https://doi.org/10.1029/2019MS001621) in [Journal of Advances in Modeling Earth Systems](http://james.agu.org).
 
