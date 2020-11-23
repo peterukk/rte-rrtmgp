@@ -243,29 +243,24 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc enter data create(a1, a2)    
-    !$acc enter data copyin(nlayers, neurons, nsample, nx, ny, ymeans, ysigma)
-
-    !$acc data present(x, output, a1, a2, coldry)
+    !$acc data create(a1, a2) copyin(ymeans) present(x, output, coldry)
     associate(layers=>self%layers)
       
       wt => layers(1) % w_transposed
       a  => a1
-      b => layers(2) % b
+      b  => layers(2) % b
 
       !$acc host_data use_device(wt, x, a)
       call sgemm('N','N', neurons, nsample, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
       !$acc end host_data
 
-      !$acc data present(a, b)
-      !$acc parallel loop gang vector collapse(2)
+      !$acc parallel loop gang vector collapse(2) present(a, b)
       do isample = 1, nsample
         do i = 1, neurons
           a(i, isample) = a(i, isample ) + b(i)
           call softsignn(a(i, isample))
         end do
       end do
-      !$acc end data
 
       ! INTERMEDIATE LAYERS
       a_next => a2
@@ -278,17 +273,15 @@ contains
         call sgemm("N","N", neurons, nsample, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
         !$acc end host_data
 
-        !$acc data present(a_next, b)
-        !$acc parallel loop gang vector collapse(2) 
+        !$acc parallel loop gang vector collapse(2) present(a_next, b)
         do isample = 1, nsample
           do i = 1 , neurons 
             a_next(i, isample) = a_next(i, isample ) + b(i)
             call softsignn(a_next(i, isample))
           end do
         end do 
-        !$acc end data
 
-        ! Swap pointers
+        ! Swap pointers, the previous output is the next input
         if(mod(n,2) .EQ. 1) then
           a       => a2
           a_next  => a1  
@@ -300,7 +293,7 @@ contains
       end do
 
       wt => layers(n-1) % w_transposed
-      b => layers(n) % b
+      b  => layers(n) % b
 
       !$acc host_data use_device(wt, a, output)
       call sgemm("N","N", ny, nsample, neurons, 1.0, wt, ny, a, neurons, 0.0, output, ny)
@@ -313,6 +306,7 @@ contains
         do i = 1, ny
           ! Compute outputs and scale them to obtain molecular absorption 
           ! output(i, isample) = (ysigma_lw_tau*(output(i, isample) + b(i)) + ymeans_lw_tau(i))**8
+
           ! Scale with number of dry air molecules to obtain optical depth
           ! output(i, isample) =  output(i, isample) * coldry(isample)
 
@@ -322,52 +316,49 @@ contains
       end do
 
     end associate
-    !$acc end data 
-                                           
-    !$acc exit data delete(nlayers, neurons, nsample, nx, ny, ymeans, ysigma)
-    !$acc exit data delete(a1, a2, a, a_next)
-    
+    !$acc end data
+
+                                              
   end subroutine
 
   subroutine output_sgemm_pfrac(self, nx, ny, nsample, x, output)
-    ! Optimized inference function for Planck fraction, using BLAS/cuBLAS and includes post-processing of outputs.
-    class(network_type),              intent(in), target  :: self
+    ! Optimized inference function for Planck fraction, using BLAS/cuBLAS for batched prediction (many samples at a time)
+    ! Includes post-processing of outputs. The inputs have already been pre-processed
+    class(network_type),              intent(in), target  :: self ! a neural network model
     integer, intent(in)                           :: nx, ny, nsample
-    real(sp), dimension(nx, nsample), intent(in)  :: x      ! (features, nsample)
-    real(sp), dimension(ny, nsample), intent(out) :: output ! (outputs, nsample) 
+    real(sp), dimension(nx, nsample), intent(in)  :: x            ! Model input,  of shape (features, nsample)
+    real(sp), dimension(ny, nsample), intent(out) :: output       ! Model output, of shape (outputs,  nsample) 
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample), &
-                                          target  :: a1, a2  
-    real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
-    real(sp), dimension(:,:), contiguous, pointer :: wt
-    real(sp), dimension(:),   contiguous, pointer :: b
-    integer                       :: n, isample, neurons, nlayers, i
+                                          target  :: a1, a2       ! Temporary output/input between layers
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! And their pointers
+    real(sp), dimension(:,:), contiguous, pointer :: wt           ! Weights
+    real(sp), dimension(:),   contiguous, pointer :: b            ! BIases
+    integer :: n, isample, neurons, nlayers, i
 
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc enter data create(a1, a2)                                              
-    !$acc enter data copyin(nlayers, neurons, nsample, nx, ny)
+    !$acc data create(a1, a2) present(x, output)
 
-    !$acc data present(x, output, a1, a2)
-    associate(layers=>self%layers)
+    associate(layers=>self%layers)    ! so it's easier to read
+
+      ! FIRST LAYER
       
-      wt => layers(1) % w_transposed
-      a  => a1
-      b  => layers(2) % b
+      wt => layers(1) % w_transposed  ! Set the weights to the weights of the first layer
+      a  => a1                        
+      b  => layers(2) % b            
 
       !$acc host_data use_device(wt, x, a)
-      call sgemm('N','N', neurons, nsample, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
+      call sgemm('N','N', neurons, nsample, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)  ! uses GPU version if USE_OPENACC=1
       !$acc end host_data
 
-      !$acc data present(a, b)
-      !$acc parallel loop gang vector collapse(2)
+      !$acc parallel loop gang vector collapse(2) present(a, b)
       do isample = 1, nsample
         do i = 1, neurons
-          a(i, isample) = a(i, isample ) + b(i)
-          call softsignn(a(i, isample))
+          a(i, isample) = a(i, isample ) + b(i)  ! 1. add bias
+          call softsignn(a(i, isample))          ! 2. use activation function, here the softsign
         end do
       end do
-      !$acc end data      
 
       ! INTERMEDIATE LAYERS
       a_next => a2
@@ -381,15 +372,13 @@ contains
         call sgemm("N","N", neurons, nsample, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
         !$acc end host_data
 
-        !$acc data present(a_next, b)
-        !$acc parallel loop gang vector collapse(2) 
+        !$acc parallel loop gang vector collapse(2) present(a_next, b)
         do isample = 1, nsample
           do i = 1 , neurons 
             a_next(i, isample) = a_next(i, isample ) + b(i)
             call softsignn(a_next(i, isample))
           end do
         end do 
-        !$acc end data
 
         ! Swap pointers
         if(mod(n,2) .EQ. 1) then
@@ -422,9 +411,6 @@ contains
 
       end associate
       !$acc end data 
-
-    !$acc exit data delete(nlayers, neurons, nsample, nx, ny)
-    !$acc exit data delete(a1, a2, a, a_next)
 
   end subroutine
 
