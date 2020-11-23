@@ -15,13 +15,21 @@ June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has b
 
 **Accuracy**: The errors in the downwelling and up-welling fluxes are similar to the original scheme in the tests done so far using RFMIP and GCM data. CKDMIP evaluation coming soon. 
 
-**how to use** 
+**Building the libraries + clear-sky example** 
 The code should work very similarly to the end-user as the original, but the neural network models need to be provided at runtime: see examples/rfmip-clear-sky . Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
+
+1. `cd build`
+2. Set required environment variables in Makefile.conf, curently using a Gfortran+BLIS platform:`FC` (the Fortran 2003 compiler),`FCFLAGS` (compiler flags). You also need specify the BLAS Library (default and recommended is BLIS) and location `BLASLIB`, `BLAS_DIR`, as well as NetCDF C and Fortran library locations  `NCHOME`,`NFHOME`. See Makefile.conf.ifort for an Intel Fortran + MKL example.
+3. (Optional) Set environment variable  `USE_TIMING=1` to use GPTL timing library, or  `USE_FULL_TIMING` for GPTL+PAPI instrumentation. Need to also set `TIME_DIR` in Makefile.conf
+4. (Optional) Set environment variable `RTE_KERNELS` to `openacc` if you want the OpenACC kernels rather than the default.
+5. `make`
+6. If you have problems you might have to tinker with build/Makefile, build/Makefile.conf and examples/rfmip-clear-sky/Makefile a bit.
+
 
 **to-do**
 
 - [x] implement neural networks for shortwave
-- [x] GPU kernels - should be easy and very fast with openacc_cublas **done, but note that host CUDA call overhead (includes CudaFree) was very large for small problem sizes on one tested platform (Kepler). Probably normal behaviour**
+- [x] GPU kernels - should be easy and very fast with openacc_cublas **done, but note that host CUDA call overhead (such as CudaFree) was very large for small problem sizes on one tested platform (Kepler). Probably normal behaviour**
 - [ ] fix cloud optics extension
 - [x] "missing gases" -how to handle these? Assume some default concentrations but what? **assumed zero by default, also present-day and pre-industrial scalar concentrations available in table, toggled in gas_optics_rrtmgp. 
 - [x] offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate) **tested, but as described in paper, the minor gases can be accounted for with negligible cost with NNs. The currently implemented models support CKDMIP-style gases with CFC11-eq)**
