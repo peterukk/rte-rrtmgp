@@ -1,4 +1,4 @@
-# RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics computations 
+# RTE+RRTMGP-NN is an accelerated version of RTE-RRTMGP using neural networks for the gas optics, and a refactored radiative transfer solver 
 September 2020: GPU code fully working again, fixes to gas optics code to support OpenMP from an outer loop (see rrtmgp_rfmip_lw.F90)
 
 August 2020: Shortwave NN models added. Similar performance benefit and accuracy as longwave model. Cleaner RRTMGP code: now only one interface which takes NN models as optional input to enable NN kernel. OpenACC code not tested and probably broken again.
