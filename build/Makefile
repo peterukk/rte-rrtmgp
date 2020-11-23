@@ -15,6 +15,7 @@ ifdef USE_OPENACC
   RRTMGP_KERNEL_DIR = ../rrtmgp/kernels-openacc
   FCFLAGS += -DUSE_OPENACC
 endif
+
 RTE_KERNEL_DIR += ../rte/kernels
 RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 NEURAL_DIR = ../neural
@@ -31,7 +32,7 @@ ifdef USE_FULL_TIMING
 endif
 
 ifdef FAST_EXPONENTIAL
-    # Approximation for exp function (longwave only) significantly faster on non-intel compilers
+    # Approximation for exp function, significantly faster on non-intel compilers
 	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
