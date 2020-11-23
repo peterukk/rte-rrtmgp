@@ -25,8 +25,8 @@ The code should work very similarly to the end-user as the original, but the neu
 
 1. `cd build`
 2. Set required environment variables in Makefile.conf, curently using a Gfortran+BLIS platform:`FC` (the Fortran 2003 compiler),`FCFLAGS` (compiler flags). You also need specify the BLAS Library (default and recommended is BLIS) and location `BLASLIB`, `BLAS_DIR`, as well as NetCDF C and Fortran library locations  `NCHOME`,`NFHOME`. See Makefile.conf.ifort for an Intel Fortran + MKL example.
-3. (Optional) Set environment variable  `USE_TIMING=1` to use GPTL timing library, or  `USE_FULL_TIMING` for GPTL+PAPI instrumentation. Need to also set `TIME_DIR` in Makefile.conf
-4. (Optional) Set environment variable `RTE_KERNELS` to `openacc` if you want the OpenACC kernels rather than the default.
+3. (Optional) Set environment variable `USE_TIMING` (to anything) to use GPTL timing library, or  `USE_FULL_TIMING` for GPTL+PAPI instrumentation. Need to also set `TIME_DIR` in Makefile.conf
+4. (Optional) Set environment variable `USE_OPENACC` if you want to use OpenACC+CUDA for GPU acceleration. See Makefile.conf.nvfortran for an example.
 5. `make`
 6. If you have problems you might have to tinker with build/Makefile, build/Makefile.conf and examples/rfmip-clear-sky/Makefile a bit.
 
