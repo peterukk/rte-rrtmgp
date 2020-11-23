@@ -12,12 +12,12 @@ June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has b
 **How it works**: Instead of the original lookup-table interpolation routine and "eta" parameter to handle the overlapping absorption of gases in a given band, this fork implements neural networks (NNs) to predict the optical depths and planck fractions for given atmospheric conditions and gas concentrations, which includes all minor long-wave gases supported by RRTMGP. The NNs predict optical properties (molecular absorption, scattering or emission) for all spectral points from an input vector consisting of the atmospheric conditions and gas concentrations of an atmospheric layer. The models have been trained on 6-7 million samples (longwave) spanning a wide range of conditions (pre-industrial, present-day, future...) so that they may be used for both weather and climate applications. 
 
 **Speed**: The optical depth kernel alone is 1-6 times faster while the computation of clear-sky fluxes using NNs and refactored code is 2-3 times faster. This is when all gases are included, which in the longwave results in a NN with 18 inputs in total. Expect large speedups with a fast BLAS library such as MKL and when comparing against a full computation (minor gases are expensive in the original code, "for free" with NNs"), otherwise smaller.  The NN implementation uses BLAS where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time.
-Clear-sky timings
-<img src="https://github.com/peterukk/rte-rrtmgp-nn/blob/master/figures/figure_timings.png" width=50% height=50%>
+Clear-sky timings: 
+<img src="https://github.com/peterukk/rte-rrtmgp-nn/blob/master/figures/figure_timings.png" width=60% height=60%>
 
 **Accuracy**: The errors in the downwelling and upwelling fluxes are very similar to the original scheme in evaluation using RFMIP and GCM data, as well as the [CKDMIP evaluation](https://confluence.ecmwf.int/display/CKDMIP/CKDMIP%3A+Correlated+K-Distribution+Model+Intercomparison+Project+Home). 
 
-RFMIP Heating rates 
+RFMIP Heating rates:
 <img src="https://github.com/peterukk/rte-rrtmgp-nn/blob/master/figures/figure_heatingrates.png" width=50% height=50%>
 
 **Building the libraries + clear-sky example** 
