@@ -22,6 +22,7 @@ examples/rfmip-clear-sky/rrtmgp_rfmip_lw
 examples/rfmip-clear-sky/rrtmgp_rfmip_sw
 examples/rfmip-clear-sky/timing*
 examples/rfmip-clear-sky/*.pgprof
+examples/rfmip-clear-sky/*.qdrep
 *.pgprof
 *.gprof
 gprof*
