@@ -326,11 +326,12 @@ contains
     ! Includes post-processing of outputs. The inputs have already been pre-processed
     class(network_type),              intent(in), target  :: self ! a neural network model
     integer, intent(in)                           :: nx, ny, nsample
-    real(sp), dimension(nx, nsample), intent(in)  :: x            ! Model input,  of shape (features, nsample)
-    real(sp), dimension(ny, nsample), intent(out) :: output       ! Model output, of shape (outputs,  nsample) 
+    real(sp), dimension(nx, nsample), intent(in)  :: x            ! Model input
+    real(sp), dimension(ny, nsample), intent(out) :: output       ! Model output
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nsample), &
-                                          target  :: a1, a2       ! Temporary output/input between layers
-    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! And their pointers
+                                          target  :: a1, a2       ! Temporary output/input between layers, of shape (neurons, nsample)
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! The input to a layer is the output of the previous layer. To avoid memory
+                                                                  ! movement, we can use pointers and just switch them around after each layer
     real(sp), dimension(:,:), contiguous, pointer :: wt           ! Weights
     real(sp), dimension(:),   contiguous, pointer :: b            ! BIases
     integer :: n, isample, neurons, nlayers, i
