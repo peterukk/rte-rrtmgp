@@ -72,7 +72,7 @@ ifeq ($(USE_TIMING),yes)
 	FCINCLUDE += -I$(TIME_DIR)/include
 	# Compiler specific
 	FCFLAGS += -DUSE_TIMING
-	LDFLAGS   += -L$(TIME_DIR)/lib
+	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl
 endif
 
