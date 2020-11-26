@@ -1278,18 +1278,13 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       real(wp) :: exp_minusktau, exp_minus2ktau
       real(wp) :: k_mu !, k_gamma3, k_gamma4
       real(wp) :: k_gamma3, k_gamma4  ! Need to be in double precision
-      real(wp) :: mu0_inv(ncol),  k_floor
+      real(wp) :: mu0_inv(ncol)
+      real(wp), parameter :: k_min = 1.e4_wp * epsilon(1._wp)
       ! ---------------------------------
       ! ---------------------------------
 
       !$acc data present(mu0, tau, w0, g, Rdif, Tdif, Rdir, Tdir, Tnoscat)
       !$acc enter data create(mu0_inv)
-
-      if (wp == dp) then ! double precision
-        k_floor = 1.e-12_wp 
-       else              ! single precision
-        k_floor = 1.e-4_wp
-      end if
 
       !$acc parallel loop
       do icol = 1, ncol
@@ -1317,7 +1312,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
             !   of < 0.1% in Rdif down to tau = 10^-9
             k = sqrt(max((gamma1 - gamma2) * &
                          (gamma1 + gamma2),  &
-                         k_floor)) !  1.e-12_wp))
+                         k_min)) !  1.e-12_wp))
             exp_minusktau = exp(-tau(igpt,ilay,icol)*k)
             !
             ! Diffuse reflection and transmission
