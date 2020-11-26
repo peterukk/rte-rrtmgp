@@ -821,10 +821,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 #endif
       call sw_two_stream(ngpt, nlay, mu0(icol),                                &
                          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-                         Rdif, Tdif, Rdir, Tdir, Tnoscat)     
-      ! call sw_two_stream_dp(ngpt, nlay, mu0(icol),                                &
-      !                    tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-      !                    Rdif, Tdif, Rdir, Tdir, Tnoscat)                       
+                         Rdif, Tdif, Rdir, Tdir, Tnoscat)                            
 #ifdef USE_TIMING
     ret =  gptlstop('sw_two_stream')
 #endif    
@@ -1309,15 +1306,11 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     ! Ancillary variables
     real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
     real(wp) :: k_gamma3, k_gamma4  ! Need to be in double precision
-    real(wp) :: k_mu, k_mu2, mu0_inv,  k_floor
+    real(wp) :: k_mu, k_mu2, mu0_inv
+    real(wp), parameter :: k_min = 1.e4_wp * epsilon(1._wp)
+
     ! ---------------------------------
     mu0_inv = 1._wp/mu0
-
-    if (wp == dp) then ! double precision
-      k_floor = 1.e-12_wp 
-     else              ! single precision
-      k_floor = 1.e-4_wp
-    end if
 
     do j = 1, nlay
       do i = 1, ngpt
@@ -1332,18 +1325,14 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
 
-        ! k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-9_wp))
-        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_floor))
+        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_min))
 
       end do
-      ! After increasing the lower limit to e-10 from e-12,
-      !  k and the exp computation below can be in single precision. Also moved the k computation to gpt loop
       exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
       !
       ! Diffuse reflection and transmission
       !
       do i = 1, ngpt
-        !exp_minus2ktau(i) = real(exp_minusktau(i),kind(k_mu)) * real(exp_minusktau(i),kind(k_mu))
         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
