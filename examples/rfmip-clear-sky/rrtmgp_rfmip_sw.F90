@@ -147,7 +147,7 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .true.
+  use_nn      = .false.
   ! Save neural network inputs (gas concentrations) and target outputs (tau, ssa)
   save_input_output  = .false.
   inp_outp_file =  "../../../../rrtmgp_dev/inputs_outputs/inp_outp_sw_Garand-big_1f1.nc"
