@@ -21,6 +21,15 @@ RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 NEURAL_DIR = ../neural
 VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL_DIR)
 
+ifdef DOUBLE_PRECISION
+	FCFLAGS += -DUSE_DOUBLE_PRECISION
+endif
+
+ifdef FAST_EXPONENTIAL
+    # Approximation for exp function, significantly faster on non-intel compilers
+	FCFLAGS += -DFAST_EXPONENTIAL
+endif
+
 ifdef USE_TIMING
 	# Timing library GPTL
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
@@ -29,11 +38,6 @@ endif
 ifdef USE_FULL_TIMING
 	# GPTL + PAPI 
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
-endif
-
-ifdef FAST_EXPONENTIAL
-    # Approximation for exp function, significantly faster on non-intel compilers
-	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
 ifdef DEV_MODE

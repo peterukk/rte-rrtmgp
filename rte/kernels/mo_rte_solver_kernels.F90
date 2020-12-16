@@ -59,6 +59,12 @@ module mo_rte_solver_kernels
             adding, lw_gpt_source
 
   real(wp), parameter :: pi = acos(-1._wp)
+  
+#ifdef DOUBLE_PRECISION
+  real(wp), parameter :: k_min = 1.e-12_wp
+#else 
+  real(wp), parameter :: k_min = 1.e-4_wp 
+#endif
 
 #ifdef USE_TIMING
   integer :: ret, i
@@ -79,19 +85,8 @@ contains
     ex = ex*ex
     ex = ex*ex
   end function exp_fast
-
-  elemental function exp_fast_double(arg) result(ex)
-  real(dp), intent(in)  :: arg
-  real(dp)              :: ex
-  ex = 1.0_wp / (1.0_wp + arg*(-0.125_wp &
-       + arg*(0.0078125_wp - 0.000325520833333333_wp * arg)))
-  ex = ex*ex
-  ex = ex*ex
-  ex = ex*ex
-end function exp_fast_double
 #else
 #define exp_fast exp
-#define exp_fast_double exp
 #endif
   ! -------------------------------------------------------------------------------------------------
   !
@@ -1165,7 +1160,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
       !   of < 0.1% in Rdif down to tau = 10^-9
       k(:) = sqrt(max((gamma1(:,j) - gamma2(:,j)) * &
                            (gamma1(:,j) + gamma2(:,j)),  &
-                           1.e-12_wp))
+                           k_min))
       exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
       !
       ! Diffuse reflection and transmission
@@ -1307,8 +1302,6 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
     real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
     real(wp) :: k_gamma3, k_gamma4  ! Need to be in double precision
     real(wp) :: k_mu, k_mu2, mu0_inv
-    real(wp), parameter :: k_min = 1.e4_wp * epsilon(1._wp)
-
     ! ---------------------------------
     mu0_inv = 1._wp/mu0
 
