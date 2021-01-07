@@ -27,7 +27,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_rte_solver_kernels
   use,  intrinsic :: iso_c_binding
-  use mo_rte_kind, only: wp, wl
+  use mo_rte_kind, only: wp, wl, dp
   implicit none
   private
 
@@ -527,6 +527,7 @@ contains
     real(wp) :: exp_minusktau(ncol), exp_minus2ktau(ncol)
 
     real(wp), parameter :: LW_diff_sec = 1.66  ! 1./cos(diffusivity angle)
+    
     ! ---------------------------------
     do j = 1, nlay
       do i = 1, ncol
@@ -689,9 +690,15 @@ contains
     ! Ancillary variables
     real(wp) :: RT_term(ncol)
     real(wp) :: exp_minusktau(ncol), exp_minus2ktau(ncol)
-    real(WP) :: k_mu, k_gamma3, k_gamma4
+    real(WP) :: k_mu, k_gamma3, k_gamma4, k_min
     real(wp) :: mu0_inv(ncol)
     ! ---------------------------------
+    if (wp==dp) then
+      k_min = 1.e-12_wp
+    else
+      k_min = 1.e-4_wp
+    end if 
+
     mu0_inv(1:ncol) = 1._wp/mu0(1:ncol)
     do j = 1, nlay
       do i = 1, ncol
@@ -714,7 +721,7 @@ contains
       !   of < 0.1% in Rdif down to tau = 10^-9
       k(1:ncol) = sqrt(max((gamma1(1:ncol) - gamma2(1:ncol)) * &
                            (gamma1(1:ncol) + gamma2(1:ncol)),  &
-                           1.e-12_wp))
+                           k_min))
       exp_minusktau(1:ncol) = exp(-tau(1:ncol,j)*k(1:ncol))
 
       !
