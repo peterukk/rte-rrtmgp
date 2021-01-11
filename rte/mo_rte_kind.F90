@@ -26,8 +26,12 @@ module mo_rte_kind
   !
   ! Floating point working precision
   !
+#ifdef DOUBLE_PRECISION
+  integer, parameter :: wp = dp
+#else 
   integer, parameter :: wp = sp
-
+#endif
+!
   !
   ! Logical - for use with kernels
   !

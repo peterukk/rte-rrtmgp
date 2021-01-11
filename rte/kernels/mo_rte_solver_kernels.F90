@@ -48,6 +48,13 @@ module mo_rte_solver_kernels
             adding
 
   real(wp), parameter :: pi = acos(-1._wp)
+
+#ifdef DOUBLE_PRECISION
+  real(wp), parameter :: k_min = 1.e-12_wp
+#else 
+  real(wp), parameter :: k_min = 1.e-4_wp 
+#endif
+
 contains
   ! -------------------------------------------------------------------------------------------------
   !
@@ -547,7 +554,7 @@ contains
       !   of < 0.1% in Rdif down to tau = 10^-9
       k(1:ncol) = sqrt(max((gamma1(1:ncol,j) - gamma2(1:ncol,j)) * &
                            (gamma1(1:ncol,j) + gamma2(1:ncol,j)),  &
-                           1.e-12_wp))
+                           k_min))
       exp_minusktau(1:ncol) = exp(-tau(1:ncol,j)*k(1:ncol))
 
       !
@@ -690,14 +697,9 @@ contains
     ! Ancillary variables
     real(wp) :: RT_term(ncol)
     real(wp) :: exp_minusktau(ncol), exp_minus2ktau(ncol)
-    real(WP) :: k_mu, k_gamma3, k_gamma4, k_min
+    real(WP) :: k_mu, k_gamma3, k_gamma4
     real(wp) :: mu0_inv(ncol)
     ! ---------------------------------
-    if (wp==dp) then
-      k_min = 1.e-12_wp
-    else
-      k_min = 1.e-4_wp
-    end if 
 
     mu0_inv(1:ncol) = 1._wp/mu0(1:ncol)
     do j = 1, nlay

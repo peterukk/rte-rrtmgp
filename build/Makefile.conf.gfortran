@@ -1,17 +1,18 @@
-#
-# Gfortran 7
-#
-
-# Fortran compiler command
+#  ------- GFORTRAN ----------
 export FC = gfortran
 
 # Fortran compiler flags
-#
-# Optimized
-#
-export FCFLAGS = -ffree-line-length-none -m64 -std=f2003 -march=native -O3 -DUSE_CBOOL
-#
-# Debugging - -mno-avx is particular to (broken) gcc setups using MacPorts
-#
-#export FCFLAGS = -ffree-line-length-none -m64 -std=f2003 -march=native -mno-avx -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan -DUSE_CBOOL
-#export FCFLAGS = -ffree-line-length-none -m64 -std=f2003 -march=native          -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan -DUSE_CBOOL
+export FCFLAGS = -O3 -ffree-line-length-none -march=native
+
+# more aggressive optimization with fast-math
+# export FCFLAGS = -O3 -ffree-line-length-none -m64 -march=native --fast-math -funroll-loops -ftree-loop-linear -fprefetch-loop-arrays
+
+# Debugging
+# export FCFLAGS = -ffree-line-length-none -m64 -march=native -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan
+
+
+# ------------------------------------------------------------------------------------------
+# -------  (OPTIONAL) GPTL TIMING LIBRARY --------------------------------------------------
+# ------------------------------------------------------------------------------------------
+
+export TIME_DIR = /home/peter/gptl-gcc

@@ -25,8 +25,8 @@ LIBS      += -lnetcdff -lnetcdf
 #  https://jmrosinski.github.io/GPTL/
 #
 
-# Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
-ifeq ($(USE_TIMING),yes)
+# Compiler specific - LDFLAGS may need to be changed
+ifeq ($(GPTL_TIMING),1)
 	#
 	# Timing library
 	#
@@ -35,7 +35,17 @@ ifeq ($(USE_TIMING),yes)
 	FCFLAGS += -DUSE_TIMING
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl
+else ifeq ($(GPTL_TIMING),2)
+	#
+	# Timing library
+	#
+	FCINCLUDE += -I$(TIME_DIR)/include
+	# Compiler specific
+	FCFLAGS += -DUSE_TIMING -DUSE_PAPI
+	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
+	LIBS      += -lgptl  -rdynamic  -lpapi
 endif
+
 
 VPATH = ../
 

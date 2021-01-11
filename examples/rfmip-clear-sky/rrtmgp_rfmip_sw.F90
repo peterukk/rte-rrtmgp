@@ -85,17 +85,21 @@ program rrtmgp_rfmip_sw
   !
   ! Timing library
   !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead
 #endif
   implicit none
+
+#ifdef USE_PAPI  
+#include "f90papi.h"
+#endif 
   ! --------------------------------------------------
   !
   ! Local variables
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flxdn_file, flxup_file
+  character(len=132) :: flxdn_file, flxup_file, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical            :: top_at_1
   integer            :: b, icol, ibnd, igpt
@@ -238,7 +242,14 @@ program rrtmgp_rfmip_sw
   !
   ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
-  ret =  gptlinitialize()
+#ifdef USE_PAPI  
+#ifdef DOUBLE_PRECISION
+ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
+#else
+ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
+#endif
+#endif  
+  ret = gptlinitialize()
 #endif
   !
   ! Loop over blocks
@@ -254,6 +265,7 @@ program rrtmgp_rfmip_sw
     !    from pressures, temperatures, and gas concentrations...
     !
 #ifdef USE_TIMING
+    ret =  gptlstart('clear_sky_total (SW)')
     ret =  gptlstart('gas_optics (SW)')
 #endif
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
@@ -326,6 +338,7 @@ program rrtmgp_rfmip_sw
                             fluxes))
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
+    ret =  gptlstop('clear_sky_total (SW)')
 #endif
     !
     ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
@@ -337,12 +350,13 @@ program rrtmgp_rfmip_sw
       end if
     end do
   end do
+#ifdef USE_TIMING
+  end do
   !
   ! End timers
   !
-#ifdef USE_TIMING
-  end do
-  ret = gptlpr(block_size)
+  timing_file = "timing.sw-" // adjustl(trim(block_size_char))
+  ret = gptlpr_file(trim(timing_file))
   ret = gptlfinalize()
 #endif
   !$acc exit data delete(optical_props%tau, optical_props%ssa, optical_props%g, optical_props)

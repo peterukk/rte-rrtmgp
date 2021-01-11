@@ -85,17 +85,21 @@ program rrtmgp_rfmip_lw
   !
   ! Timing library
   !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead
 #endif
   implicit none
+
+#ifdef USE_PAPI  
+#include "f90papi.h"
+#endif 
   ! --------------------------------------------------
   !
   ! Local variables
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_lw.nc'
-  character(len=132) :: flxdn_file, flxup_file
+  character(len=132) :: flxdn_file, flxup_file, timing_file
   integer            :: nargs, ncol, nlay, nbnd, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
   integer            :: b, icol, ibnd
@@ -235,6 +239,13 @@ program rrtmgp_rfmip_lw
   !
   ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+#ifdef USE_PAPI  
+#ifdef DOUBLE_PRECISION
+ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
+#else
+ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
+#endif
+#endif  
   ret = gptlinitialize()
 #endif
   !
@@ -261,6 +272,7 @@ program rrtmgp_rfmip_lw
     !    from pressures, temperatures, and gas concentrations...
     !
 #ifdef USE_TIMING
+    ret =  gptlstart('clear_sky_total (LW)')
     ret =  gptlstart('gas_optics (LW)')
 #endif
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
@@ -288,6 +300,7 @@ program rrtmgp_rfmip_lw
                             fluxes, n_gauss_angles = n_quad_angles))
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
+    ret =  gptlstop('clear_sky_total (LW)')
 #endif
   end do
 #ifdef USE_TIMING
@@ -295,7 +308,8 @@ program rrtmgp_rfmip_lw
   !
   ! End timers
   !
-  ret = gptlpr(block_size)
+  timing_file = "timing.lw-" // adjustl(trim(block_size_char))
+  ret = gptlpr_file(trim(timing_file))
   ret = gptlfinalize()
 #endif
   !$acc exit data delete(sfc_emis_spec)

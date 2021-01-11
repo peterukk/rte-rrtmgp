@@ -17,6 +17,22 @@ VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR)
 #
 -include Makefile.conf
 
+# Use double precision instead of single precision?
+ifdef DOUBLE_PRECISION
+	FCFLAGS += -DUSE_DOUBLE_PRECISION
+endif
+
+# Use GPTL timing library? Added this to main makefile to enable
+# timing instrumentation within RRTMGP and RTE source code
+ifeq ($(GPTL_TIMING),1)
+	# Timing library GPTL
+	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
+
+# Use GPTL with PAPI for hardware performance counters? (enables measuring compute intensity)
+else ifeq ($(GPTL_TIMING),2)
+	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
+endif
+
 all: librte.a librrtmgp.a
 
 COMPILE = $(FC) $(FCFLAGS) $(FCINCLUDE) -c
