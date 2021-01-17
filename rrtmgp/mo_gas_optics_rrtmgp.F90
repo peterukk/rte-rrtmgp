@@ -29,7 +29,7 @@ module mo_gas_optics_rrtmgp
   use mo_gas_optics_kernels, only: interpolation,                                         &
                                    compute_tau_absorption, compute_tau_rayleigh,          &
                                    combine_2str, combine_nstr,                            &
-                                   compute_source_bybnd_pfrac_bygpt, compute_source_bybnd, &
+                                   compute_Planck_source, compute_Planck_source_nn, &
                                    predict_nn_lw_blas, predict_nn_sw_blas
   use mo_rrtmgp_constants,   only: avogad, m_dry, m_h2o, grav
   use mo_rrtmgp_util_string, only: lower_case, string_in_array, string_loc_in_array
@@ -266,7 +266,7 @@ contains
     real(sp), dimension(:,:,:), intent(inout)         :: nn_inputs
     real(sp), dimension(:,:),   intent(inout), target :: col_dry_arr
 #else
-    real(sp), dimension(:,:,:), allocatable           :: nn_inputs
+    real(sp), dimension(:,:,:), allocatable           :: nn_inputs, planck_frac
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
                                               target  :: col_dry_arr
 #endif
@@ -367,7 +367,7 @@ contains
 
       ! NOTE: The above change was necessary since in the NN code gas concentrations are accessed directly from gas_conc 
       ! like below, instead of the original method filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
-      ! This is much faster (input preprocessing previously had a significant cost at small block sizes)
+      ! This is much faster (before, input preprocessing became expensive at small block sizes)
             
       ! if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
       !   error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
@@ -382,22 +382,10 @@ contains
     !
     ! Gas optics
     !
-#ifdef USE_TIMING
-      ret =  gptlstart('compute_gas_opticss')
-#endif
 
     if (present(neural_nets)) then
       ! ----------------------------------------------------------------------------------
       ! Use neural network for gas optics
-
-      call  compute_source_bybnd(                                     &
-            ncol, nlay, nband,                                        &
-            this%get_ntemp(),this%get_nPlanckTemp(),                  &
-            tlay, tlev_wk , tsfc,                                     &
-            this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
-            sources%sfc_source_bnd, sources%sfc_source_bnd_Jac,       &
-            sources%lay_source_bnd, sources%lev_source_bnd)  
-
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
 #ifndef DEV_MODE
       allocate(nn_inputs(ninputs,nlay,ncol))
@@ -412,14 +400,32 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('predict_nn_lw_blas')
 #endif
+
       call predict_nn_lw_blas(              &
               ncol, nlay, ngpt, ninputs,    &  ! dimensions
               nn_inputs, col_dry_wk,        &  ! data inputs
               neural_nets,                  &  ! NN models (input)
-              optical_props%tau, sources%planck_frac)    ! outputs    
+              optical_props%tau, sources%lay_source)    ! outputs : the second variable is actually Planck fraction, 
+                                                        ! but for this temporary variable we can utilize an already allocated variable
       !$acc exit data delete(nn_inputs) 
+      deallocate(nn_inputs)
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw_blas')
+#endif
+
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_source')
+#endif
+      call compute_Planck_source_nn(ncol, nlay, nband, ngpt,      &
+        this%get_nPlanckTemp(),                                   &
+        tlay, tlev, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
+        this%get_gpoint_bands(), this%get_band_lims_gpoint(),     &
+        this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
+        sources%sfc_source, sources%sfc_source_Jac,               &
+        sources%lay_source, sources%lev_source) ! trick to reduce memory allocations: 
+                                                ! lay_source (inout) is pfrac on input, lay_source on output
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_source')
 #endif
               
     else
@@ -433,7 +439,7 @@ contains
                                    sources, tlev_wk, tsfc)
       if(error_msg  /= '') return
       ! ----------------------------------------------------------
-      ! Use this code block to compute nn inputs for model development, commented out as default
+      ! This code block is only used for model development, when we need to compute NN inputs 
 #ifdef DEV_MODE
       error_msg = compute_nn_inputs(this,                         &
                       ncol, nlay, ngas, size(nn_inputs,dim=1),    &
@@ -445,9 +451,6 @@ contains
       ! ----------------------------------------------------------------------------------
     end if
 
-#ifdef USE_TIMING
-    ret =  gptlstop('compute_gas_opticss')
-#endif
     !$acc exit data delete(col_dry_arr, tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk)
 
   end function gas_optics_int
@@ -542,10 +545,6 @@ contains
     !
     ! Gas optics
     !
-#ifdef USE_TIMING
-    ret =  gptlstart('compute_gas_taus')
-#endif
-
     if (present(neural_nets)) then
     ! ----------------------------------------------------------------------------------
     ! Use neural network for gas optics
@@ -587,9 +586,6 @@ contains
                                   optical_props)
     end if
 
-#ifdef USE_TIMING
-    ret =  gptlstop('compute_gas_taus')
-#endif
     if(error_msg  /= '') return
 
     ! if(save_inputs)) then
@@ -830,9 +826,8 @@ contains
     class(ty_gas_optics_rrtmgp), &
                                       intent(in   ) :: this
     integer,                          intent(in   ) :: ncol, nlay, ngpt, nband
-    real(wp),   dimension(nlay,ncol), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
-                                                       plev, &   ! level pressures [Pa, mb]; (nlay+1,ncol)
-                                                       tlay      ! layer temperatures [K]; (nlay,ncol)
+    real(wp),   dimension(nlay,ncol), intent(in   ) :: play, tlay ! layer pressures [Pa, mb]; temperatures[K] (nlay,ncol)
+    real(wp), dimension(nlay+1,ncol), intent(in   ) :: plev   ! level pressures
     type(ty_gas_concs),               intent(in   ) :: gas_desc  ! Gas volume mixing ratios
     real(wp), dimension(nlay,ncol),   intent(in   ) :: col_dry ! Column dry amount; dim(nlay,ncol)
     class(ty_optical_props_arry),     intent(inout) :: optical_props !inout because components are allocated
@@ -1035,17 +1030,13 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('compute_source')
 #endif
-    ! Interpolate per-band source function at levels and layers, and per-g-point planck fraction at layers
-    ! This reduces the size of the arrays going into the solver.
-    ! The g-point source functions at layers and levels are instead calculated in-place inside the solver,
-    ! saving memory (furthermore another solver might not need upward and downward sources at both layers and levels)
-      call compute_source_bybnd_pfrac_bygpt(ncol, nlay, nband, ngpt,  &
-      nflav, neta, npres, ntemp, this%get_nPlanckTemp(),              &
-      tlay, tlev, tsfc,                                            &
-      fmajor, jeta, tropo, jtemp, jpress,                             &
-      this%get_gpoint_bands(), this%get_band_lims_gpoint(), this%temp_ref_min,        &
-      this%totplnk_delta, this%planck_frac_stored, this%totplnk, this%gpoint_flavor,  &
-      sources%sfc_source_bnd, sources%sfc_source_bnd_Jac, sources%lay_source_bnd, sources%lev_source_bnd, sources%planck_frac)
+      call compute_Planck_source (ncol, nlay, nband, ngpt,                &
+      nflav, neta, npres, ntemp, this%get_nPlanckTemp(),&
+      tlay, tlev, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)),             &
+      fmajor, jeta, tropo, jtemp, jpress,    &
+      this%get_gpoint_bands(), this%get_band_lims_gpoint(),           &
+      this%temp_ref_min, this%totplnk_delta, this%planck_frac_stored, this%totplnk, this%gpoint_flavor,  &
+      sources%sfc_source, sources%sfc_source_Jac, sources%lay_source, sources%lev_source)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_source')
 #endif

@@ -1,7 +1,9 @@
-! This code is part of Radiative Transfer for Energetics (RTE)
-!
-! Contacts: Robert Pincus and Eli Mlawer
-! email:  rrtmgp@aer.com
+! This code is !!a refactored version!! of Radiative Transfer for Energetics (RTE)
+! RTE is Developed Robert Pincus and Eli Mlawer (rrtmgp@aer.com)
+! 
+! !! Refactoring effort by Peter Ukkonen (peterukk@gmail.com) 
+! !! This version uses a different dimension order (g-points first) and also includes
+! !! other changes which aim to increase efficiency. See https://doi.org/10.1029/2020MS002226
 !
 ! Copyright 2015-2018,  Atmospheric and Environmental Research and
 ! Regents of the University of Colorado.  All right reserved.
@@ -56,7 +58,8 @@ module mo_rte_solver_kernels
   public :: lw_source_noscat, lw_combine_sources, &
             lw_source_2str, sw_source_2str, &
             lw_two_stream, sw_two_stream, &
-            adding, lw_gpt_source
+            adding
+
 
   real(wp), parameter :: pi = acos(-1._wp)
   
@@ -69,6 +72,7 @@ module mo_rte_solver_kernels
 #ifdef USE_TIMING
   integer :: ret, i
 #endif
+
 contains
 
 #ifdef FAST_EXPONENTIAL
@@ -88,6 +92,7 @@ contains
 #else
 #define exp_fast exp
 #endif
+
   ! -------------------------------------------------------------------------------------------------
   !
   ! Top-level longwave kernels
@@ -99,60 +104,37 @@ contains
   !   using user-supplied weights
   !
   ! ---------------------------------------------------------------
-subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_limits, &
-                              tau, planck_frac, &
-                              lay_source_bnd, lev_source_bnd, &
-                              sfc_source_bnd, sfc_emis, &
+subroutine lw_solver_noscat( ngpt, nlay, ncol, top_at_1, D, weight, &
+                              tau, lay_source, lev_source, &
+                              sfc_emis, sfc_source, &
                               radn_up, radn_dn, &
-                              sfc_source_bnd_Jac, radn_up_Jac) bind(C, name="lw_solver_noscat")
-    integer,                               intent(in   ) :: nbnd, ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
-    logical(wl),                           intent(in   ) :: top_at_1
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: D            ! secant of propagation angle  []
-    real(wp),                              intent(in   ) :: weight       ! quadrature weight
-    integer,  dimension(2,nbnd),           intent(in   ) :: band_limits
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau          ! Absorption optical thickness []
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: planck_frac  ! Planck fractions (fraction of band source function associated with each g-point)
-    real(wp), dimension(nbnd,nlay,  ncol), intent(in   ) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol), intent(in   ) :: lev_source_bnd      ! Planck source at layers and levels by band [W/m2]
-    real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd      ! Surface source function by band [W/m2]
-    real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_emis            ! Surface emissivity      []
+                              sfc_source_Jac, radn_up_Jac) bind(C, name="lw_solver_noscat")
+    integer,                                intent(in   ) ::  ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
+    logical(wl),                            intent(in   ) ::  top_at_1
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  D            ! secant of propagation angle  []
+    real(wp),                               intent(in   ) ::  weight       ! quadrature weight
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  tau          ! Absorption optical thickness []
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source      ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source      ! Planck source at layer edges [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis        ! Surface emissivity      []
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source      ! Surface source function by band [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
     ! Outputs
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(out) :: radn_up      ! Broadband radiances [W/m2-str]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) :: radn_dn      ! Top level must contain incident flux boundary condition
-    ! real(wp), dimension(nlay+1,     ncol), optional, &
-    !                                       intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(out) ::  radn_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(out)   :: radn_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) :: radn_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(out)   :: radn_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
     ! ------------------------------------
     ! Local variables. no col dependency
-    real(wp), dimension(:,:),         contiguous, pointer :: lev_source_up, lev_source_dn ! Mapping increasing/decreasing indicies to up/down
-    real(wp), dimension(ngpt,nlay),   target              :: lev_source_dec, lev_source_inc
-    real(wp), dimension(ngpt,nlay)                        :: lay_source
-    real(wp), dimension(ngpt)                             :: sfc_src       ! Surface source function by g-point [W/m2]
-    real(wp), dimension(ngpt)                             :: sfc_srcJac   ! Jacobian of surface source function by g-point [W/m2]
     real(wp), dimension(ngpt,nlay) :: tau_loc, &  ! path length (tau/mu)
                                         trans       ! transmissivity  = exp_fast(-tau)
-    real(wp), dimension(ngpt,nlay) :: source_dn, source_up
-    real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
 
     real(wp), parameter :: pi = acos(-1._wp)
-    integer             :: ilay, icol, igpt, sfc_lay, top_level
+    real(wp)            :: fac
+    integer             :: top_level, ilay, icol, igpt, sfc_lay
     ! ------------------------------------
-    ! Which way is up?
-    ! Level Planck sources for upward and downward radiation
-    ! When top_at_1, lev_source_up => lev_source_dec
-    !                lev_source_dn => lev_source_inc, and vice-versa
-    if(top_at_1) then
-      top_level = 1
-      sfc_lay   = nlay  ! the layer (not level) closest to surface
-      lev_source_up => lev_source_dec
-      lev_source_dn => lev_source_inc
-    else
-      top_level = nlay+1
-      sfc_lay = 1
-      lev_source_up => lev_source_inc
-      lev_source_dn => lev_source_dec
-    end if
+
+    ! Where it the top of atmosphere: at index 1 if top_at_1 true, otherwise nlay+1
+    top_level = MERGE(1, nlay+1, top_at_1)
 
     do icol = 1, ncol
     
@@ -177,76 +159,46 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 #endif   
       
       !
-      ! Compute the source function per g-point from source function per band
-      !
-#ifdef USE_TIMING
-    ret =  gptlstart('gpt_source')
-#endif
-      call lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, band_limits, &
-                    planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
-                    sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), &
-                    sfc_src, sfc_srcJac, lay_source, lev_source_dec, lev_source_inc)
-#ifdef USE_TIMING
-    ret =  gptlstop('gpt_source')
-#endif
-      !
-      ! Source function for diffuse radiation
-      !
-      call lw_source_noscat(ngpt, nlay, &
-                            lay_source, lev_source_up, lev_source_dn, &
-                            tau_loc, trans, source_dn, source_up)
-      !
-      ! Surface albedo, surface source function
-      !
-      sfc_albedo(:)     = 1._wp - sfc_emis(:,icol)
-      source_sfc(:)     = sfc_emis(:,icol) * sfc_src
-      source_sfcJac(:)  = sfc_emis(:,icol) * sfc_srcJac
-      !
-      ! Transport
+      ! Combined computation of source function and transport
       !      
-      call lw_transport_noscat(ngpt, nlay, top_at_1,  &
-                               tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
-                               radn_up(:,:,icol), radn_dn(:,:,icol), &
-                               source_sfcJac, radn_up_Jac(:,:,icol))
-                               
+      call lw_source_transport_noscat(ngpt, nlay, top_at_1, &
+                               lay_source(:,:,icol), lev_source(:,:,icol),&
+                               sfc_source(:,icol), sfc_source_Jac(:,icol), & 
+                               tau_loc, trans, sfc_emis(:,icol),  &
+                               radn_up(:,:,icol), radn_dn(:,:,icol), radn_up_Jac(:,:,icol)) ! outputs                      
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
-      radn_dn(:,:,icol)     = 2._wp * pi * weight * radn_dn(:,:,icol)   
-      radn_up(:,:,icol)     = 2._wp * pi * weight * radn_up(:,:,icol)  
-      radn_up_Jac(:,:,icol)  = 2._wp * pi * weight * radn_up_Jac(:,:,icol)
+      fac                   = 2._wp * pi * weight
+      radn_dn(:,:,icol)     = fac * radn_dn(:,:,icol)   
+      radn_up(:,:,icol)     = fac * radn_up(:,:,icol)  
+      radn_up_Jac(:,:,icol) = fac * radn_up_Jac(:,:,icol)
+
     end do  ! column loop
 
   end subroutine lw_solver_noscat
 
-  subroutine lw_solver_noscat_GaussQuad(nbnd, ngpt, nlay, ncol, top_at_1, nmus, Ds, weights, &
-                                   band_limits, tau, planck_frac, &
-                                   lay_source_bnd, lev_source_bnd, &
-                                   sfc_source_bnd, sfc_emis, &
+  subroutine lw_solver_noscat_GaussQuad(ngpt, nlay, ncol, top_at_1, nmus, Ds, weights, &
+                                   tau, lay_source, lev_source, &
+                                   sfc_emis, sfc_source, &
                                    flux_up, flux_dn, &
-                                   sfc_source_bnd_Jac, flux_up_Jac) bind(C, name="lw_solver_noscat_GaussQuad")
-    integer,                                intent(in   ) ::  nbnd, ngpt, nlay, ncol ! Number of columns, layers, g-points
+                                   sfc_source_Jac, flux_up_Jac) bind(C, name="lw_solver_noscat_GaussQuad")
+    integer,                                intent(in   ) ::  ngpt, nlay, ncol ! Number of columns, layers, g-points
     logical(wl),                            intent(in   ) ::  top_at_1
     integer,                                intent(in   ) ::  nmus         ! number of quadrature angles
     real(wp), dimension(nmus),              intent(in   ) ::  Ds, weights  ! quadrature secants, weights
-    ! real(wp), dimension(ngpt,ncol),         intent(in   ) ::  inc_flux    ! incident flux at domain top [W/m2] (ngpts, ncol)
-    integer,  dimension(2,nbnd),            intent(in   ) :: band_limits
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  tau          ! Absorption optical thickness []
-    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  planck_frac   ! Planck fractions (fraction of band source associated with each g-point) at layers
-    real(wp), dimension(nbnd,nlay,  ncol),  intent(in   ) ::  lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),  intent(in   ) ::  lev_source_bnd      ! Planck source at layers and levels by band [W/m2]
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source      ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source      ! Planck source at layer edges [W/m2]
     real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis            ! Surface emissivity      []
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd      ! Surface source function by band [W/m2]
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source      ! Surface source function by band [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
     ! Outputs
-    real(wp), dimension(ngpt, nlay+1,     ncol),  intent(out) ::  flux_up      ! Radiances [W/m2-str]
-    real(wp), dimension(ngpt, nlay+1,     ncol),  intent(inout) ::  flux_dn      ! Top level must contain incident flux boundary condition
-    ! real(wp), dimension(nlay+1,     ncol),  optional, &
-    !                                         intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of radiances [W/m2-str / K]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(out) ::  flux_up_Jac   ! surface temperature Jacobian of radiances [W/m2-str / K]                                        
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(out)   ::  flux_up      ! Radiances [W/m2-str]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) ::  flux_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(out)   ::  flux_up_Jac   ! surface temperature Jacobian of radiances [W/m2-str / K]                                        
     ! Local variables
-    real(wp), dimension(ngpt, ncol)             :: Ds_ngpt
-
+    real(wp), dimension(ngpt, ncol)               :: Ds_ngpt
     real(wp), dimension(:,:,:),  allocatable      :: radn_up, radn_dn ! Fluxes per quad angle  (nlay+1, ncol)
     real(wp), dimension(:,:,:),  allocatable      :: radn_up_Jac      ! perturbed Fluxes per quad angle
     integer :: imu, icol, sfc_lay, igpt, ilay
@@ -256,12 +208,12 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     !
     Ds_ngpt(:,:) = Ds(1)
   
-    call lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, &
+    call lw_solver_noscat( ngpt, nlay, ncol, top_at_1, &
                           Ds_ngpt, weights(1), &
-                          band_limits, tau, planck_frac, &
-                          lay_source_bnd, lev_source_bnd, &
-                          sfc_source_bnd, sfc_emis, &
-                          flux_up, flux_dn, sfc_source_bnd_Jac, flux_up_Jac)
+                          tau, &
+                          lay_source, lev_source, &
+                          sfc_emis, sfc_source, &
+                          flux_up, flux_dn, sfc_source_Jac, flux_up_Jac)
 
     if (nmus > 1) then
       allocate( radn_up(ngpt, nlay+1, ncol) )
@@ -273,12 +225,12 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 
       Ds_ngpt(:,:) = Ds(imu)
 
-      call lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, &
+      call lw_solver_noscat( ngpt, nlay, ncol, top_at_1, &
         Ds_ngpt, weights(imu), &
-        band_limits, tau, planck_frac, &
-        lay_source_bnd, lev_source_bnd, &
-        sfc_source_bnd, sfc_emis, &
-        radn_up, radn_dn, sfc_source_bnd_Jac, radn_up_Jac)
+        tau, &
+        lay_source, lev_source, &
+        sfc_emis, sfc_source, &
+        radn_up, radn_dn, sfc_source_Jac, radn_up_Jac)
 
       flux_up = flux_up + radn_up
       flux_dn = flux_dn + radn_dn
@@ -286,66 +238,45 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     end do                      
   end subroutine lw_solver_noscat_GaussQuad
 
-  subroutine lw_solver_noscat_broadband(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, inc_flux, band_limits, &
-                              tau, planck_frac, &
-                              lay_source_bnd, lev_source_bnd, &
-                              sfc_source_bnd, sfc_emis, &
+  subroutine lw_solver_noscat_broadband(ngpt, nlay, ncol, top_at_1, D, weight, inc_flux, &
+                              tau, lay_source, lev_source, &
+                              sfc_emis, sfc_source, &
                               flux_up, flux_dn, &
-                              sfc_source_bnd_Jac, flux_up_Jac, compute_Jac) bind(C, name="lw_solver_noscat_broadband")
-    integer,                               intent(in   ) :: nbnd, ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
-    logical(wl),                           intent(in   ) :: top_at_1, compute_Jac
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: D            ! secant of propagation angle  []
-    real(wp),                              intent(in   ) :: weight       ! quadrature weight
-    real(wp), dimension(ngpt,ncol),        intent(in   ) :: inc_flux    ! incident flux at domain top [W/m2] (ngpts, ncol)
-    integer, dimension(2,nbnd),            intent(in   ) :: band_limits
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau          ! Absorption optical thickness []
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: planck_frac  ! Planck fractions (fraction of band source function associated with each g-point)
-    real(wp), dimension(nbnd,nlay,  ncol), intent(in   ) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol), intent(in   ) :: lev_source_bnd      ! Planck source at layers and levels by band [W/m2]
-    real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd      ! Surface source function by band [W/m2]
-    real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_emis            ! Surface emissivity      []
+                              sfc_source_Jac, flux_up_Jac, compute_Jac) bind(C, name="lw_solver_noscat_broadband")
+    integer,                                intent(in   ) ::  ngpt, nlay, ncol ! Number of g-points, layers, columns
+    logical(wl),                            intent(in   ) ::  top_at_1 ! 
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  D               ! secant of propagation angle  []
+    real(wp),                               intent(in   ) ::  weight          ! quadrature weight
+    real(wp), dimension(ngpt,ncol),         intent(in   ) ::  inc_flux        ! incident flux at domain top [W/m2] (ngpts, ncol)
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  tau             ! Absorption optical thickness []
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source      ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source      ! Planck source at layer edges [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis        ! Surface emissivity      []
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source      ! Surface source function by band [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
+    logical(wl),                            intent(in   ) ::  compute_Jac
     ! Outputs
-    real(wp), dimension(nlay+1,     ncol), intent(out)    :: flux_up      ! Broadband radiances [W/m2-str]
-    real(wp), dimension(nlay+1,     ncol), intent(out)    :: flux_dn      ! Top level must contain incident flux boundary condition
-    real(wp), dimension(nlay+1,     ncol), intent(inout)  ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
+    real(wp), dimension(nlay+1,     ncol),  intent(out)   ::  flux_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(nlay+1,     ncol),  intent(out)   ::  flux_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(nlay+1,     ncol),  intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
     ! ------------------------------------
     ! Local variables. no col dependency
-    ! real(wp), dimension(:,:),         contiguous, pointer :: lev_source_up, lev_source_dn ! Mapping increasing/decreasing indicies to up/down
-    ! real(wp), dimension(ngpt,nlay),   target              :: lev_source_dec, lev_source_inc
-    ! real(wp), dimension(ngpt,nlay)                        :: lay_source
-    ! real(wp), dimension(ngpt)                             :: sfc_src       ! Surface source function by g-point [W/m2]
-    ! real(wp), dimension(ngpt)                             :: sfc_srcJac   ! Jacobian of surface source function by g-point [W/m2]
-    real(wp), dimension(ngpt,nlay+1)                      :: radn_up          ! Radiances per g-point [W/m2-str]
-    real(wp), dimension(ngpt,nlay+1)                      :: radn_dn          ! Top level must contain incident flux boundary condition
-    real(wp), dimension(ngpt,nlay+1)                      :: radn_up_Jac       ! surface temperature Jacobian of g-point radiances [W/m2-str / K]
-    real(wp), dimension(ngpt,nlay) ::   tau_loc     ! path length (tau/mu)
-    real(wp), dimension(ngpt,nlay) ::   trans       ! transmissivity  = exp_fast(-tau)
-    ! real(wp), dimension(ngpt,nlay) :: source_dn, source_up
-    ! real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
+    real(wp), dimension(ngpt,nlay+1)    ::  radn_up        ! Radiances per g-point [W/m2-str]
+    real(wp), dimension(ngpt,nlay+1)    ::  radn_dn        ! Top level must contain incident flux boundary condition
+    real(wp), dimension(ngpt,nlay+1)    ::  radn_up_Jac    ! surface temperature Jacobian of g-point radiances [W/m2-str / K]
+    real(wp), dimension(ngpt,nlay)      ::  tau_loc      ! path length (tau/mu)
+    real(wp), dimension(ngpt,nlay)      ::  trans        ! transmissivity  = exp_fast(-tau)
 
     real(wp), parameter :: pi = acos(-1._wp)
     real(wp)            :: fac
-    integer             :: ilev, icol, igpt, ilay, sfc_lay, top_level
+    integer             :: ilev, icol, igpt, ilay, top_level
     ! ------------------------------------
-    ! Which way is up?
-    ! Level Planck sources for upward and downward radiation
-    ! When top_at_1, lev_source_up => lev_source_dec
-    !                lev_source_dn => lev_source_inc, and vice-versa
+
 #ifdef USE_TIMING
     ret =  gptlstart('lw_solver_noscat_broadband')
 #endif
-    if(top_at_1) then
-      top_level = 1
-      sfc_lay   = nlay  ! the layer (not level) closest to surface
-      ! lev_source_up => lev_source_dec
-      ! lev_source_dn => lev_source_inc
-    else
-      top_level = nlay+1
-      sfc_lay = 1
-      ! lev_source_up => lev_source_inc
-      ! lev_source_dn => lev_source_dec
-    end if
+    ! Where it the top: at index 1 if top_at_1 true, otherwise nlay+1
+    top_level = MERGE(1, nlay+1, top_at_1)
 
     do icol = 1, ncol
     
@@ -364,7 +295,7 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
     ret =  gptlstart('compute_trans_exp()')
 #endif  
       do ilay = 1, nlay
-          tau_loc(:,ilay)  = tau(:,ilay,icol) * D(:,icol)
+          tau_loc(:,ilay)  = tau(:,ilay,icol) * D(:,icol)  
           trans(:,ilay)    = exp_fast(-tau_loc(:,ilay)) 
       end do
 #ifdef USE_TIMING
@@ -376,11 +307,13 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 #ifdef USE_TIMING
     ret =  gptlstart('lw_source_transport_noscat')
 #endif  
-      call lw_source_transport_noscat(nbnd, ngpt, nlay, sfc_lay, top_at_1, band_limits, &
-                          planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
-                          sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), & 
+      call lw_source_transport_noscat(ngpt, nlay, top_at_1, &
+                          lay_source(:,:,icol), lev_source(:,:,icol),&
+                          sfc_source(:,icol), sfc_source_Jac(:,icol), & 
                           tau_loc, trans, sfc_emis(:,icol),  &
                           radn_up, radn_dn, radn_up_Jac) ! outputs
+
+
 #ifdef USE_TIMING
     ret =  gptlstop('lw_source_transport_noscat')
 #endif  
@@ -413,38 +346,33 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 
   end subroutine lw_solver_noscat_broadband
 
-  subroutine lw_solver_noscat_GaussQuad_broadband(nbnd, ngpt, nlay, ncol, top_at_1, nmus, Ds, weights, inc_flux, &
-                                   band_limits, tau, planck_frac, &
-                                   lay_source_bnd, lev_source_bnd, &
-                                   sfc_source_bnd, sfc_emis, &
+  subroutine lw_solver_noscat_GaussQuad_broadband(ngpt, nlay, ncol, top_at_1, nmus, Ds, weights, inc_flux, &
+                                   tau, lay_source, lev_source, &
+                                   sfc_emis, sfc_source, &
                                    flux_up, flux_dn, &
-                                   sfc_source_bnd_Jac, flux_up_Jac, compute_Jac) bind(C, name="lw_solver_noscat_GaussQuad_broadband")
-    integer,                                intent(in   ) ::  nbnd, ngpt, nlay, ncol ! Number of columns, layers, g-points
-    logical(wl),                            intent(in   ) ::  top_at_1, compute_Jac
+                                   sfc_source_Jac, flux_up_Jac, compute_Jac) bind(C, name="lw_solver_noscat_GaussQuad_broadband")
+    integer,                                intent(in   ) ::  ngpt, nlay, ncol ! Number of columns, layers, g-points
+    logical(wl),                            intent(in   ) ::  top_at_1
     integer,                                intent(in   ) ::  nmus         ! number of quadrature angles
     real(wp), dimension(nmus),              intent(in   ) ::  Ds, weights  ! quadrature secants, weights
     real(wp), dimension(ngpt,ncol),         intent(in   ) ::  inc_flux    ! incident flux at domain top [W/m2] (ngpts, ncol)
-    integer,  dimension(2,nbnd),            intent(in   ) ::  band_limits
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  tau          ! Absorption optical thickness []
-    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  planck_frac   ! Planck fractions (fraction of band source associated with each g-point) at layers
-    real(wp), dimension(nbnd,nlay,  ncol),  intent(in   ) ::  lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),  intent(in   ) ::  lev_source_bnd      ! Planck source at layers and levels by band [W/m2]
-    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis            ! Surface emissivity      []
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd      ! Surface source function by band [W/m2]
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
-
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source      ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source      ! Planck source at layer edges [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis        ! Surface emissivity      []
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source      ! Surface source function by band [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
+    logical(wl),                            intent(in   ) ::  compute_Jac
     ! Outputs
-    real(wp), dimension(nlay+1,     ncol),  intent(out) ::  flux_up      ! Broadband radiances [W/m2-str]
-    real(wp), dimension(nlay+1,     ncol),  intent(out) ::  flux_dn      ! Top level must contain incident flux boundary condition
-    ! real(wp), dimension(nlay+1,     ncol),  optional, &
-    !                                         intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(nlay+1,     ncol), intent(out) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]                                        
+    real(wp), dimension(nlay+1,     ncol),  intent(out)   ::  flux_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(nlay+1,     ncol),  intent(out)   ::  flux_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(nlay+1,     ncol),  intent(out)   ::  flux_up_Jac  ! surface temperature Jacobian of broadband radiances [W/m2-str / K]   
+                                         
     ! Local variables
     real(wp), dimension(ngpt, ncol)             :: Ds_ngpt
-
     real(wp), dimension(:,:),  allocatable      :: radn_up, radn_dn ! Fluxes per quad angle  (nlay+1, ncol)
     real(wp), dimension(:,:),  allocatable      :: radn_up_Jac      ! perturbed Fluxes per quad angle
-    integer :: imu, icol, sfc_lay, igpt, ilay
+    integer :: imu, icol, igpt, ilay
     ! ------------------------------------
     !
     ! For the first angle output arrays store total flux
@@ -452,12 +380,11 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 
     Ds_ngpt(:,:) = Ds(1)
   
-    call lw_solver_noscat_broadband(nbnd, ngpt, nlay, ncol, top_at_1, &
+    call lw_solver_noscat_broadband(ngpt, nlay, ncol, top_at_1, &
                           Ds_ngpt, weights(1), inc_flux, &
-                          band_limits, tau, planck_frac, &
-                          lay_source_bnd, lev_source_bnd, &
-                          sfc_source_bnd, sfc_emis, &
-                          flux_up, flux_dn, sfc_source_bnd_Jac, flux_up_Jac, compute_Jac)
+                          tau, lay_source, lev_source,&
+                          sfc_emis, sfc_source,  &
+                          flux_up, flux_dn, sfc_source_Jac, flux_up_Jac, compute_Jac)
 
     if (nmus > 1) then
       allocate( radn_up(nlay+1, ncol) )
@@ -469,12 +396,11 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
 
       Ds_ngpt(:,:) = Ds(imu)
 
-      call lw_solver_noscat_broadband(nbnd, ngpt, nlay, ncol, top_at_1, &
+      call lw_solver_noscat_broadband(ngpt, nlay, ncol, top_at_1, &
         Ds_ngpt, weights(imu), inc_flux, &
-        band_limits, tau, planck_frac, &
-        lay_source_bnd, lev_source_bnd, &
-        sfc_source_bnd, sfc_emis, &
-        radn_up, radn_dn, sfc_source_bnd_Jac, radn_up_Jac, compute_Jac)
+        tau, lay_source, lev_source, &
+        sfc_emis, sfc_source, &
+        radn_up, radn_dn, sfc_source_Jac, radn_up_Jac, compute_Jac)
 
       flux_up = flux_up + radn_up
       flux_dn = flux_dn + radn_dn
@@ -493,72 +419,45 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
   !   transport
   !
   ! -------------------------------------------------------------------------------------------------
-  subroutine lw_solver_2stream (nbnd, ngpt, nlay, ncol, top_at_1, &
-                              band_limits, tau, ssa, g, planck_frac, &
-                              lay_source_bnd, lev_source_bnd, &
-                              sfc_source_bnd, sfc_emis, &
+  subroutine lw_solver_2stream ( ngpt, nlay, ncol, top_at_1, &
+                              tau, ssa, g, &
+                              lay_source, lev_source, &
+                              sfc_emis, sfc_source, &
                               flux_up, flux_dn) bind(C, name="lw_solver_2stream")
-    integer,                               intent(in   ) :: nbnd, ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
-    logical(wl),                           intent(in   ) :: top_at_1
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau, &  ! Optical thickness,
+    integer,                               intent(in   )  :: ngpt, nlay, ncol ! Number of g-points, layers, columns
+    logical(wl),                           intent(in   )  :: top_at_1
+    real(wp), dimension(ngpt,nlay,  ncol), intent(in   )  :: tau, & ! Optical thickness,
                                                             ssa, &  ! single-scattering albedo,
-                                                            g, &        ! asymmetry parameter []
-                                                            planck_frac ! planck fraction
-    integer, dimension(2,nbnd),            intent(in   ) :: band_limits
-    real(wp), dimension(nbnd,nlay,  ncol),  intent(in   ) ::  lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),  intent(in   ) ::  lev_source_bnd ! Planck source function at layers and levels by band [W/m2]
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd ! Surface source function by band[W/m2]
-    real(wp), dimension(ngpt,       ncol), intent(in   )  ::  sfc_emis         ! Surface emissivity      []
+                                                            g       ! asymmetry parameter []
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source  ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source  ! Planck source at layer edges [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis    ! Surface emissivity      []
+    real(wp), dimension(ngpt,ncol),         intent(in   ) ::  sfc_source  ! Surface source function [W/m2]
     real(wp), dimension(ngpt,nlay+1,ncol), &
-                                           intent(  out)  :: flux_up   ! Fluxes [W/m2]
+                                            intent(out  ) :: flux_up      ! Fluxes [W/m2]
     real(wp), dimension(ngpt,nlay+1,ncol), &
-                                           intent(inout) :: flux_dn   ! Top level (= merge(1, nlay+1, top_at_1)
+                                            intent(inout) :: flux_dn   ! Top level (= merge(1, nlay+1, top_at_1)
                                                                       ! must contain incident flux boundary condition
     ! ----------------------------------------------------------------------
-    integer :: icol, sfc_lay, top_level
-    real(wp), dimension(ngpt,nlay) :: lev_source_inc, lev_source_dec
-                                        ! Planck source at layer edge for radiation in increasing/decreasing ilay direction [W/m2]
-                                        ! Includes spectral weighting that accounts for state-dependent frequency to g-space mapping
-    real(wp), dimension(ngpt,nlay) :: lay_source
-
-    real(wp), dimension(ngpt)       :: sfc_src          ! Surface source function [W/m2]
-
+    integer :: icol, top_level
     real(wp), dimension(ngpt,nlay  ) :: Rdif, Tdif, gamma1, gamma2
     real(wp), dimension(ngpt       ) :: sfc_albedo
-    real(wp), dimension(ngpt,nlay+1) :: lev_source
     real(wp), dimension(ngpt,nlay  ) :: source_dn, source_up
     real(wp), dimension(ngpt       ) :: source_sfc
     ! ------------------------------------
 
-    if(top_at_1) then
-      top_level = 1
-      sfc_lay = nlay
-    else
-      top_level = nlay+1
-      sfc_lay = 1
-    end if
+    top_level = MERGE(1, nlay+1, top_at_1)
 
     do icol = 1, ncol
 
       !
-      ! Source function per g-point from source function per band
-      !
-#ifdef USE_TIMING
-    ret =  gptlstart('gpt_source')
-#endif
-      call lw_gpt_source(nbnd, ngpt, nlay, sfc_lay, band_limits, &
-                      planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), sfc_source_bnd(:,icol), &
-                      sfc_src, lay_source, lev_source_dec, lev_source_inc)
-#ifdef USE_TIMING
-    ret =  gptlstop('gpt_source')
-#endif
-      !
       ! RRTMGP provides source functions at each level using the spectral mapping
       !   of each adjacent layer. Combine these for two-stream calculations
       !
-      call lw_combine_sources(ngpt, nlay, &
-                              lev_source_inc, lev_source_dec, &
-                              lev_source)
+      ! call lw_combine_sources(ngpt, nlay, &
+      !                         lev_source_inc, lev_source_dec, &
+      !                         lev_source)
+
       !
       ! Cell properties: reflection, transmission for diffuse radiation
       !   Coupling coefficients needed for source function
@@ -570,8 +469,8 @@ subroutine lw_solver_noscat(nbnd, ngpt, nlay, ncol, top_at_1, D, weight, band_li
       ! Source function for diffuse radiation
       !
       call lw_source_2str(ngpt, nlay, top_at_1, &
-                          sfc_emis(:,icol), sfc_src(:), &
-                          lay_source(:,:), lev_source, &
+                          sfc_emis(:,icol), sfc_source(:,icol), &
+                          lay_source(:,:,icol), lev_source(:,:,icol), &
                           gamma1, gamma2, Rdif, Tdif, tau(:,:,icol), &
                           source_dn, source_up, source_sfc)
       !
@@ -796,11 +695,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 
     ! ------------------------------------
 
-    if(top_at_1) then
-      top_level = 1
-    else
-      top_level = nlay+1
-    end if
+    top_level = MERGE(1, nlay+1, top_at_1)
 
     do icol = 1, ncol
 
@@ -867,7 +762,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! -------------------------------------------------------------------------------------------------
   !
   ! Compute LW source function for upward and downward emission at levels using linear-in-tau assumption
-  ! See Clough et al., 1992, doi: 10.1029/92JD01419, Eq 13
+  ! See Clough et al., 1992, doi: 10.1029/92JD01419, Eq 15
   !
   ! ---------------------------------------------------------------
   subroutine lw_source_noscat(ngpt, nlay, lay_source, lev_source_up, lev_source_dn, tau, trans, &
@@ -912,145 +807,108 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   ! -------------------------------------------------------------------------------------------------
   !
   ! Compute LW source function for upward and downward emission at levels using linear-in-tau assumption,
-  ! ( See Clough et al., 1992, doi: 10.1029/92JD01419, Eq 13 )
-  ! COMBINE with longwave no-scattering transport in order to avoid traversing arrays more than necessary
+  ! using a Pade approximant to avoid conditional for low tau
+  ! ( See Clough et al., 1992, doi: 10.1029/92JD01419, Eq 15 )
+  ! COMBINE with longwave no-scattering transport in order to decrease the number of loop iterations
   !
   ! ---------------------------------------------------------------
-  pure subroutine lw_source_transport_noscat(nbnd, ngpt, nlay, sfc_lay, top_at_1, band_limits, planck_frac, & ! inputs
-                    lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_source_bnd_Jac, &    ! inputs
+   subroutine lw_source_transport_noscat(ngpt, nlay, top_at_1,  & ! inputs
+                    lay_source, lev_source, sfc_source, sfc_source_Jac,  &    ! inputs
                     tau, trans, sfc_emis, &                   ! more inputs
                     radn_up, radn_dn, radn_up_Jac)            ! layer outputs
-    integer,                          intent(in   ) :: nbnd, ngpt, nlay, sfc_lay
+    integer,                          intent(in   ) :: ngpt, nlay
     logical(wl),                      intent(in   ) :: top_at_1
-    integer, dimension(2,nbnd),       intent(in   ) :: band_limits
-    real(wp), dimension(ngpt,nlay),   intent(in   ) :: planck_frac 
-    real(wp), dimension(nbnd,nlay),   intent(in   ) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1), intent(in )   :: lev_source_bnd
-    real(wp), dimension(nbnd),        intent(in )   :: sfc_source_bnd      ! Surface source by band
-    real(wp), dimension(nbnd),        intent(in )   :: sfc_source_bnd_Jac  ! Surface source by band using perturbed temperature
+    real(wp), dimension(ngpt,nlay),   intent(in )   :: lay_source
+    real(wp), dimension(ngpt,nlay+1), intent(in )   :: lev_source
+    real(wp), dimension(ngpt),        intent(in )   :: sfc_source      ! Surface source by band
+    real(wp), dimension(ngpt),        intent(in )   :: sfc_source_Jac  ! Surface source by band using perturbed temperature
     real(wp), dimension(ngpt, nlay),  intent(in)    :: tau,        & ! Optical path (tau/mu)
                                                       trans         ! Transmissivity (exp_fast(-tau))
     real(wp), dimension(ngpt),        intent(in)    :: sfc_emis
     real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_up    ! Radiances [W/m2-str]
-    real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_dn    !Top level must contain incident flux boundary condition
-    real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_up_Jac       ! surface temperature Jacobian of Radiances [W/m2-str / K]
+    real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_dn    ! Top level must contain incident flux boundary condition
+    real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_up_Jac ! surface temperature Jacobian of Radiances [W/m2-str / K]
     ! --------------------------------
     integer                         :: igpt, ilay, ibnd
-    real(wp)                        :: fact
-    real(wp), parameter             :: tau_thresh = sqrt(epsilon(tau))
-    real(wp)                        :: lay_source, lev_source_dec, lev_source_inc
+    real(wp)                        :: coeff
     real(wp)                        :: source_sfc, source_sfc_Jac, sfc_albedo
-    real(wp)                        :: source_dn ! Source function at layer edges; 
+    real(wp)                        :: source_dn
     real(wp), dimension(ngpt, nlay) :: source_up !  Down at the bottom of the layer, up at the top
+    real(wp), parameter             :: tau_thresh = sqrt(epsilon(tau))
     ! ---------------------------------------------------------------
 
     if(top_at_1) then
-      do ilay = 1, nlay
-        do ibnd = 1, nbnd
-          !dir$ vector aligned
-          do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
-            !
-            ! Weighting factor. Use 2nd order series expansion when rounding error (~tau^2)
-            !   is of order epsilon (smallest difference from 1. in working precision)
-            !   Thanks to Peter Blossey
-            !
-            if(tau(igpt, ilay) > tau_thresh) then
-              fact = (1._wp - trans(igpt,ilay))/tau(igpt,ilay) - trans(igpt,ilay)
-            else
-              fact = tau(igpt, ilay) * (0.5_wp - 1._wp/3._wp*tau(igpt, ilay))
-            end if
 
-            ! compute level source irradiance for each g-point, one each for upward and downward paths
-            lev_source_dec   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-            lev_source_inc   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-            ! compute layer source irradiance for each g-point
-            lay_source       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-            !
-            ! Equation below is developed in Clough et al., 1992, doi:10.1029/92JD01419, Eq 13
-            !
-            source_dn           = (1._wp - trans(igpt,ilay)) * lev_source_inc + &
-                                  2._wp * fact * (lay_source - lev_source_inc)
-            source_up(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source_dec + &
-                                  2._wp * fact * (lay_source - lev_source_dec)
-            ! Downward propagation                    
-            radn_dn(igpt,ilay+1) = trans(igpt,ilay)*radn_dn(igpt,ilay) + source_dn
-          end do
+      do ilay = 1, nlay
+        !dir$ vector aligned
+        do igpt = 1,ngpt
+
+          !
+          ! Weighting factor. Use 2nd order series expansion when rounding error (~tau^2)
+          !   is of order epsilon (smallest difference from 1. in working precision)
+          !   Thanks to Peter Blossey
+          !
+          if(tau(igpt, ilay) > tau_thresh) then
+            coeff = (1._wp - trans(igpt,ilay))/tau(igpt,ilay) - trans(igpt,ilay)
+          else
+            coeff = tau(igpt, ilay) * (0.5_wp - 1._wp/3._wp*tau(igpt, ilay))
+          end if
+          
+          ! Equation below is developed in Clough et al., 1992, doi:10.1029/92JD01419, Eq 13
+          source_dn           = (1._wp - trans(igpt,ilay)) * lev_source(igpt,ilay+1) + &
+                                2._wp * coeff * (lay_source(igpt,ilay) - lev_source(igpt,ilay+1))
+          source_up(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source(igpt,ilay) + &
+                                2._wp * coeff * (lay_source(igpt,ilay) - lev_source(igpt,ilay))
+
+          ! Alternative to avoid the conditional (which on one tested platform, had no performance penalty)
+          ! Equation below uses a Pade approximant for the linear-in-tau solution for the effective Planck function
+          ! See Clough et al., 1992, doi:10.1029/92JD01419, Eq 15
+          ! coeff = 0.2_wp * tau(igpt,ilay)
+          ! source_up(igpt,ilay)  = (1.0_wp-trans(igpt,ilay)) * (lay_source(igpt,ilay) + coeff*lev_source(igpt,ilay))   / (1 + coeff)
+          ! source_dn             = (1.0_wp-trans(igpt,ilay)) * (lay_source(igpt,ilay) + coeff*lev_source(igpt,ilay+1)) / (1 + coeff)
+
+          ! Compute downward radiance
+          radn_dn(igpt,ilay+1) = trans(igpt,ilay)*radn_dn(igpt,ilay) + source_dn
         end do
       end do
-
-      ! Surface source, reflection and emission
-      do ibnd = 1, nbnd
-        !dir$ vector aligned
-        do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
-          source_sfc                = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-          source_sfc                = sfc_emis(igpt) * source_sfc
-          source_sfc_Jac            = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(ibnd) - sfc_source_bnd_Jac(ibnd))
-          source_sfc_Jac            = sfc_emis(igpt) * source_sfc_Jac
-          sfc_albedo                = 1._wp - sfc_emis(igpt)
-          ! Reflection and emission
-          radn_up    (igpt,nlay+1)  = radn_dn(igpt,nlay+1)*sfc_albedo + source_sfc
-          radn_up_Jac(igpt,nlay+1)  = source_sfc_Jac
-        end do
-      end do 
+      
+      ! Surface reflection and emission
+      radn_up    (:,nlay+1)  = radn_dn(:,nlay+1)*(1-sfc_emis) + sfc_emis(:) * sfc_source(:)
+      radn_up_Jac(:,nlay+1)  =                                  sfc_emis(:) * sfc_source_Jac(:)
 
       ! Upward propagation
       do ilay = nlay, 1, -1
-        radn_up   (:,ilay)  = trans(:,ilay  )*radn_up   (:,ilay+1) + source_up(:,ilay)
+        radn_up    (:,ilay) = trans(:,ilay  )*radn_up    (:,ilay+1) + source_up(:,ilay)
         radn_up_Jac(:,ilay) = trans(:,ilay  )*radn_up_Jac(:,ilay+1)
       end do
+
 
     else  ! Top of domain is index nlay+1
 
       do ilay = nlay, 1, -1
-        do ibnd = 1, nbnd
-          !dir$ vector aligned
-          do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
-          ! compute layer source irradiance for each g-point
-            lay_source       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-            ! compute level source irradiance for each g-point, one each for upward and downward paths
-            lev_source_dec   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-            lev_source_inc   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-            !
-            ! Weighting factor. Use 2nd order series expansion when rounding error (~tau^2)
-            !   is of order epsilon (smallest difference from 1. in working precision)
-            !   Thanks to Peter Blossey
-            !
-            if(tau(igpt, ilay) > tau_thresh) then
-              fact = (1._wp - trans(igpt,ilay))/tau(igpt,ilay) - trans(igpt,ilay)
-            else
-              fact = tau(igpt, ilay) * (0.5_wp - 1._wp/3._wp*tau(igpt, ilay))
-            end if
-            !
-            ! Equation below is developed in Clough et al., 1992, doi:10.1029/92JD01419, Eq 13
-            !
-            source_dn           = (1._wp - trans(igpt,ilay)) * lev_source_dec + &
-                                  2._wp * fact * (lay_source - lev_source_dec)
-            source_up(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source_inc + &
-                                  2._wp * fact * (lay_source - lev_source_inc)
-            ! Downward propagation
-            radn_dn(igpt,ilay) = trans(igpt,ilay)*radn_dn(igpt,ilay+1) + source_dn
-          end do
+        !dir$ vector aligned
+        do igpt = 1,ngpt
+          !
+          ! Equation below uses a Pade approximant for the linear-in-tau solution for the effective Planck function
+          ! See Clough et al., 1992, doi:10.1029/92JD01419, Eq 15
+          !
+          coeff = 0.2_wp * tau(igpt,ilay)
+  
+          source_up(igpt,ilay)  = (1.0_wp-trans(igpt,ilay)) * (lay_source(igpt,ilay) + coeff*lev_source(igpt,ilay+1)) / (1 + coeff)
+          source_dn             = (1.0_wp-trans(igpt,ilay)) * (lay_source(igpt,ilay) + coeff*lev_source(igpt,ilay))   / (1 + coeff)
+
+          radn_dn(igpt,ilay) = trans(igpt,ilay)*radn_dn(igpt,ilay+1) + source_dn
         end do
       end do
       
-      ! Surface source, reflection and emission
-      do ibnd = 1, nbnd
-        !dir$ vector aligned
-        do igpt = band_limits(1,ibnd), band_limits(2,ibnd)
-          source_sfc            = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-          source_sfc            = sfc_emis(igpt) * source_sfc
-          source_sfc_Jac        = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(ibnd) - sfc_source_bnd_Jac(ibnd))
-          source_sfc_Jac        = sfc_emis(igpt) * source_sfc_Jac
-          sfc_albedo            = 1._wp - sfc_emis(igpt)
-          radn_up (igpt, 1)     = radn_dn(igpt,1) * sfc_albedo + source_sfc
-          radn_up_Jac(igpt, 1)  = source_sfc_Jac
-        end do
-      end do 
+      ! Surface reflection and emission
+      radn_up    (:,1)  = radn_dn(:,1)*(1-sfc_emis) + sfc_emis(:) * sfc_source(:)
+      radn_up_Jac(:,1)  =                             sfc_emis(:) * sfc_source_Jac(:)
 
       ! Upward propagation
       do ilay = 2, nlay+1
-        radn_up   (:,ilay) = trans(:,ilay-1) * radn_up   (:,ilay-1) +  source_up(:,ilay-1)
-        radn_up_Jac(:,ilay) = trans(:,ilay-1) * radn_up_Jac(:,ilay-1)
+        radn_up    (:,ilay) = trans(:,ilay-1)*radn_up    (:,ilay-1) + source_up(:,ilay-1)
+        radn_up_Jac(:,ilay) = trans(:,ilay-1)*radn_up_Jac(:,ilay-1)
       end do
 
     end if
@@ -1191,7 +1049,7 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   !
   ! -------------------------------------------------------------------------------------------------
   subroutine lw_combine_sources(ngpt, nlay, lev_src_inc, lev_src_dec, lev_source)
-    integer,                                 intent(in ) :: nlay, ngpt
+    integer,                           intent(in ) :: nlay, ngpt
     real(wp), dimension(ngpt, nlay  ), intent(in ) :: lev_src_inc, lev_src_dec
     real(wp), dimension(ngpt, nlay+1), intent(out) :: lev_source
 
@@ -1222,23 +1080,24 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
   !   Source is provided as W/m2-str; factor of pi converts to flux units
   !
   ! ---------------------------------------------------------------
-  
+
   subroutine lw_source_2str(ngpt, nlay, top_at_1,   &
                             sfc_emis, sfc_src,      &
                             lay_source, lev_source, &
                             gamma1, gamma2, rdif, tdif, tau, source_dn, source_up, source_sfc) &
                             bind (C, name="lw_source_2str")
-    integer,                         intent(in) :: ngpt, nlay
-    logical(wl),                     intent(in) :: top_at_1
-    real(wp), dimension(ngpt      ), intent(in) :: sfc_emis, sfc_src
-    real(wp), dimension(ngpt, nlay), intent(in) :: lay_source,    & ! Planck source at layer center
-                                                   tau,           & ! Optical depth (tau)
+    integer,                          intent(in) :: ngpt, nlay
+    logical(wl),                      intent(in) :: top_at_1
+    real(wp), dimension(ngpt      ),  intent(in) :: sfc_emis, sfc_src
+    real(wp), dimension(ngpt, nlay),  intent(in) :: tau,           & ! Optical depth (tau)
                                                    gamma1, gamma2,& ! Coupling coefficients
                                                    rdif, tdif       ! Layer reflectance and transmittance
+    real(wp), dimension(ngpt, nlay),  intent(in)  :: lay_source       ! Planck source at layer mean temp. (not used)                                                                         
     real(wp), dimension(ngpt, nlay+1), target, &
-                                     intent(in)  :: lev_source       ! Planck source at layer edges
-    real(wp), dimension(ngpt, nlay), intent(out) :: source_dn, source_up
-    real(wp), dimension(ngpt      ), intent(out) :: source_sfc      ! Source function for upward radation at surface
+                                      intent(in)  :: lev_source       ! Planck source at layer edges
+    real(wp), dimension(ngpt, nlay),  intent(out) :: source_dn, source_up
+    real(wp), dimension(ngpt      ),  intent(out) :: source_sfc      ! Source function for upward radation at surface
+    ! Local variables
     integer             :: igpt, ilay
     real(wp)            :: Z, Zup_top, Zup_bottom, Zdn_top, Zdn_bottom
     real(wp), dimension(:), pointer :: lev_source_bot, lev_source_top
@@ -1269,9 +1128,9 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
         end if
       end do
     end do
-    do igpt = 1, ngpt
-      source_sfc(igpt) = pi * sfc_emis(igpt) * sfc_src(igpt)
-    end do
+
+    source_sfc(:) = pi * sfc_emis(:) * sfc_src(:)
+
   end subroutine lw_source_2str
 
   ! -------------------------------------------------------------------------------------------------
@@ -1529,87 +1388,6 @@ end subroutine sw_source_2str
       end do
     end if
   end subroutine adding
-  ! -------------------------------------------------------------------------------------------------
-  !
-  ! Planck sources by g-point from plank fraction and sources by band
-  !
-  ! -------------------------------------------------------------------------------------------------
-  subroutine lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, band_limits, planck_frac, &
-    lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_source_bnd_Jac, &     ! inputs: band source functions
-    sfc_source, sfc_source_Jac,  lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
-
-    integer,                          intent(in   ) :: nbnd, ngpt, nlay, sfc_lay
-    integer, dimension(2,nbnd),       intent(in   ) :: band_limits
-    real(wp), dimension(ngpt,nlay),   intent(in   ) :: planck_frac 
-    real(wp), dimension(nbnd,nlay),   intent(in   ) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1), intent(in )   :: lev_source_bnd
-    real(wp), dimension(nbnd),        intent(in )   :: sfc_source_bnd      ! Surface source by band
-    real(wp), dimension(nbnd),        intent(in )   :: sfc_source_bnd_Jac  ! Surface source by band using perturbed temperature
-    ! outputs
-    real(wp), dimension(ngpt     ),   intent(out)   :: sfc_source, sfc_source_Jac ! Surface source by g-point and its Jacobian
-    real(wp), dimension(ngpt,nlay),   intent(out)   :: lay_source
-    real(wp), dimension(ngpt,nlay),   intent(out)   :: lev_source_dec, lev_source_inc
-
-    integer             ::  ilay, igpt, ibnd, gptS, gptE
-
-    do ibnd = 1, nbnd
-      do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-        sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-        sfc_source_Jac(igpt) = planck_frac(igpt,sfc_lay) * (sfc_source_bnd(ibnd) - sfc_source_bnd_Jac(ibnd))
-      end do
-    end do 
-
-    do ilay = 1, nlay
-      do ibnd = 1, nbnd
-        do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-          ! compute layer source irradiance for each g-point
-          lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-          ! compute level source irradiance for each g-point, one each for upward and downward paths
-          lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-          lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-        end do
-      end do 
-    end do
-
-  end subroutine lw_gpt_source_Jac
-  
-
-  pure subroutine lw_gpt_source(nbnd, ngpt, nlay, sfc_lay, band_limits, planck_frac, &
-      lay_source_bnd, lev_source_bnd, sfc_source_bnd, &     ! inputs: band source functions
-      sfc_source, lay_source, lev_source_dec, lev_source_inc)  ! outputs: g-point source functions
-
-      integer,                          intent(in   ) :: nbnd, ngpt, nlay, sfc_lay
-      integer, dimension(2,nbnd),       intent(in   ) :: band_limits
-      real(wp), dimension(ngpt,nlay),   intent(in   ) :: planck_frac 
-      real(wp), dimension(nbnd,nlay),   intent(in   ) :: lay_source_bnd
-      real(wp), dimension(nbnd,nlay+1), intent(in )   :: lev_source_bnd
-      real(wp), dimension(nbnd),        intent(in )   :: sfc_source_bnd      ! Surface source by band
-      ! outputs
-      real(wp), dimension(ngpt     ),   intent(out)   :: sfc_source
-      real(wp), dimension(ngpt,nlay),   intent(out)   :: lay_source
-      real(wp), dimension(ngpt,nlay),   intent(out)   :: lev_source_dec, lev_source_inc
-
-      integer             ::  ilay, igpt, ibnd, gptS, gptE
-
-    do ibnd = 1, nbnd
-      do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-        sfc_source(igpt)     = planck_frac(igpt,sfc_lay) * sfc_source_bnd(ibnd)
-      end do
-    end do 
-
-    do ilay = 1, nlay
-      do ibnd = 1, nbnd
-        do igpt = band_limits(1, ibnd), band_limits(2, ibnd)
-          ! compute layer source irradiance for each g-point
-          lay_source(igpt,ilay)       = planck_frac(igpt,ilay) * lay_source_bnd(ibnd,ilay)
-          ! compute level source irradiance for each g-point, one each for upward and downward paths
-          lev_source_dec(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay)
-          lev_source_inc(igpt,ilay)   = planck_frac(igpt,ilay) * lev_source_bnd(ibnd,ilay+1)
-        end do
-      end do 
-    end do
-
-  end subroutine lw_gpt_source
 
   ! ---------------------------------------------------------------
   !
@@ -1693,44 +1471,38 @@ end subroutine apply_BC_old
 
   end subroutine apply_BC_0
 
-
-  subroutine lw_solver_1rescl(nbnd, ngpt, nlay, ncol, top_at_1, D , band_limits, &
-                            tau, scaling, planck_frac, &
-                            lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_emis, &
+  subroutine lw_solver_1rescl(ngpt, nlay, ncol, top_at_1, D, &
+                            tau, scaling, &
+                            lay_source, lev_source, sfc_emis, sfc_source, &
                             radn_up, radn_dn, &
-                            sfc_source_bnd_Jac, radn_up_Jac, radn_dn_Jac) bind(C, name="lw_solver_1rescl")
-    integer,                               intent(in   ) :: nbnd, ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
-    logical(wl),                           intent(in   ) :: top_at_1
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: D            ! secant of propagation angle  []
-    integer,  dimension(2,nbnd),            intent(in   ) :: band_limits
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: tau          ! Absorption optical thickness []
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: scaling
-    real(wp), dimension(ngpt,nlay,  ncol), intent(in   ) :: planck_frac  ! Planck fractions (fraction of band source function associated with each g-point)
-    real(wp), dimension(nbnd,nlay,  ncol), intent(in   ) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol), intent(in   ) :: lev_source_bnd      ! Planck source at layers and levels by band [W/m2]
-    real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd      ! Surface source function by band [W/m2]
-    real(wp), dimension(nbnd,       ncol), intent(in   ) :: sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
-    real(wp), dimension(ngpt,       ncol), intent(in   ) :: sfc_emis            ! Surface emissivity      []
+                            sfc_source_Jac, radn_up_Jac, radn_dn_Jac) bind(C, name="lw_solver_1rescl")
+    integer,                                intent(in   ) :: ngpt, nlay, ncol ! Number of bands, g-points, layers, columns
+    logical(wl),                            intent(in   ) :: top_at_1
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) :: D            ! secant of propagation angle  []
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) :: tau          ! Absorption optical thickness []
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) :: scaling
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) :: lay_source      ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) :: lev_source      ! Planck source at layer edges [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) :: sfc_emis        ! Surface emissivity      []
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) :: sfc_source      ! Surface source function by band [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) :: sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
     ! Outputs
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) :: radn_up      ! Broadband radiances [W/m2-str]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) :: radn_dn      ! Top level must contain incident flux boundary condition
-    ! real(wp), dimension(nlay+1,     ncol), optional, &
-    !                                       intent(inout) ::  flux_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) ::  radn_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
-    real(wp), dimension(ngpt, nlay+1,     ncol), intent(inout) ::  radn_dn_Jac  
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) :: radn_up      ! Broadband radiances [W/m2-str]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) :: radn_dn      ! Top level must contain incident flux boundary condition
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) :: radn_up_Jac   ! surface temperature Jacobian of broadband radiances [W/m2-str / K]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) :: radn_dn_Jac  
 
     ! ------------------------------------
     ! Local variables. no col dependency
-    real(wp), dimension(:,:),         contiguous, pointer :: lev_source_up, lev_source_dn ! Mapping increasing/decreasing indicies to up/down
-    real(wp), dimension(ngpt,nlay),   target              :: lev_source_dec, lev_source_inc
-    real(wp), dimension(ngpt,nlay)                        :: lay_source
-    real(wp), dimension(ngpt)                             :: sfc_src       ! Surface source function by g-point [W/m2]
-    real(wp), dimension(ngpt)                             :: sfc_srcJac   ! Jacobian of surface source function by g-point [W/m2]
-    real(wp), dimension(ngpt,nlay) :: tau_loc, &  ! path length (tau/mu)
+    ! real(wp), dimension(:,:),         contiguous, pointer :: lev_source_up, lev_source_dn ! Mapping increasing/decreasing indicies to up/down
+    ! real(wp), dimension(ngpt,nlay),   target              :: lev_source_dec, lev_source_inc
+    ! real(wp), dimension(ngpt)       :: sfc_src       ! Surface source function by g-point [W/m2]
+    ! real(wp), dimension(ngpt)       :: sfc_srcJac   ! Jacobian of surface source function by g-point [W/m2]
+    real(wp), dimension(ngpt,nlay)  :: tau_loc, &  ! path length (tau/mu)
                                         trans       ! transmissivity  = exp_fast(-tau)
-    real(wp), dimension(ngpt,nlay) :: source_dn, source_up
-    real(wp), dimension(ngpt     ) :: source_sfc, sfc_albedo, source_sfcJac
-    real(wp), dimension(ngpt,nlay) :: An, Cn
+    real(wp), dimension(ngpt,nlay)  :: source_dn, source_up
+    ! real(wp), dimension(ngpt     )  :: source_sfc, sfc_albedo, source_sfcJac
+    real(wp), dimension(ngpt,nlay)  :: An, Cn
 
     real(wp), parameter :: pi = acos(-1._wp)
     integer             :: ilev, icol, igpt, ilay, sfc_lay, top_level
@@ -1745,13 +1517,13 @@ end subroutine apply_BC_old
     if(top_at_1) then
       top_level = 1
       sfc_lay   = nlay  ! the layer (not level) closest to surface
-      lev_source_up => lev_source_dec
-      lev_source_dn => lev_source_inc
+      ! lev_source_up => lev_source_dec
+      ! lev_source_dn => lev_source_inc
     else
       top_level = nlay+1
       sfc_lay = 1
-      lev_source_up => lev_source_inc
-      lev_source_dn => lev_source_dec
+      ! lev_source_up => lev_source_inc
+      ! lev_source_dn => lev_source_dec
     end if
 
     do icol = 1, ncol
@@ -1769,38 +1541,32 @@ end subroutine apply_BC_old
         An(:,ilev) = (1._wp-trans(:,ilev)*trans(:,ilev))
       end do
 
+      ! Old code, compute source functions and transport separately
       !
-      ! Compute the source function per g-point from source function per band
-      !
-#ifdef USE_TIMING
-    ret =  gptlstart('gpt_source')
-#endif
-      call lw_gpt_source_Jac(nbnd, ngpt, nlay, sfc_lay, band_limits, &
-                      planck_frac(:,:,icol), lay_source_bnd(:,:,icol), lev_source_bnd(:,:,icol), &
-                      sfc_source_bnd(:,icol), sfc_source_bnd_Jac(:,icol), &
-                      sfc_src, sfc_srcJac, lay_source, lev_source_dec, lev_source_inc)
-#ifdef USE_TIMING
-    ret =  gptlstop('gpt_source')
-#endif
-      !
-      ! Source function for diffuse radiation
-      !
-      call lw_source_noscat(ngpt, nlay, &
-                          lay_source, lev_source_up, lev_source_dn, &
-                          tau_loc, trans, source_dn, source_up)
-      !
-      ! Surface albedo, surface source function
-      !
-      sfc_albedo(:)     = 1._wp - sfc_emis(:,icol)
-      source_sfc(:)     = sfc_emis(:,icol) * sfc_src
-      source_sfcJac(:)  = sfc_emis(:,icol) * sfc_srcJac
-      !
-      ! Transport
-      !
-      call lw_transport_noscat(ngpt, nlay, top_at_1,  &
-                              tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
-                              radn_up(:,:,icol), radn_dn(:,:,icol), &
-                              source_sfcJac, radn_up_Jac(:,:,icol))
+      ! ! Source function for diffuse radiation
+      ! call lw_source_noscat(ngpt, nlay, &
+      !                     lay_source, lev_source_up, lev_source_dn, &
+      !                     tau_loc, trans, source_dn, source_up)
+      ! !
+      ! ! Surface albedo, surface source function
+      ! !
+      ! sfc_albedo(:)     = 1._wp - sfc_emis(:,icol)
+      ! source_sfc(:)     = sfc_emis(:,icol) * sfc_src
+      ! source_sfcJac(:)  = sfc_emis(:,icol) * sfc_srcJac
+      ! !
+      ! ! Transport
+      ! !
+      ! call lw_transport_noscat(ngpt, nlay, top_at_1,  &
+      !                         tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
+      !                         radn_up(:,:,icol), radn_dn(:,:,icol), &
+      !                         source_sfcJac, radn_up_Jac(:,:,icol))
+
+      ! Combined source and transport computation
+      call lw_source_transport_noscat(ngpt, nlay, top_at_1, &
+                              lay_source(:,:,icol), lev_source(:,:,icol),&
+                              sfc_source(:,icol),   sfc_source_Jac(:,icol), & 
+                              tau_loc, trans, sfc_emis(:,icol),  &
+                              radn_up(:,:,icol), radn_dn(:,:,icol), radn_up_Jac(:,:,icol)) ! outputs     
                   
       radn_dn_Jac(:,:,icol) = 0._wp
       !  make adjustment
@@ -1820,26 +1586,23 @@ end subroutine apply_BC_old
 !    scattering related properties (ssa and g) that the solver uses to compute scaling
 !
 ! ---------------------------------------------------------------
-  subroutine lw_solver_1rescl_GaussQuad(nbnd, ngpt, nlay, ncol, top_at_1, nmus, Ds, weights, &
-                                    band_limits, tau, ssa, g, planck_frac, &
-                                    lay_source_bnd, lev_source_bnd, &
-                                    sfc_source_bnd, sfc_emis, &
+  subroutine lw_solver_1rescl_GaussQuad( ngpt, nlay, ncol, top_at_1, nmus, Ds, weights, &
+                                    tau, ssa, g, lay_source, lev_source, &
+                                    sfc_emis, sfc_source, &
                                     flux_up, flux_dn, &
-                                    sfc_source_bnd_Jac, flux_up_Jac, flux_dn_Jac) bind(C, name="lw_solver_1rescl_GaussQuad")
-    integer,                                intent(in   ) ::  nbnd, ngpt, nlay, ncol ! Number of columns, layers, g-points
+                                    sfc_source_Jac, flux_up_Jac, flux_dn_Jac) bind(C, name="lw_solver_1rescl_GaussQuad")
+    integer,                                intent(in   ) ::  ngpt, nlay, ncol ! Number of columns, layers, g-points
     logical(wl),                            intent(in   ) ::  top_at_1
     integer,                                intent(in   ) ::  nmus         ! number of quadrature angles
     real(wp), dimension(nmus),              intent(in   ) ::  Ds, weights  ! quadrature secants, weights
-    integer,  dimension(2,nbnd),            intent(in   ) ::  band_limits
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  tau          ! Absorption optical thickness []
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  ssa          ! single-scattering albedo
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  g            ! asymmetry parameter []
-    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  planck_frac   ! Planck fractions (fraction of band source associated with each g-point) at layers
-    real(wp), dimension(nbnd,nlay,  ncol),  intent(in   ) ::  lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),  intent(in   ) ::  lev_source_bnd      ! Planck source at layers and levels by band [W/m2]
+    real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source      ! Planck source at layer average temperature [W/m2]
+    real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source      ! Planck source at layers and levels by band [W/m2]
     real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis            ! Surface emissivity      []
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd      ! Surface source function by band [W/m2]
-    real(wp), dimension(nbnd,       ncol),  intent(in   ) ::  sfc_source_bnd_Jac  ! Jacobian of surface source function by band[W/m2]
+    real(wp), dimension(ngpt,ncol),         intent(in   ) ::  sfc_source      ! Surface source function by band [W/m2]
+    real(wp), dimension(ngpt,ncol),         intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
     ! Outputs
     real(wp), dimension(ngpt, nlay+1,     ncol),  intent(inout) ::  flux_up      ! Broadband radiances [W/m2-str]
     real(wp), dimension(ngpt, nlay+1,     ncol),  intent(inout) ::  flux_dn      ! Top level must contain incident flux boundary condition
@@ -1849,17 +1612,14 @@ end subroutine apply_BC_old
                         
     ! Local variables
     real(wp), dimension(ngpt, ncol)             :: Ds_ngpt
-
-    real(wp), dimension(:,:,:),  allocatable      :: radn_up, radn_dn           ! Fluxes per quad angle  (nlay+1, ncol)
-    real(wp), dimension(:,:,:),  allocatable      :: radn_up_Jac, radn_dn_Jac   ! perturbed Fluxes per quad angle
-
-    real(wp), dimension(ncol, nlay,  ngpt) :: tauLoc           ! rescaled Tau
-    real(wp), dimension(ncol, nlay,  ngpt) :: scaling          ! scaling
-    real(wp), dimension(ncol, ngpt)        :: fluxTOA          ! downward flux at TOA
-
+    real(wp), dimension(:,:,:),  allocatable    :: radn_up, radn_dn           ! Fluxes per quad angle  (nlay+1, ncol)
+    real(wp), dimension(:,:,:),  allocatable    :: radn_up_Jac, radn_dn_Jac   ! perturbed Fluxes per quad angle
+    real(wp), dimension(ncol, nlay,  ngpt)      :: tauLoc           ! rescaled Tau
+    real(wp), dimension(ncol, nlay,  ngpt)      :: scaling          ! scaling
+    real(wp), dimension(ncol, ngpt)             :: fluxTOA          ! downward flux at TOA
     integer :: imu, top_level
     real    :: weight
-    real(wp), parameter                   :: tresh=1.0_wp - 1e-6_wp
+    real(wp), parameter  :: tresh=1.0_wp - 1e-6_wp
 
     ! Tang rescaling
     if (any(ssa*g >= tresh)) then
@@ -1875,15 +1635,17 @@ end subroutine apply_BC_old
     fluxTOA = flux_dn(1:ngpt, top_level, 1:ncol)
     Ds_ngpt(:,:) = Ds(1)
     weight = 2._wp*pi*weights(1)
+
     ! Transport is for intensity
     !   convert flux at top of domain to intensity assuming azimuthal isotropy
     !
     radn_dn(1:ngpt, top_level, 1:ncol)  = fluxTOA(1:ngpt, 1:ncol) / weight
-    call lw_solver_1rescl(nbnd, ngpt, nlay, ncol, top_at_1, Ds_ngpt, band_limits, &
-                          tauLoc, scaling, planck_frac, &
-                          lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_emis, &
+
+    call lw_solver_1rescl( ngpt, nlay, ncol, top_at_1, Ds_ngpt, &
+                          tauLoc, scaling, & 
+                          lay_source, lev_source, sfc_emis, sfc_source, &
                           flux_up, flux_dn, &
-                          sfc_source_bnd_Jac, flux_up_Jac, flux_dn_Jac)
+                          sfc_source_Jac, flux_up_Jac, flux_dn_Jac)
 
     flux_up     = flux_up     * weight
     flux_dn     = flux_dn     * weight
@@ -1904,11 +1666,11 @@ end subroutine apply_BC_old
       !   convert flux at top of domain to intensity assuming azimuthal isotropy
       !
       radn_dn(1:ngpt, top_level, 1:ncol)  = fluxTOA(1:ngpt, 1:ncol) / weight
-      call lw_solver_1rescl(nbnd, ngpt, nlay, ncol, top_at_1, Ds_ngpt, band_limits, &
-                          tauLoc, scaling, planck_frac, &
-                          lay_source_bnd, lev_source_bnd, sfc_source_bnd, sfc_emis, &
+      call lw_solver_1rescl( ngpt, nlay, ncol, top_at_1, Ds_ngpt, &
+                          tauLoc, scaling, &
+                          lay_source, lev_source, sfc_emis, sfc_source, &
                           radn_up, radn_dn, &
-                          sfc_source_bnd_Jac, radn_up_Jac, radn_dn_Jac)
+                          sfc_source_Jac, radn_up_Jac, radn_dn_Jac)
 
       flux_up    (:,:,:) = flux_up    (:,:,:) + weight*radn_up    (:,:,:)
       flux_dn    (:,:,:) = flux_dn    (:,:,:) + weight*radn_dn    (:,:,:)
