@@ -155,7 +155,7 @@ contains
       ! The optional argument flux_up_Jac can't be passed directly to the kernels, 
       ! because they have C-binds which are incompatible with optional/allocatable
       compute_Jac = .true.
-      if( .not. extents_are(flux_up_Jac, nlay+1, ncol)) &
+      if(.not. extents_are(flux_up_Jac, nlay+1, ncol)) &
         error_msg = "rte_lw: flux Jacobian inconsistently sized"
     else
       compute_Jac = .false.
@@ -211,7 +211,7 @@ contains
     !
     ! Optionally - use 2-stream methods when low-order scattering properties are provided?
     !
-    using_2stream = .true.
+    using_2stream = .false.
     if(present(use_2stream)) using_2stream = use_2stream
 
     !
@@ -302,51 +302,52 @@ contains
         ! No scattering two-stream calculation
         !
       if (present(lw_Ds)) then
-        call lw_solver_noscat_broadband(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
-                        lw_Ds,  gauss_wts(1,1), inc_flux_toa, &
-                        band_limits, optical_props%tau,      &
-                        sources%planck_frac, sources%lay_source_bnd,      &
-                        sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                        sfc_emis_gpt, fluxes%flux_up, fluxes%flux_dn, &
-                        sources%sfc_source_bnd_Jac, flux_upJac, logical(compute_Jac, wl))
+        call lw_solver_noscat_broadband(ngpt, nlay, ncol, logical(top_at_1, wl), &
+                        lw_Ds,                                  &
+                        gauss_wts(1,1), inc_flux_toa,           &
+                        optical_props%tau,                      &
+                        sources%lay_source, sources%lev_source, &
+                        sfc_emis_gpt, sources%sfc_source,       &
+                        fluxes%flux_up, fluxes%flux_dn,         &
+                        sources%sfc_source_Jac, flux_upJac, logical(compute_Jac, wl))
 
       else
-          call lw_solver_noscat_GaussQuad_broadband(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
+          call lw_solver_noscat_GaussQuad_broadband(ngpt, nlay, ncol, logical(top_at_1, wl), &
                           n_quad_angs, gauss_Ds(1:n_quad_angs,n_quad_angs), &
-                          gauss_wts(1:n_quad_angs,n_quad_angs), &
-                          inc_flux_toa, &
-                          band_limits, optical_props%tau,      &
-                          sources%planck_frac, sources%lay_source_bnd,      &
-                          sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                          sfc_emis_gpt, fluxes%flux_up, fluxes%flux_dn, &
-                          sources%sfc_source_bnd_Jac, flux_upJac,  logical(compute_Jac, wl))
+                          gauss_wts(1:n_quad_angs,n_quad_angs), inc_flux_toa, &
+                          optical_props%tau,                      &
+                          sources%lay_source, sources%lev_source, &
+                          sfc_emis_gpt, sources%sfc_source,       &
+                          fluxes%flux_up, fluxes%flux_dn,         &
+                          sources%sfc_source_Jac, flux_upJac,  logical(compute_Jac, wl))
       end if
 
       class is (ty_optical_props_2str)
-        if (using_2stream) then    ! BROADBAND VERSIONS NOT YET IMPLEMENTED
+        if (using_2stream) then    ! BROADBAND VERSION NOT YET IMPLEMENTED
         !
         ! two-stream calculation with scattering
         !
         !  error_msg =  optical_props%validate()
         !   if(len_trim(error_msg) > 0) return
-        !   call lw_solver_2stream_broadband(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
+        !   call lw_solver_2stream_broadband(ngpt, nlay, ncol, logical(top_at_1, wl), &
         !                          optical_props%tau, optical_props%ssa, optical_props%g,              &
-        !                          sources%lay_source, sources%lev_source_inc, sources%lev_source_dec, &
+        !                          sources%lay_source, sources%lev_source, &
         !                          sfc_emis_gpt, sources%sfc_source,       &
         !                          fluxes%flux_up, fluxes%flux_dn)
-        ! else
-        !   !
-        !   ! Re-scaled solution to account for scattering
-        !   !
-        !   !$acc enter data copyin(optical_props%tau, optical_props%ssa, optical_props%g)
-        !   call lw_solver_1rescl_GaussQuad_broadband(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
-        !                          n_quad_angs, gauss_Ds(1:n_quad_angs,n_quad_angs), &
-        !                          gauss_wts(1:n_quad_angs,n_quad_angs), &
-        !                          optical_props%tau, optical_props%ssa, optical_props%g, &
-        !                          sources%lay_source, sources%lev_source_inc, &
-        !                          sources%lev_source_dec, &
-        !                          sfc_emis_gpt, sources%sfc_source,&
-        !                          fluxes%flux_up, fluxes%flux_dn)
+        else
+          !
+          ! Re-scaled solution to account for scattering
+          !
+          !$acc enter data copyin(optical_props%tau, optical_props%ssa, optical_props%g)
+          ! call lw_solver_1rescl_GaussQuad_broadband(ngpt, nlay, ncol, logical(top_at_1, wl), &
+          !                        n_quad_angs, gauss_Ds(1:n_quad_angs,n_quad_angs), &
+          !                        gauss_wts(1:n_quad_angs,n_quad_angs), &
+          !                        inc_flux_toa,  &
+          !                        optical_props%tau, optical_props%ssa, optical_props%g, &
+          !                        sources%lay_source, sources%lev_source, &
+          !                        sfc_emis_gpt, sources%sfc_source,       &
+          !                        fluxes%flux_up, fluxes%flux_dn,    &
+          !                        sources%sfc_source_Jac)
         endif
         !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)
       class is (ty_optical_props_nstr)
@@ -373,26 +374,24 @@ contains
         ! No scattering two-stream calculation
         !
       if (present(lw_Ds)) then
-        call lw_solver_noscat(nband, ncol, nlay, ngpt, &
+        call lw_solver_noscat(ncol, nlay, ngpt, &
                               logical(top_at_1, wl), &
                               lw_Ds, gauss_wts(1,1), &
-                              band_limits, optical_props%tau,      &
-                              sources%planck_frac, sources%lay_source_bnd,      &
-                              sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                              sfc_emis_gpt, &
-                              gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac)
+                              optical_props%tau,      &
+                              sources%lay_source, sources%lev_source, &
+                              sfc_emis_gpt, sources%sfc_source,       &
+                              gpt_flux_up, gpt_flux_dn, sources%sfc_source_Jac, gpt_flux_upJac)
 
       else
 
-        call lw_solver_noscat_GaussQuad(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
+        call lw_solver_noscat_GaussQuad(ngpt, nlay, ncol, logical(top_at_1, wl), &
                               n_quad_angs, &
                               gauss_Ds(1:n_quad_angs,n_quad_angs), &
                               gauss_wts(1:n_quad_angs,n_quad_angs), &
-                              band_limits, optical_props%tau,      &
-                              sources%planck_frac, sources%lay_source_bnd,      &
-                              sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                              sfc_emis_gpt, &
-                              gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac)
+                              optical_props%tau,      &
+                              sources%lay_source, sources%lev_source, &
+                              sfc_emis_gpt, sources%sfc_source,       &
+                              gpt_flux_up, gpt_flux_dn, sources%sfc_source_Jac, gpt_flux_upJac)
 
       end if
 
@@ -403,11 +402,10 @@ contains
           !
          error_msg =  optical_props%validate()
           if(len_trim(error_msg) > 0) return
-          call lw_solver_2stream(nband, ngpt, nlay, ncol, logical(top_at_1, wl), band_limits,  &
+          call lw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl),  &
                               optical_props%tau, optical_props%ssa, optical_props%g,      &
-                              sources%planck_frac, sources%lay_source_bnd,      &
-                              sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                              sfc_emis_gpt, &
+                              sources%lay_source, sources%lev_source, &
+                              sfc_emis_gpt, sources%sfc_source,       &
                               gpt_flux_up, gpt_flux_dn)
         else
           !
@@ -416,15 +414,14 @@ contains
           allocate(gpt_flux_dnJac(ngpt, nlay+1, ncol))
           !$acc enter data create(gpt_flux_dnJac)
 
-          call lw_solver_1rescl_GaussQuad(nband, ngpt, nlay, ncol, logical(top_at_1, wl), &
+          call lw_solver_1rescl_GaussQuad(ngpt, nlay, ncol, logical(top_at_1, wl), &
                                  n_quad_angs, &
                                  gauss_Ds(1:n_quad_angs,n_quad_angs), &
                                  gauss_wts(1:n_quad_angs,n_quad_angs), &
-                                 band_limits, optical_props%tau, optical_props%ssa, optical_props%g, &
-                                 sources%planck_frac, sources%lay_source_bnd,      &
-                                 sources%lev_source_bnd,  sources%sfc_source_bnd,  &
-                                 sfc_emis_gpt, &
-                                 gpt_flux_up, gpt_flux_dn, sources%sfc_source_bnd_Jac, gpt_flux_upJac, gpt_flux_dnJac)
+                                 optical_props%tau, optical_props%ssa, optical_props%g, &
+                                 sources%lay_source, sources%lev_source, &
+                                 sfc_emis_gpt, sources%sfc_source,       &
+                                 gpt_flux_up, gpt_flux_dn, sources%sfc_source_Jac, gpt_flux_upJac, gpt_flux_dnJac)
         !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)
         endif
 
@@ -472,18 +469,18 @@ contains
   
     if (error_msg /= '') return
 
-    !$acc exit data detach(inc_flux_toa) delete(band_limits, inc_flux_zero, inc_flux_toa, inc_flux, flux_upJac, sfc_emis_gpt)
+    !$acc exit data detach(inc_flux_toa) delete(inc_flux_zero, inc_flux_toa, inc_flux, flux_upJac, sfc_emis_gpt)
     deallocate(sfc_emis_gpt, inc_flux_zero)
 
   end function rte_lw
   !--------------------------------------------------------------------------------------------------------------------
   !
-  ! Expand from band to g-point dimension, transpose dimensions (nband, ncol) -> (ncol,ngpt)
+  ! Expand from band to g-point dimension, transpose dimensions (ncol) -> (ncol,ngpt)
   !
-  subroutine expand(nband, ngpt, ncol, band_limits, arr_in, arr_out)
-    integer,                          intent(in)  :: ncol, nband, ngpt
+  subroutine expand(nband, ngpt, ncol, band_limits,arr_in, arr_out)
+    integer,                          intent(in)  :: nband, ngpt, ncol
     integer,  dimension(2,nband),     intent(in)  :: band_limits
-    real(wp), dimension(nband,ncol),  intent(in)  :: arr_in  ! (nband, ncol)
+    real(wp), dimension(nband,ncol),  intent(in)  :: arr_in  ! (ncol)
     real(wp), dimension(ngpt,ncol),   intent(out) :: arr_out ! (ngpt, ncol)
     ! -------------
     integer :: icol, iband, igpt

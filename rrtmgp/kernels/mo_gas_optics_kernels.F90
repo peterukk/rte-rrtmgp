@@ -598,18 +598,18 @@ contains
   end subroutine compute_tau_rayleigh
 
   ! ----------------------------------------------------------
-  subroutine compute_Planck_source(                        &
-                    ncol,nlay, nbnd, ngpt,                &
+  subroutine compute_Planck_source(             &
+                    ncol, nlay, nbnd, ngpt,                &
                     nflav, neta, npres, ntemp, nPlanckTemp,&
                     tlay, tlev, tsfc, sfc_lay,             &
                     fmajor, jeta, tropo, jtemp, jpress,    &
                     gpoint_bands, band_lims_gpt,           &
-                    pfracin, temp_ref_min, totplnk_delta, totplnk, gpoint_flavor, &
-                    sfc_src, lay_src, lev_src_inc, lev_src_dec, sfc_source_Jac) bind(C, name="compute_Planck_source")
+                    temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
+                    sfc_source, sfc_source_Jac, lay_source, lev_source) bind(C, name="compute_Planck_source")
     integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
     integer,                                    intent(in) :: nflav, neta, npres, ntemp, nPlanckTemp
-    real(wp),    dimension(nlay, ncol  ),        intent(in) :: tlay
-    real(wp),    dimension(nlay, ncol+1),        intent(in) :: tlev
+    real(wp),    dimension(nlay, ncol  ),       intent(in) :: tlay
+    real(wp),    dimension(nlay+1, ncol),       intent(in) :: tlev
     real(wp),    dimension(ncol       ),        intent(in) :: tsfc
     integer,                                    intent(in) :: sfc_lay
     ! Interpolation variables
@@ -624,134 +624,21 @@ contains
     real(wp), dimension(ngpt,neta,npres+1,ntemp), intent(in) :: pfracin
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
     integer,  dimension(2,ngpt),                  intent(in) :: gpoint_flavor
+    ! Outputs
+    real(wp), dimension(ngpt,     ncol),          intent(out) :: sfc_source
+    real(wp), dimension(ngpt,     ncol),          intent(out) :: sfc_source_Jac
+    real(wp), dimension(ngpt,nlay,ncol),          intent(out) :: lay_source
+    real(wp), dimension(ngpt,nlay+1,ncol),        intent(out) :: lev_source
 
-    real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_src
-    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lay_src
-    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: lev_src_inc, lev_src_dec
-
-    real(wp), dimension(ngpt,     ncol), intent(out) :: sfc_source_Jac
     ! -----------------
-    ! local
-    integer  :: ilay, icol, igpt, ibnd, itropo, iflav
-    integer  :: gptS, gptE
-    real(wp), dimension(2), parameter :: one = [1._wp, 1._wp]
-    real(wp) :: pfrac          (ngpt,nlay,  ncol)
-    real(wp) :: planck_function(nbnd,nlay+1,ncol)
-    real(wp), parameter               :: delta_Tsurf  = 1.0_wp
-    ! -----------------
+    ! local                                ! Planck functions per band
+    real(wp), dimension(nbnd       )    :: planck_function_sfc
+    real(wp), dimension(nbnd       )    :: planck_function_sfc_Jac
+    real(wp), dimension(nbnd        )   :: planck_function_lev, planck_function_lay
+    real(wp), dimension(ngpt,nlay   )   :: pfrac ! Planck fraction per g-point
 
-    ! Calculation of fraction of band's Planck irradiance associated with each g-point
-    do icol = 1, ncol
-      do ilay = 1, nlay
-        ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
-        itropo = merge(1,2,tropo(ilay,icol))
-        do ibnd = 1, nbnd
-          gptS = band_lims_gpt(1, ibnd)
-          gptE = band_lims_gpt(2, ibnd)
-          iflav = gpoint_flavor(itropo, gptS) !eta interpolation depends on band's flavor
-          pfrac(gptS:gptE,ilay,icol) = &
-            ! interpolation in temperature, pressure, and eta
-            interpolate3D_byflav(one, fmajor(:,:,:,iflav,ilay,icol), pfracin, &
-                          band_lims_gpt(1, ibnd), band_lims_gpt(2, ibnd),                 &
-                          jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)
-        end do ! band
-      end do   ! layer
-    end do     ! column
+    real(wp), dimension(ngpt        )   :: lev_src_inc, lev_src_dec
 
-    !
-    ! Planck function by band for the surface
-    ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
-    !
-    do icol = 1, ncol
-      planck_function(1:nbnd,1,icol) = interpolate1D(tsfc(icol)              , temp_ref_min, totplnk_delta, totplnk)
-      planck_function(1:nbnd,2,icol) = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk) 
-      !
-      ! Map to g-points
-      !
-      do ibnd = 1, nbnd
-        gptS = band_lims_gpt(1, ibnd)
-        gptE = band_lims_gpt(2, ibnd)
-        do igpt = gptS, gptE
-          sfc_src       (igpt, icol) = pfrac(igpt,sfc_lay,icol) * planck_function(ibnd,1,icol)
-          sfc_source_Jac(igpt, icol) = pfrac(igpt,sfc_lay,icol) * &
-                                (planck_function(ibnd, 2, icol) - planck_function(ibnd,1,icol))
-        end do
-      end do
-    end do ! icol
-
-    do icol = 1, ncol
-      do ilay = 1, nlay
-        ! Compute layer source irradiance for g-point, equals band irradiance x fraction for g-point
-        planck_function(:,ilay,icol) = interpolate1D(tlay(ilay,icol), temp_ref_min, totplnk_delta, totplnk)
-        !
-        ! Map to g-points
-        !
-        do ibnd = 1, nbnd
-          gptS = band_lims_gpt(1, ibnd)
-          gptE = band_lims_gpt(2, ibnd)
-          do igpt = gptS, gptE
-            lay_src(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function(ibnd,ilay,icol)
-          end do
-        end do
-      end do ! ilay
-    end do ! icol
-
-    ! compute level source irradiances for each g-point, one each for upward and downward paths
-    do icol = 1, ncol
-      planck_function(:,       1,icol) = interpolate1D(tlev(icol,     1), temp_ref_min, totplnk_delta, totplnk)
-      do ilay = 1, nlay
-        planck_function(:,ilay+1,icol) = interpolate1D(tlev(ilay,icol+1), temp_ref_min, totplnk_delta, totplnk)
-        !
-        ! Map to g-points
-        !
-        do ibnd = 1, nbnd
-          gptS = band_lims_gpt(1, ibnd)
-          gptE = band_lims_gpt(2, ibnd)
-          do igpt = gptS, gptE
-            lev_src_inc(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function(ibnd,ilay+1,icol)
-            lev_src_dec(igpt,ilay,icol) = pfrac(igpt,ilay,icol) * planck_function(ibnd,ilay,  icol)
-          end do
-        end do
-      end do ! ilay
-    end do ! icol
-
-  end subroutine compute_Planck_source
-
-  ! ----------------------------------------------------------
-  subroutine compute_source_bybnd_pfrac_bygpt(             &
-                    ncol, nlay, nbnd, ngpt,                &
-                    nflav, neta, npres, ntemp, nPlanckTemp,&
-                    tlay, tlev, tsfc,             &
-                    fmajor, jeta, tropo, jtemp, jpress,    &
-                    gpoint_bands, band_lims_gpt,           &
-                    temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
-                    sfc_source_bnd, sfc_source_bnd_Jac,    &
-                    lay_source_bnd, lev_source_bnd, pfrac) bind(C, name="compute_source_bybnd_pfrac_bygpt")
-    integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
-    integer,                                    intent(in) :: nflav, neta, npres, ntemp, nPlanckTemp
-    real(wp),    dimension(nlay, ncol  ),        intent(in) :: tlay
-    real(wp),    dimension(nlay+1, ncol),        intent(in) :: tlev
-    real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-    ! Interpolation variables
-    real(wp),    dimension(2,2,2,nflav,nlay, ncol), intent(in) :: fmajor
-    integer,     dimension(2,    nflav,nlay, ncol), intent(in) :: jeta
-    logical(wl), dimension(            nlay, ncol), intent(in) :: tropo
-    integer,     dimension(            nlay, ncol), intent(in) :: jtemp, jpress
-    ! Table-specific
-    integer, dimension(ngpt),                     intent(in) :: gpoint_bands ! start and end g-point for each band
-    integer, dimension(2, nbnd),                  intent(in) :: band_lims_gpt ! start and end g-point for each band
-    real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
-    real(wp), dimension(ngpt,neta,npres+1,ntemp), intent(in) :: pfracin
-    real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
-    integer,  dimension(2,ngpt),                  intent(in) :: gpoint_flavor
-
-    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd
-    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd_Jac
-    real(wp), dimension(nbnd,nlay,ncol),          intent(out) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),        intent(out) :: lev_source_bnd
-    real(wp), dimension(ngpt,nlay,ncol),          intent(out) :: pfrac
-    ! -----------------
-    ! local
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one          = [1._wp, 1._wp]
@@ -759,15 +646,10 @@ contains
 
     ! -----------------    
     do icol = 1, ncol
-      !
-      ! Planck function by band for the surface
-      !
-      sfc_source_bnd(:,icol)       = interpolate1D(tsfc(icol),                 temp_ref_min, totplnk_delta, totplnk)
-      sfc_source_bnd_Jac(:,icol)   = interpolate1D(tsfc(icol) + delta_Tsurf,   temp_ref_min, totplnk_delta, totplnk)
-      lev_source_bnd(:, 1, icol)   = interpolate1D(tlev(1,icol),               temp_ref_min, totplnk_delta, totplnk)
       do ilay = 1, nlay
-        lev_source_bnd(:,ilay+1,icol)  = interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk)
-        lay_source_bnd(:,ilay,icol)    = interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk)
+        planck_function_lev(:) = interpolate1D(tlev(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
+        planck_function_lay(:) = interpolate1D(tlay(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
+
         ! Calculation of fraction of band's Planck irradiance associated with each g-point
         ! itropo = 1 lower atmosphere; itropo = 2 upper atmosphere
         itropo = merge(1,2,tropo(ilay,icol))
@@ -775,63 +657,109 @@ contains
           gptS = band_lims_gpt(1, ibnd)
           gptE = band_lims_gpt(2, ibnd)
           iflav = gpoint_flavor(itropo, gptS) !eta interpolation depends on band's flavor
-          pfrac(gptS:gptE,ilay,icol) = &
+          pfrac(gptS:gptE,ilay) = &
             ! interpolation in temperature, pressure, and eta
             interpolate3D_byflav(one, fmajor(:,:,:,iflav,ilay,icol), pfracin, &
                           band_lims_gpt(1, ibnd), band_lims_gpt(2, ibnd),                 &
                           jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)
+
+          lev_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lev(ibnd)
+          lay_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lay(ibnd)
         end do ! band
       end do ! ilay
+
+      ! Source for surface and nlay+1
+      planck_function_sfc(:)          = interpolate1D(tsfc(icol),               temp_ref_min, totplnk_delta, totplnk)
+      planck_function_sfc_Jac(:)      = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk)
+      planck_function_lev(:)          = interpolate1D(tlev(nlay+1,icol),        temp_ref_min, totplnk_delta, totplnk)
+
+      do ibnd = 1, nbnd
+        gptS = band_lims_gpt(1, ibnd)
+        gptE = band_lims_gpt(2, ibnd)
+
+        ! Source for nlay+1
+        lev_source(gptS:gptE,nlay+1,icol) = pfrac(gptS:gptE,nlay) * planck_function_lev(ibnd)
+
+        ! Surface source
+        sfc_source    (gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * planck_function_sfc(ibnd)
+        sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * &
+                              (planck_function_sfc_Jac(ibnd) - planck_function_sfc(ibnd))
+      end do
+
     end do ! icol
 
-  end subroutine compute_source_bybnd_pfrac_bygpt
+  end subroutine compute_Planck_source
 
-
-  subroutine compute_source_bybnd(                    &
-                    ncol, nlay, nbnd,                 &
-                    ntemp, nPlanckTemp,                   &
-                    tlay, tlev, tsfc,            &
+  ! ----------------------------------------------------------
+  ! Like compute_Planck_source, but Planck fraction has already been computed by a neural network
+  pure subroutine compute_Planck_source_nn(             &
+                    ncol, nlay, nbnd, ngpt, nPlanckTemp, &
+                    tlay, tlev, tsfc, sfc_lay,             &
+                    gpt_bands, band_lims_gpt,           &
                     temp_ref_min, totplnk_delta, totplnk, &
-                    sfc_source_bnd, sfc_source_bnd_Jac,   &
-                    lay_source_bnd, lev_source_bnd) bind(C, name="compute_Planck_bybnd")
-    integer,                                    intent(in) :: ncol, nlay, nbnd
-    integer,                                    intent(in) :: ntemp, nPlanckTemp
-    real(wp),    dimension(nlay,ncol  ),        intent(in) :: tlay
-    real(wp),    dimension(nlay+1,ncol),        intent(in) :: tlev
-    real(wp),    dimension(ncol       ),        intent(in) :: tsfc
-
-    real(wp),                                     intent(in) :: temp_ref_min, totplnk_delta
-    real(wp), dimension(nPlanckTemp,nbnd),        intent(in) :: totplnk
-
-    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd
-    real(wp), dimension(nbnd,     ncol),          intent(out) :: sfc_source_bnd_Jac
-    real(wp), dimension(nbnd,nlay,ncol),          intent(out) :: lay_source_bnd
-    real(wp), dimension(nbnd,nlay+1,ncol),        intent(out) :: lev_source_bnd
+                    sfc_source, sfc_source_Jac, pfrac, lev_source)
+    integer,                                      intent(in)    :: ncol, nlay, nbnd, ngpt, nPlanckTemp
+    real(wp), dimension(nlay,  ncol),             intent(in)    :: tlay
+    real(wp), dimension(nlay+1,ncol),             intent(in)    :: tlev
+    real(wp), dimension(ncol       ),             intent(in)    :: tsfc
+    integer,                                      intent(in)    :: sfc_lay
+    integer,  dimension(ngpt),                    intent(in)    :: gpt_bands ! start and end g-point for each band
+    integer,  dimension(2, nbnd),                 intent(in)    :: band_lims_gpt ! start and end g-point for each band
+    real(wp),                                     intent(in)    :: temp_ref_min, totplnk_delta
+    real(wp), dimension(nPlanckTemp,nbnd),        intent(in)    :: totplnk
+    ! outputs
+    real(wp), dimension(ngpt,       ncol),        intent(out)   :: sfc_source
+    real(wp), dimension(ngpt,       ncol),        intent(out)   :: sfc_source_Jac
+    real(wp), dimension(ngpt,nlay,  ncol),        intent(inout) :: pfrac ! Planck fraction. trick to save memory: becomes lay_source on output
+    real(wp), dimension(ngpt,nlay+1,ncol),        intent(out)   :: lev_source
     ! -----------------
     ! local
-    integer  :: ilay, icol, ibnd
-    real(wp), parameter                             :: delta_Tsurf = 1.0_wp
+    real(wp), dimension(nbnd )  :: planck_function_sfc
+    real(wp), dimension(nbnd )  :: planck_function_sfc_Jac
+    real(wp), dimension(nbnd )  :: planck_function_lev, planck_function_lay
+    real(wp), dimension(ngpt )  :: lev_src_inc, lev_src_dec
+    real(wp), parameter         :: delta_Tsurf  = 1.0_wp
+    integer                     :: ilay, icol, igpt, ibnd, gptS, gptE
 
-#ifdef USE_TIMING
-    ret =  gptlstart('compute_source_bybnd')
-#endif
+    ! -----------------    
     do icol = 1, ncol
-      !
-      ! Planck function by band for the surface
-      ! Compute surface source irradiance for g-point, equals band irradiance x fraction for g-point
-      !
-      sfc_source_bnd(:,icol)       = interpolate1D(tsfc(icol),                temp_ref_min, totplnk_delta, totplnk)
-      sfc_source_bnd_Jac(:,icol)   = interpolate1D(tsfc(icol) + delta_Tsurf,  temp_ref_min, totplnk_delta, totplnk)
-      lev_source_bnd(:,1, icol)    = interpolate1D(tlev(1,icol),              temp_ref_min, totplnk_delta, totplnk)
+
+      ! Source for surface and nlay+1
+      planck_function_sfc(:)          = interpolate1D(tsfc(icol),               temp_ref_min, totplnk_delta, totplnk)
+      planck_function_sfc_Jac(:)      = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk)
+      planck_function_lev(:)          = interpolate1D(tlev(nlay+1,icol),        temp_ref_min, totplnk_delta, totplnk)
+
+      do ibnd = 1, nbnd
+        gptS = band_lims_gpt(1, ibnd)
+        gptE = band_lims_gpt(2, ibnd)
+
+        ! Source for last level
+        lev_source(gptS:gptE,nlay+1,icol) = pfrac(gptS:gptE,nlay,icol) * planck_function_lev(ibnd)
+
+        ! Surface source
+        sfc_source    (gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay,icol) * planck_function_sfc(ibnd)
+        sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay,icol) * &
+                              (planck_function_sfc_Jac(ibnd) - planck_function_sfc(ibnd))
+      end do
+
+      ! Source for levels and layers
       do ilay = 1, nlay
-        lay_source_bnd(:,ilay,icol)    = interpolate1D(tlay(ilay,icol),    temp_ref_min, totplnk_delta, totplnk)
-        lev_source_bnd(:,ilay+1,icol)  = interpolate1D(tlev(ilay+1,icol),  temp_ref_min, totplnk_delta, totplnk)
-      end do ! ilay
-    end do ! icol
-#ifdef USE_TIMING
-    ret =  gptlstop('compute_source_bybnd')
-#endif
-    end subroutine compute_source_bybnd
+        planck_function_lev(:) = interpolate1D_nocheck(tlev(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
+        planck_function_lay(:) = interpolate1D_nocheck(tlay(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
+
+        do ibnd = 1, nbnd
+          gptS = band_lims_gpt(1, ibnd)
+          gptE = band_lims_gpt(2, ibnd)
+
+          lev_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay,icol) * planck_function_lev(ibnd)
+          pfrac     (gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay,icol) * planck_function_lay(ibnd)
+          ! NOTE: "pfrac" is now actually lay_source
+
+        end do ! band
+      end do ! lay
+    end do ! col
+
+  end subroutine compute_Planck_source_nn
 
   ! --------------------------------------------------------------------------------------
   !
@@ -854,10 +782,10 @@ contains
 
     ! outputs
     real(sp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(out) :: pfrac, tau
+                                        intent(out)   :: pfrac, tau
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
-    real(sp), dimension(:), contiguous,   pointer     :: input_coldry   
+    real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
     integer                                           :: ilay, icol, nobs
 
     !  PREDICT PLANCK FRACTIONS
@@ -1085,6 +1013,30 @@ contains
     index = min(size(table,dim=1)-1, max(1, int(val0)+1)) ! limit the index range
     res(:) = table(index,:) + frac * (table(index+1,:) - table(index,:))
   end function interpolate1D
+
+
+  pure function interpolate1D_nocheck(val, offset, delta, table) result(res)
+    ! input
+    real(wp), intent(in) :: val,    & ! axis value at which to evaluate table
+                            offset, & ! minimum of table axis
+                            delta     ! step size of table axis
+    real(wp), dimension(:,:), contiguous, &
+              intent(in) :: table ! dimensions (axis, values)
+    ! output
+    real(wp), dimension(size(table,dim=2)) :: res
+
+    ! local
+    real(wp) :: val0 ! fraction index adjusted by offset and delta
+    integer :: index ! the first table index after which val occurs
+    real(wp) :: frac ! fractional term
+    ! -------------------------------------
+    val0 = (val - offset) / delta
+    index = int(val0) + 1 ! incremented here, Fortran because indexing starts from 1
+    frac = val0 - (index-1) ! get fractional part
+    res(:) = table(index,:) + frac * (table(index+1,:) - table(index,:))
+  end function interpolate1D_nocheck
+
+
   ! ----------------------------------------------------------------------------------------
   !   This function returns a single value from a subset (in gpoint) of the k table
   !
@@ -1190,25 +1142,29 @@ contains
   pure subroutine combine_2str(ncol, nlay, ngpt, tau_rayleigh, tau, ssa, g) &
       bind(C, name="combine_2str")
     integer,                                intent(in) :: ncol, nlay, ngpt
-    real(wp), dimension(ngpt,nlay, ncol),    intent(in   ) :: tau_rayleigh
+    real(wp), dimension(ngpt, nlay, ncol),  intent(in   ) :: tau_rayleigh
     real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau, ssa, g ! inout because components are allocated
     ! -----------------------
     integer  :: icol, ilay, igpt
     real(wp) :: t
     ! -----------------------
 
+    g(:,:,:) = 0._wp
+
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-          ! tau_tot = tau_abs + tau_rayleigh
            tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_rayleigh(igpt,ilay,icol)
-           g  (igpt,ilay,icol) = 0._wp
-           if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
-            ! ssa = tau_rayleigh / tau_tot
-             ssa(igpt,ilay,icol) = tau_rayleigh(igpt,ilay,icol) / tau(igpt,ilay,icol)
-           else
-             ssa(igpt,ilay,icol) = 0._wp
-           end if
+           !g  (igpt,ilay,icol) = 0._wp
+
+           ! This conditional is not needed, tau is always >> tiny()?
+          !  if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+          !    ssa(igpt,ilay,icol) = tau_rayleigh(igpt,ilay,icol) / tau(igpt,ilay,icol)
+          !  else
+          !    ssa(igpt,ilay,icol) = 0._wp
+          !  end if
+           ssa(igpt,ilay,icol) = tau_rayleigh(igpt,ilay,icol) / tau(igpt,ilay,icol)
+           
            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
            ssa(igpt,ilay,icol) = min(ssa(igpt,ilay,icol), 1.0_wp)
         end do
@@ -1229,15 +1185,18 @@ contains
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
-           if(tau(igpt,ilay,icol) > 2._dp * tiny( tau(igpt,ilay,icol))) then
-            ! ssa = tau_rayleigh / tau_tot
-              tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
-              tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_dp)
-           else
-              tau_ray(igpt,ilay,icol) = 0._dp
-           end if
+          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs + tau_ray
+           ! This conditional is not needed, tau is always >> tiny()?
+          !  if(tau(igpt,ilay,icol) > 2._dp * tiny( tau(igpt,ilay,icol))) then
+          !   ! ssa = tau_rayleigh / tau_tot
+          !     tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+          !  else
+          !     tau_ray(igpt,ilay,icol) = 0._dp
+          !  end if
+          tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+
+          ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+          tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_dp)
 
         end do
       end do
@@ -1257,16 +1216,19 @@ contains
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
-           if(tau(igpt,ilay,icol) > 2._sp * tiny( tau(igpt,ilay,icol))) then
-            ! ssa = tau_rayleigh / tau_tot
-              tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
-              tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_sp)
-           else
-              tau_ray(igpt,ilay,icol) = 0._sp
-           end if
+          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs + tau_ray
 
+          ! This conditional is not needed, tau is always >> tiny()?
+          !  if(tau(igpt,ilay,icol) > 2._sp * tiny( tau(igpt,ilay,icol))) then
+          !   ! ssa = tau_rayleigh / tau_tot
+          !     tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+          !  else
+          !     tau_ray(igpt,ilay,icol) = 0._sp
+          !  end if
+           tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+
+            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+           tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_sp)
         end do
       end do
     end do

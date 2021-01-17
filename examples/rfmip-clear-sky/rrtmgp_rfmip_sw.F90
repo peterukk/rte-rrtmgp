@@ -89,7 +89,7 @@ program rrtmgp_rfmip_sw
   !
   ! Timing library
   !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead
 #endif
 
@@ -104,7 +104,7 @@ program rrtmgp_rfmip_sw
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, inp_outp_file
+  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, inp_outp_file, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, use_nn, save_input_output, compare_flux, save_flux
   integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, ret, i
@@ -148,21 +148,20 @@ program rrtmgp_rfmip_sw
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
   use_nn      = .false.
-  ! Save neural network inputs (gas concentrations) and target outputs (tau, ssa)
-  save_input_output  = .false.
-  inp_outp_file =  "../../../../rrtmgp_dev/inputs_outputs/inp_outp_sw_Garand-big_1f1.nc"
-
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
+  ! Save neural network inputs and target outputs 
+  save_input_output   = .false.
+  inp_outp_file       =  "../../../../rrtmgp_dev/inputs_outputs/inp_outp_sw_Garand-big_1f1.nc"
 
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
 
   if (use_nn) then
-	  print *, 'loading tau model from ', modelfile_tau
+	  print *, 'loading shortwave absorption model from ', modelfile_tau
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading rayleigh model from ', modelfile_ray
     call neural_nets(2) % load(modelfile_ray)
@@ -246,8 +245,12 @@ program rrtmgp_rfmip_sw
   !
   if(top_at_1) then
     p_lev(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+    p_lay(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+
   else
     p_lev(nlay+1,:,:) &
+                 = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+    p_lay(nlay,:,:) &
                  = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
 
@@ -291,7 +294,11 @@ program rrtmgp_rfmip_sw
   ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
 #ifdef USE_PAPI  
-  ret = GPTLsetoption (PAPI_SP_OPS, 1);
+#ifdef DOUBLE_PRECISION
+  ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
+#else
+  ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
+#endif
 #endif  
   ret =  gptlinitialize()
 #endif
@@ -322,6 +329,7 @@ do i = 1, 10
     !    from pressures, temperatures, and gas concentrations...
     !true
 #ifdef USE_TIMING
+    ret =  gptlstart('clear_sky_total (SW)')
     ret =  gptlstart('gas_optics (SW)')
 #endif
 
@@ -411,6 +419,7 @@ do i = 1, 10
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
+    ret =  gptlstop('clear_sky_total (SW)')
 #endif
     ! Save RRTMGP inputs and outputs
     if (save_input_output) then
@@ -435,7 +444,8 @@ do i = 1, 10
   !
 #ifdef USE_TIMING
  end do
-  ret = gptlpr(block_size)
+  timing_file = "timing.sw-" // adjustl(trim(block_size_char))
+  ret = gptlpr_file(trim(timing_file))
   ret = gptlfinalize()
 #endif
 
@@ -492,9 +502,13 @@ do i = 1, 10
 
 
   if (compare_flux) then
-    print *, "-----------------------------------------------------------------------------------------"
-    print *, "-----COMPARING ERRORS (W.R.T LINE-BY-LINE) OF NEURAL NETWORK AND ORIGINAL SCHEME --------"
-    print *, "-----------------------------------------------------------------------------------------"
+      print *, "-------------------------------------------------------------------------------------------------"
+    if (use_nn) then
+      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (using NNs) AND ORIGINAL CODE ---------"
+    else
+      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (not using NNs) AND ORIGINAL CODE -----"
+    end if
+    print *, "---------------------------------------------------------------------------------------------------"
 
     allocate(rsd_ref( nlay+1, ncol, nexp))
     allocate(rsu_ref( nlay+1, ncol, nexp))  
@@ -530,137 +544,137 @@ do i = 1, 10
 
     print *, "------------- UPWELLING -------------- "
 
-    print *, "MAE in upwelling fluxes of NN and RRTMGP, present-day:            ", &
+    print *, "MAE in upwelling fluxes of new result and RRTMGP, present-day:            ", &
      mae(reshape(rsu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_nn(:,:,1), shape = [1*ncol*(nlay+1)])),&
      mae(reshape(rsu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_ref(:,:,1), shape = [1*ncol*(nlay+1)]))
 
-    print *, "MAE in upwelling fluxes of NN and RRTMGP, future:                 ", &
+    print *, "MAE in upwelling fluxes of new result and RRTMGP, future:                 ", &
      mae(reshape(rsu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsu_nn(:,:,4), shape = [1*ncol*(nlay+1)])),&
      mae(reshape(rsu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
-    print *, "bias in upwelling flux of NN and RRTMGP, present-day, top-of-atm.:", &
+    print *, "bias in upwelling flux of new result and RRTMGP, present-day, top-of-atm.:", &
       bias(reshape(rsu_lbl(1,:,1), shape = [1*ncol]),    reshape(rsu_nn(1,:,1), shape = [1*ncol])), &
       bias(reshape(rsu_lbl(1,:,1), shape = [1*ncol]),    reshape(rsu_ref(1,:,1), shape = [1*ncol])) 
 
-    print *, "bias in upwelling flux of NN and RRTMGP, future, top-of-atm.:     ", &
+    print *, "bias in upwelling flux of new result and RRTMGP, future, top-of-atm.:     ", &
       bias(reshape(rsu_lbl(1,:,4), shape = [1*ncol]),    reshape(rsu_nn(1,:,4), shape = [1*ncol])), &
       bias(reshape(rsu_lbl(1,:,4), shape = [1*ncol]),    reshape(rsu_ref(1,:,4), shape = [1*ncol])) 
 
-    print *, "bias in upwelling flux of NN and RRTMGP, future-all, top-of-atm.: ", &
+    print *, "bias in upwelling flux of new result and RRTMGP, future-all, top-of-atm.: ", &
       bias(reshape(rsu_lbl(1,:,17), shape = [1*ncol]),    reshape(rsu_nn(1,:,17), shape = [1*ncol])), &
       bias(reshape(rsu_lbl(1,:,17), shape = [1*ncol]),    reshape(rsu_ref(1,:,17), shape = [1*ncol])) 
 
-    print *, "bias in upwelling flux of NN and RRTMGP, ALL EXPS, top-of-atm.:   ", &
+    print *, "bias in upwelling flux of new result and RRTMGP, ALL EXPS, top-of-atm.:   ", &
       bias(reshape(rsu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rsu_nn(1,:,:), shape = [nexp*ncol])), &
       bias(reshape(rsu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rsu_ref(1,:,:), shape = [nexp*ncol])) 
 
 
     print *, "-------------- DOWNWELLING --------------"
 
-    print *, "MAE in downwelling fluxes of NN and RRTMGP, present-day:          ", &
+    print *, "MAE in downwelling fluxes of new result and RRTMGP, present-day:          ", &
      mae(reshape(rsd_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_nn(:,:,1), shape = [1*ncol*(nlay+1)])),&
      mae(reshape(rsd_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_ref(:,:,1), shape = [1*ncol*(nlay+1)]))
 
-    print *, "MAE in downwelling fluxes of NN and RRTMGP, future:               ", &
+    print *, "MAE in downwelling fluxes of new result and RRTMGP, future:               ", &
      mae(reshape(rsd_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsd_nn(:,:,4), shape = [1*ncol*(nlay+1)])),&
     mae(reshape(rsd_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsd_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
     print *, "-------------- NET FLUX --------------"
 
-     print *, "Max-vertical-error in net fluxes of NN and RRTMGP, pres.day:  ", &
-     maxval(rsdu_lbl(:,:,1)-rsdu_nn(:,:,1)), maxval(rsdu_lbl(:,:,1)-rsdu_ref(:,:,1))
+     print *, "Max-vertical-error in net fluxes of new result and RRTMGP, pres.day:  ", &
+     maxval(abs(rsdu_lbl(:,:,1)-rsdu_nn(:,:,1))), maxval(abs(rsdu_lbl(:,:,1)-rsdu_ref(:,:,1)))
 
-     print *, "Max-vertical-error in net fluxes of NN and RRTMGP, future:    ", &
-     maxval(rsdu_lbl(:,:,4)-rsdu_nn(:,:,4)), maxval(rsdu_lbl(:,:,4)-rsdu_ref(:,:,4))
+     print *, "Max-vertical-error in net fluxes of new result and RRTMGP, future:    ", &
+     maxval(abs(rsdu_lbl(:,:,4)-rsdu_nn(:,:,4))), maxval(abs(rsdu_lbl(:,:,4)-rsdu_ref(:,:,4)))
 
-     print *, "Max-vertical-error in net fluxes of NN and RRTMGP, future-all:", &
-     maxval(rsdu_lbl(:,:,17)-rsdu_nn(:,:,17)), maxval(rsdu_lbl(:,:,17)-rsdu_ref(:,:,17))
+     print *, "Max-vertical-error in net fluxes of new result and RRTMGP, future-all:", &
+     maxval(abs(rsdu_lbl(:,:,17)-rsdu_nn(:,:,17))), maxval(abs(rsdu_lbl(:,:,17)-rsdu_ref(:,:,17)))
 
      print *, "---------"
 
-     print *, "MAE in net fluxes of NN and RRTMGP, present-day:               ", &
+     print *, "MAE in net fluxes of new result and RRTMGP, present-day:               ", &
      mae(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,1), shape = [1*ncol*(nlay+1)])), &
      mae(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,1), shape = [1*ncol*(nlay+1)])) 
 
-    print *, "MAE in net fluxes of NN and RRTMGP, future:                    ", &
+    print *, "MAE in net fluxes of new result and RRTMGP, future:                    ", &
      mae(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
      mae(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
-    print *, "MAE in net fluxes of NN and RRTMGP, future-all:                ", &
+    print *, "MAE in net fluxes of new result and RRTMGP, future-all:                ", &
      mae(reshape(rsdu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,17), shape = [1*ncol*(nlay+1)])),&
      mae(reshape(rsdu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,17), shape = [1*ncol*(nlay+1)]))
 
-     print *, "MAE in net fluxes of NN and RRTMGP, ALL EXPS:                  ", &
+     print *, "MAE in net fluxes of new result and RRTMGP, ALL EXPS:                  ", &
      mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)])), &
      mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)])) 
 
     print *, "---------"
 
-    print *, "MAE in net fluxes at TOA of NN and RRTMGP, future:             ", &
+    print *, "MAE in net fluxes at TOA of new result and RRTMGP, future:             ", &
      mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,4), shape = [1*ncol*(1)])), &
      mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,4), shape = [1*ncol*(1)]))
 
-     print *, "MAE in net fluxes at TOA of NN and RRTMGP, present-day:        ", &
+     print *, "MAE in net fluxes at TOA of new result and RRTMGP, present-day:        ", &
      mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,1), shape = [1*ncol*(1)])), &
      mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,1), shape = [1*ncol*(1)]))
 
      print *, "---------"
 
 
-    print *, "RMSE in net fluxes of NN and RRTMGP, present-day, PBL:         ", &
+    print *, "RMSE in net fluxes of new result and RRTMGP, present-day, PBL:         ", &
      rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_nn(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)])), &
      rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_ref(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]))
 
-    print *, "RMSE in net fluxes of NN and RRTMGP, present-day, SURFACE:     ", &
+    print *, "RMSE in net fluxes of new result and RRTMGP, present-day, SURFACE:     ", &
      rmse(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol])), &
      rmse(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_ref(nlay+1,:,1), shape = [1*ncol]))
 
-    print *, "RMSE in net fluxes of NN and RRTMGP, future-all, SURFACE:     ", &
+    print *, "RMSE in net fluxes of new result and RRTMGP, future-all, SURFACE:     ", &
      rmse(reshape(rsdu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,17), shape = [1*ncol])), &
      rmse(reshape(rsdu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rsdu_ref(nlay+1,:,17), shape = [1*ncol]))
 
-    print *, "RMSE in net fluxes of NN and RRTMGP, pre-industrial, SURFACE: ", &
+    print *, "RMSE in net fluxes of new result and RRTMGP, pre-industrial, SURFACE: ", &
      rmse(reshape(rsdu_lbl(nlay+1,:,2), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,2), shape = [1*ncol])), &
      rmse(reshape(rsdu_lbl(nlay+1,:,2), shape = [1*ncol]),    reshape(rsdu_ref(nlay+1,:,2), shape = [1*ncol]))
 
     print *, "---------"
 
-    print *, "bias in net fluxes of NN and RRTMGP, present-day:              ", &
+    print *, "bias in net fluxes of new result and RRTMGP, present-day:              ", &
      bias(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,1), shape = [1*ncol*(nlay+1)])), &
      bias(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,1), shape = [1*ncol*(nlay+1)])) 
 
-    print *, "bias in net fluxes of NN and RRTMGP, present-day, SURFACE:     ", &
+    print *, "bias in net fluxes of new result and RRTMGP, present-day, SURFACE:     ", &
      bias(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol])), &
      bias(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_ref(nlay+1,:,1), shape = [1*ncol])) 
 
-    print *, "bias in net fluxes of NN and RRTMGP, future:                   ", &
+    print *, "bias in net fluxes of new result and RRTMGP, future:                   ", &
      bias(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
      bias(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
-    print *, "bias in net fluxes of NN and RRTMGP, future-all:               ", &
+    print *, "bias in net fluxes of new result and RRTMGP, future-all:               ", &
      bias(reshape(rsdu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,17), shape = [1*ncol*(nlay+1)])), &
      bias(reshape(rsdu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,17), shape = [1*ncol*(nlay+1)]))
 
-    print *, "bias in net fluxes of NN and RRTMGP, future-all, SURFACE:      ", &
+    print *, "bias in net fluxes of new result and RRTMGP, future-all, SURFACE:      ", &
      bias(reshape(rsdu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,17), shape = [1*ncol])), &
      bias(reshape(rsdu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rsdu_ref(nlay+1,:,17), shape = [1*ncol])) 
 
     print *, "---------"
 
-    print *, "MAE in upwelling fluxes of NN w.r.t RRTMGP, present-day:       ", &
+    print *, "MAE in upwelling fluxes of new result w.r.t RRTMGP, present-day:       ", &
      mae(reshape(rsu_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
 
-    print *, "MAE in downwelling fluxes of NN w.r.t RRTMGP, present-day:     ", &
+    print *, "MAE in downwelling fluxes of new result w.r.t RRTMGP, present-day:     ", &
      mae(reshape(rsd_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
 
     print *, "Max-diff in d.w. flux w.r.t RRTMGP ", &
-     maxval(rsd_ref(:,:,:)-rsd_nn(:,:,:))
+     maxval(abs(rsd_ref(:,:,:)-rsd_nn(:,:,:)))
  
     print *, "Max-diff in u.w. flux w.r.t RRTMGP ", &
-     maxval(rsu_ref(:,:,:)-rsu_nn(:,:,:))
+     maxval(abs(rsu_ref(:,:,:)-rsu_nn(:,:,:)))
 
-    print *, "Max-diff in net flux w.r.t RRTMGP  ", &
-     maxval(rsdu_ref(:,:,:)-rsdu_nn(:,:,:)) 
+    print *, "Max-diff in net flux w.r.t RRTMGP ", &
+     maxval(abs(rsdu_ref(:,:,:)-rsdu_nn(:,:,:))) 
 
     deallocate(rsd_ref,rsu_ref,rsd_nn,rsu_nn,rsd_lbl,rsu_lbl,rsdu_ref,rsdu_nn,rsdu_lbl)
 
