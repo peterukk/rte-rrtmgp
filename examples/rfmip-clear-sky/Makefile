@@ -1,11 +1,11 @@
 #
 # Here set variables RRTMGP_BUILD, NCHOME, NFHOME, TIME_DIR (for GPTL)
-#   or have those variables set in the environment
+# and link against BLAS library, or have those variables set in the environment
 #
 RRTMGP_ROOT=../../
 $(info VAR="$(RRTMGP_ROOT)")
 RRTMGP_BUILD=$(RRTMGP_ROOT)/build
-#-include Makefile.libs
+-include Makefile.libs
 -include $(RRTMGP_BUILD)/Makefile.conf
 #
 # RRTMGP library, module files
@@ -22,29 +22,22 @@ FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
 
-#
-# Setting macro TIMING=yes uses routines from the General Purpose Timing Library
-#  https://jmrosinski.github.io/GPTL/
-#
-# THIS IS SET UP IN THE MASTER MAKEFILE
 
-# -------- Use OpenMP? -------
-ifeq ($(BLASLIB),blis-amd)
-   USE_OPENMP=1
-endif
-ifdef USE_OPENMP
-	OMPFLAG = -fopenmp
-	FCFLAGS += -DUSE_OPENMP
-endif
-
-ifdef USE_OPENACC
-  FCFLAGS += -DUSE_OPENACC
-endif
-
+# 
+# -------- BLAS lbirary: required for RRTMGP-NN --------
 # 
 # Choose BLAS library: e.g. "blis", "openblas", "mkl"
 # 
-# BLASLIB and BLAS_DIR has been set in Makefile.conf in main build directory
+
+# Here we use BLIS (https://github.com/flame/blis) which is one of the fastest 
+# BLAS libraries available (on Intel platforms MKL is probably faster). 
+# Depending on your BLAS library you might have to make changes below
+
+export BLASLIB  = blis-amd
+export BLAS_DIR = $(HOME)/blis-amd
+
+# export BLASLIB = openblas
+# export BLAS_DIR =  $(HOME)/blis
 
 # ifeq ($(FC),ifort)
 # 	BLASLIB=mkl
@@ -59,13 +52,29 @@ else ifeq ($(BLASLIB),blis-amd)
 else ifeq ($(BLASLIB),openblas)
 	LIBS 		+= -lopenblas 
 else ifeq ($(BLASLIB),mkl)
-	
+	# Nothing needed here if -I${MKLROOT}/include was added to FCFLAGS in build/Makefile.conf
 endif
+
+# -------- Use OpenMP? May be needed for BLAS -------
+ifeq ($(BLASLIB),blis-amd)
+   USE_OPENMP=1
+endif
+#USE_OPENMP=1
+
+ifdef USE_OPENMP
+	OMPFLAG = -fopenmp
+	FCFLAGS += -DUSE_OPENMP
+endif
+
+ifdef USE_OPENACC
+  FCFLAGS += -DUSE_OPENACC
+endif
+
 
 # Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
 #FCFLAGS += -fpp
 
-ifeq ($(USE_TIMING),yes)
+ifeq ($(GPTL_TIMING),1)
 	#
 	# Timing library
 	#
@@ -74,9 +83,7 @@ ifeq ($(USE_TIMING),yes)
 	FCFLAGS += -DUSE_TIMING
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl
-endif
-
-ifeq ($(USE_FULL_TIMING),yes)
+else ifeq ($(GPTL_TIMING),2)
 	#
 	# Timing library
 	#
@@ -86,7 +93,6 @@ ifeq ($(USE_FULL_TIMING),yes)
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl  -rdynamic  -lpapi
 endif
-
 
 
 ifeq ($(DEV_MODE),yes)

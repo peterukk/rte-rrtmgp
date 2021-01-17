@@ -5,7 +5,7 @@ RRTMGP_DIR = ../rrtmgp
 #
 # Compiler variables FC, FCFLAGS can be set in the environment or in Makefile.conf
 #
-include Makefile.conf
+-include Makefile.conf
 #
 # Choose kernels depending on environment variable
 #
@@ -30,13 +30,14 @@ ifdef FAST_EXPONENTIAL
 	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
-ifdef USE_TIMING
+# Use GPTL timing library? Added this to main makefile to enable
+# timing instrumentation within RRTMGP and RTE source code
+ifeq ($(GPTL_TIMING),1)
 	# Timing library GPTL
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING 
-endif
 
-ifdef USE_FULL_TIMING
-	# GPTL + PAPI 
+# Use GPTL with PAPI for hardware performance counters? (enables measuring compute intensity)
+else ifeq ($(GPTL_TIMING),2)
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
 endif
 

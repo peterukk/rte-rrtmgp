@@ -24,11 +24,11 @@ module mo_source_functions
   !   spectral mapping in each direction separately, and at the surface
   !
   type, extends(ty_optical_props), public :: ty_source_func_lw
-    real(wp), allocatable, dimension(:,:,:) :: lay_source_bnd,     & ! Planck sources by band (nbnd, nlay, ncol)
-                                               lev_source_bnd,  & 
-                                               planck_frac       ! PLanck fraction by gpoint (ngpt, nlay, ncol)
-    real(wp), allocatable, dimension(:,:  ) :: sfc_source_bnd
-    real(wp), allocatable, dimension(:,:  ) :: sfc_source_bnd_Jac ! surface source Jacobian 
+    real(wp), allocatable, dimension(:,:,:) :: lev_source, lay_source
+    real(wp), allocatable, dimension(:,:  ) :: sfc_source
+    real(wp), allocatable, dimension(:,:  ) :: sfc_source_Jac ! surface source Jacobian 
+
+
   contains
     generic,   public :: alloc => alloc_lw, copy_and_alloc_lw
     procedure, private:: alloc_lw
@@ -72,7 +72,7 @@ contains
     logical                              :: is_allocated_lw
 
     is_allocated_lw = this%is_initialized() .and. &
-                      allocated(this%sfc_source_bnd)
+                      allocated(this%sfc_source)
   end function is_allocated_lw
   ! --------------------------------------------------------------
   function alloc_lw(this, ncol, nlay) result(err_message)
@@ -80,7 +80,7 @@ contains
     integer,                     intent(in   ) :: ncol, nlay
     character(len = 128)                       :: err_message
 
-    integer :: ngpt, nbnd
+    integer :: ngpt
 
     err_message = ""
     if(.not. this%is_initialized()) &
@@ -89,21 +89,17 @@ contains
       err_message = "source_func_lw%alloc: must provide positive extents for ncol, nlay"
     if (err_message /= "") return
 
-    if(allocated(this%sfc_source_bnd)) deallocate(this%sfc_source_bnd)
-    if(allocated(this%sfc_source_bnd_Jac)) deallocate(this%sfc_source_bnd_Jac)
-    if(allocated(this%lay_source_bnd)) deallocate(this%lay_source_bnd)
-    if(allocated(this%lev_source_bnd)) deallocate(this%lev_source_bnd)
-    if(allocated(this%planck_frac)) deallocate(this%planck_frac)
+    if(allocated(this%sfc_source)) deallocate(this%sfc_source)
+    if(allocated(this%sfc_source_Jac)) deallocate(this%sfc_source_Jac)
+    if(allocated(this%lev_source)) deallocate(this%lev_source)
+    if(allocated(this%lay_source)) deallocate(this%lay_source)
 
     ngpt = this%get_ngpt()
-    nbnd  = this%get_nband()
-    allocate(this%sfc_source_bnd(nbnd , ncol), this%lay_source_bnd(nbnd,nlay,ncol), &
-             this%lev_source_bnd(nbnd,nlay+1,ncol), this%planck_frac(ngpt,nlay,ncol))
-    allocate(this%sfc_source_bnd_Jac(nbnd, ncol))
+    allocate(this%sfc_source(ngpt , ncol), this%lev_source(ngpt,nlay+1,ncol))
+    allocate(this%sfc_source_Jac(ngpt, ncol), this%lay_source(ngpt,nlay,ncol))
     
     !$acc enter data create(this)
-    !$acc enter data create(this%sfc_source_bnd, this%sfc_source_bnd_Jac, this%lay_source_bnd, &
-    !$acc& this%lev_source_bnd, this%planck_frac)
+    !$acc enter data create(this%sfc_source, this%sfc_source_Jac, this%lev_source, this%lay_source)
 
   end function alloc_lw
   ! --------------------------------------------------------------
@@ -178,26 +174,23 @@ contains
   subroutine finalize_lw(this)
     class(ty_source_func_lw),    intent(inout) :: this
 
-    if(allocated(this%lay_source_bnd    )) then 
-      !$acc exit data delete(this%lay_source_bnd)
-      deallocate(this%lay_source_bnd)
+    if(allocated(this%lev_source)) then
+      !$acc exit data delete(this%lev_source)
+      deallocate(this%lev_source)
     end if
-    if(allocated(this%lev_source_bnd)) then
-      !$acc exit data delete(this%lev_source_bnd)
-      deallocate(this%lev_source_bnd)
+    if(allocated(this%lay_source)) then
+      !$acc exit data delete(this%lay_source)
+      deallocate(this%lay_source)
     end if
-    if(allocated(this%planck_frac)) then
-      !$acc exit data delete(this%planck_frac)
-      deallocate(this%planck_frac)
-    end if
-    if(allocated(this%sfc_source_bnd    )) then
-      !$acc exit data delete(this%sfc_source_bnd)
-      deallocate(this%sfc_source_bnd)
+
+    if(allocated(this%sfc_source    )) then
+      !$acc exit data delete(this%sfc_source)
+      deallocate(this%sfc_source)
     end if 
 
-    if(allocated(this%sfc_source_bnd_Jac    )) then
-      !$acc exit data delete(this%sfc_source_bnd_Jac)
-      deallocate(this%sfc_source_bnd_Jac)
+    if(allocated(this%sfc_source_Jac    )) then
+      !$acc exit data delete(this%sfc_source_Jac)
+      deallocate(this%sfc_source_Jac)
     end if 
 
     call this%ty_optical_props%finalize()
@@ -223,7 +216,7 @@ contains
     integer :: get_ncol_lw
 
     if(this%is_allocated()) then
-      get_ncol_lw = size(this%lay_source_bnd,3)
+      get_ncol_lw = size(this%lev_source,3) -1
     else
       get_ncol_lw = 0
     end if
@@ -234,7 +227,7 @@ contains
     integer :: get_nlay_lw
 
     if(this%is_allocated()) then
-      get_nlay_lw = size(this%lay_source_bnd,2)
+      get_nlay_lw = size(this%lev_source,2) - 1
     else
       get_nlay_lw = 0
     end if
@@ -276,11 +269,11 @@ contains
     if(subset%is_allocated()) call subset%finalize()
     err_message = subset%alloc(n, full%get_nlay(), full)
     if(err_message /= "") return
-    subset%sfc_source_bnd(:,1:n)  = full%sfc_source_bnd    (:,start:start+n-1)
-    subset%sfc_source_bnd_Jac(:,1:n)  = full%sfc_source_bnd_Jac   (:,start:start+n-1)
-    subset%lay_source_bnd(:,:,1:n) = full%lay_source_bnd    (:,:,start:start+n-1)
-    subset%lev_source_bnd(:,:,1:n) = full%lev_source_bnd(:,:,start:start+n-1)
-    subset%planck_frac   (:,:,1:n) = full%planck_frac   (:,:,start:start+n-1)
+    subset%sfc_source(:,1:n)      = full%sfc_source    (:,start:start+n-1)
+    subset%sfc_source_Jac(:,1:n)  = full%sfc_source_Jac(:,start:start+n-1)
+    subset%lev_source(:,:,1:n)    = full%lev_source(:,:,start:start+n-1)
+    subset%lay_source(:,:,1:n)    = full%lay_source(:,:,start:start+n-1)
+
   end function get_subset_range_lw
   ! ------------------------------------------------------------------------------------------
   function get_subset_range_sw(full, start, n, subset) result(err_message)

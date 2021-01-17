@@ -3,10 +3,11 @@
 #
 # Fortran compiler command
 export FC = ifort
+
 # Fortran compiler flags
 #
-# Optimized
-#
+# Optimized 
+# 
 # export FCFLAGS = -O3 -mkl=sequential -heap-arrays -I${MKLROOT}/include
 export FCFLAGS = -O3 -mkl=sequential  -I${MKLROOT}/include
 
@@ -19,23 +20,3 @@ export FCFLAGS = -O3 -mkl=sequential  -I${MKLROOT}/include
 # ------------------------------------------------------------------------------------------
 export TIME_DIR = /home/puk/gptl-ifort/
 #export TIME_DIR = /data/puk/soft/gptl/
-
-# ------------------------------------------------------------------------------------------
-# -------  (REQUIRED) BLAS LIBRARY ---------------------------------------------------------
-# ------------------------------------------------------------------------------------------
-
-export BLASLIB  = mkl
-# BLAS_DIR not needed when MKLROOT is specified, if this is not the case, 
-# need to tinker with examples/rfmip-clear-sky/Makefile
-# export BLAS_DIR =
-
-# ------------------------------------------------------------------------------------------
-# -------  (REQUIRED) NetCDF C and Fortran libraries ----------------------------------------
-# ------------------------------------------------------------------------------------------
-export NCHOME = /home/puk/netcdf/
-export NFHOME = /home/puk/netcdf-fortran/
-
-#export NCHOME = /home/pepe/netcdf/
-#export NFHOME = /home/pepe/netcdf
-
-
