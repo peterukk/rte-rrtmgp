@@ -1,0 +1,17 @@
+# Location of RTE+RRTMGP libraries, module files.
+export RRTMGP_DIR = ../../build
+
+# Sets macros FC, FCFLAGS consistent with RTE+RRTMGP
+
+# NetCDF C and Fortran libraries, module files
+export NCHOME = /usr/
+export NFHOME = /usr/
+
+# Choose BLAS library: e.g. "blis", "openblas", "mkl" (see Makefile)
+
+# Here we use BLIS (https://github.com/flame/blis) which is one of the fastest 
+# BLAS libraries available (on Intel platforms MKL is probably faster). 
+# Depending on your BLAS library you might have to make changes below
+
+export BLASLIB  = blis-amd
+export BLAS_DIR = $(HOME)/blis-amd

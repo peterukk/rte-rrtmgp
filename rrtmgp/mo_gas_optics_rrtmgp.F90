@@ -238,9 +238,6 @@ contains
                           play, plev, tlay, tsfc, gas_desc, &
                           optical_props, sources,          &
                           col_dry, tlev, neural_nets       &
-#ifdef DEV_MODE
-                          ,nn_inputs, col_dry_arr          &
-#endif
                           ) result(error_msg)
     ! inputs
     class(ty_gas_optics_rrtmgp), intent(in) :: this
@@ -260,21 +257,14 @@ contains
                            optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
                                                tlev        ! level temperatures [K]; (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-    type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                                
-    ! Outputs for neural network model development
-#ifdef DEV_MODE
-    real(sp), dimension(:,:,:), intent(inout)         :: nn_inputs
-    real(sp), dimension(:,:),   intent(inout), target :: col_dry_arr
-#else
-    real(sp), dimension(:,:,:), allocatable           :: nn_inputs, planck_frac
+    type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Emission and absorption models 
+    ! ----------------------------------------------------------                              
+    ! Local variables
+    real(sp), dimension(:,:,:), allocatable           :: nn_inputs
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
                                               target  :: col_dry_arr
-#endif
     real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
     ! ----------------------------------------------------------
-    ! Local variables
-    ! real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
-    ! real(wp), dimension(:,:),   pointer               :: col_dry_wk => NULL()
     real(wp), dimension(size(play,dim=1)+1, size(play,dim=2)), &
                                target         :: tlev_arr
     real(wp), dimension(:,:),   pointer       :: tlev_wk
@@ -387,9 +377,7 @@ contains
       ! ----------------------------------------------------------------------------------
       ! Use neural network for gas optics
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
-#ifndef DEV_MODE
       allocate(nn_inputs(ninputs,nlay,ncol))
-#endif
       !$acc enter data create(nn_inputs)
 
       error_msg = compute_nn_inputs(this,             &
@@ -411,9 +399,6 @@ contains
       deallocate(nn_inputs)
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw_blas')
-#endif
-
-#ifdef USE_TIMING
     ret =  gptlstart('compute_source')
 #endif
       call compute_Planck_source_nn(ncol, nlay, nband, ngpt,      &
@@ -438,16 +423,6 @@ contains
                                    optical_props,                           &
                                    sources, tlev_wk, tsfc)
       if(error_msg  /= '') return
-      ! ----------------------------------------------------------
-      ! This code block is only used for model development, when we need to compute NN inputs 
-#ifdef DEV_MODE
-      error_msg = compute_nn_inputs(this,                         &
-                      ncol, nlay, ngas, size(nn_inputs,dim=1),    &
-                      play, tlay, gas_desc,  nn_inputs)   
-      if(error_msg  /= '') return  
-#endif
-      ! ----------------------------------------------------------
-
       ! ----------------------------------------------------------------------------------
     end if
 
@@ -478,18 +453,14 @@ contains
     real(wp), dimension(:,:),     intent(in   ), &
                            optional, target :: col_dry ! Column dry amount; dim(nlay,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-    type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model      
-
-    ! Optional outputs (for neural network model development)
-    ! real(sp), dimension(:,:,:), intent(inout), optional     :: nn_inputs
-    ! real(sp), dimension(:,:),   intent(inout), optional     :: col_dry_arr
+    type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Absorption model, Rayleigh model     
     ! ----------------------------------------------------------
     ! Local variables
     ! real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
                                                 target  :: col_dry_arr
     real(wp), dimension(:,:),   pointer, contiguous     :: col_dry_wk => NULL()
-    real(sp), dimension(:,:,:), allocatable   :: nn_inputs
+    real(sp), dimension(:,:,:), allocatable             :: nn_inputs
 
     integer :: ncol, nlay, ngpt, nband, ngas, idx_h2o, ninputs
     integer :: igpt, icol
@@ -587,14 +558,6 @@ contains
     end if
 
     if(error_msg  /= '') return
-
-    ! if(save_inputs)) then
-    !   error_msg = compute_nn_inputs(this,                         &
-    !                   ncol, nlay, ngas, size(nn_inputs,dim=1),    &
-    !                   play, tlay, gas_desc,  nn_inputs)   
-
-    !   if(error_msg  /= '') return  
-    ! end if
 
     ! ----------------------------------------------------------
     !

@@ -303,6 +303,8 @@ contains
 
       !$acc parallel loop collapse(2) present(b)
       do isample = 1, nsample
+        !DIR$ SIMD
+        !DIR$ VECTOR ALIGNED
         do i = 1, ny
           ! Compute outputs and scale them to obtain molecular absorption 
           ! output(i, isample) = (ysigma_lw_tau*(output(i, isample) + b(i)) + ymeans_lw_tau(i))**8

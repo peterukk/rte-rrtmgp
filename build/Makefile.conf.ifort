@@ -8,15 +8,14 @@ export FC = ifort
 #
 # Optimized 
 # 
-# export FCFLAGS = -O3 -mkl=sequential -heap-arrays -I${MKLROOT}/include
-export FCFLAGS = -O3 -mkl=sequential  -I${MKLROOT}/include
+#export FCFLAGS = -O3 -mkl=sequential -heap-arrays -I${MKLROOT}/include
+export FCFLAGS = -O3 -mkl=sequential 
 
-# Debug
-# export FCFLAGS = -O0 -g -traceback -check all -warn interface -fp-stack-check -mkl -I${MKLROOT}/include
+# Debug export FCFLAGS = -O0 -g -traceback -check all -warn interface -fp-stack-check -mkl -I${MKLROOT}/include
 
 
 # ------------------------------------------------------------------------------------------
 # -------  (OPTIONAL) GPTL TIMING LIBRARY --------------------------------------------------
 # ------------------------------------------------------------------------------------------
-export TIME_DIR = /home/puk/gptl-ifort/
+export TIME_DIR = /home/puk/gptl-8.0.3-ifort/
 #export TIME_DIR = /data/puk/soft/gptl/

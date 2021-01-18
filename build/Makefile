@@ -10,7 +10,7 @@ RRTMGP_DIR = ../rrtmgp
 # Choose kernels depending on environment variable
 #
 
-ifdef USE_OPENACC
+ifeq ($(USE_OPENACC),1)
   RTE_KERNEL_DIR    = ../rte/kernels-openacc
   RRTMGP_KERNEL_DIR = ../rrtmgp/kernels-openacc
   FCFLAGS += -DUSE_OPENACC
@@ -21,11 +21,11 @@ RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 NEURAL_DIR = ../neural
 VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL_DIR)
 
-ifdef DOUBLE_PRECISION
+ifeq ($(DOUBLE_PRECISION),1)
 	FCFLAGS += -DUSE_DOUBLE_PRECISION
 endif
 
-ifdef FAST_EXPONENTIAL
+ifeq ($(FAST_EXPONENTIAL),1)
     # Approximation for exp function, significantly faster on non-intel compilers
 	FCFLAGS += -DFAST_EXPONENTIAL
 endif
@@ -39,11 +39,6 @@ ifeq ($(GPTL_TIMING),1)
 # Use GPTL with PAPI for hardware performance counters? (enables measuring compute intensity)
 else ifeq ($(GPTL_TIMING),2)
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
-endif
-
-ifdef DEV_MODE
-	# Modify RRTMGP interface so it outputs the neural network inputs and col_dry
-	FCFLAGS += -DDEV_MODE 
 endif
 
 all: librte.a librrtmgp.a libneural.a
