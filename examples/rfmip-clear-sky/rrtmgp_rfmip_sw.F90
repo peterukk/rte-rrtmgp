@@ -104,9 +104,9 @@ program rrtmgp_rfmip_sw
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, inp_outp_file, timing_file
+  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
-  logical 		       :: top_at_1, use_nn, save_input_output, compare_flux, save_flux
+  logical 		       :: top_at_1, use_nn, compare_flux, save_flux
   integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, ret, i
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
@@ -116,8 +116,7 @@ program rrtmgp_rfmip_sw
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting optical depths, second for planck fractions          
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
-  real(wp), dimension(:,:,:),         allocatable :: rsu_ref, rsd_ref, rsu_nn, rsd_nn, rsu_lbl, rsd_lbl, rsdu_ref, rsdu_nn, rsdu_lbl, col_dry
-  real(sp), dimension(:,:,:,:),       allocatable :: nn_input, tau_sw, ssa
+  real(wp), dimension(:,:,:),         allocatable :: rsu_ref, rsd_ref, rsu_nn, rsd_nn, rsu_lbl, rsd_lbl, rsdu_ref, rsdu_nn, rsdu_lbl
   real(wp), dimension(:,:  ),         allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
@@ -152,9 +151,6 @@ program rrtmgp_rfmip_sw
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
-  ! Save neural network inputs and target outputs 
-  save_input_output   = .false.
-  inp_outp_file       =  "../../../../rrtmgp_dev/inputs_outputs/inp_outp_sw_Garand-big_1f1.nc"
 
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
@@ -280,13 +276,6 @@ program rrtmgp_rfmip_sw
   !$acc enter data create (toa_flux, def_tsi)
   !$acc enter data create (sfc_alb_spec, mu0)
 
-  if (save_input_output) then
-    allocate(nn_input( 	ninputs,  nlay, block_size, nblocks)) ! temperature + pressure + gases
-    allocate(col_dry(             nlay, block_size, nblocks)) ! number of dry air molecules
-    allocate(tau_sw(    	ngpt,   nlay, block_size, nblocks))
-    allocate(ssa(	        ngpt,   nlay, block_size, nblocks))
-  end if
-
 #ifdef USE_TIMING
   !
   ! Initialize timers
@@ -341,6 +330,7 @@ do i = 1, 10
       optical_props,      &
       toa_flux, neural_nets=neural_nets))
     else
+      optical_props%tau = 0.0 
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -421,11 +411,6 @@ do i = 1, 10
     ret =  gptlstop('rte_sw')
     ret =  gptlstop('clear_sky_total (SW)')
 #endif
-    ! Save RRTMGP inputs and outputs
-    if (save_input_output) then
-      tau_sw(:,:,:,b)     = optical_props%tau(:,:,:)
-      ssa(:,:,:,b)        = optical_props%ssa(:,:,:)
-    end if
     !
     ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
     !
@@ -468,29 +453,6 @@ do i = 1, 10
   !$acc exit data delete(sfc_alb_spec, mu0)
   !$acc exit data delete(toa_flux, def_tsi)
   ! --------------------------------------------------
-
-
-  if (save_input_output) then 
-    print *, "Attempting to save neural network inputs to ", inp_outp_file
-    ! This function also deallocates the input 
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
-    call unblock_and_write2(trim(inp_outp_file),       'col_dry', col_dry)
-    print *, "Inputs were saved to ", inp_outp_file
-
-    allocate(temparray(   block_size*nlay*ngpt*nblocks)) 
-    temparray = pack(tau_sw(:,:,:,:),.true.)
-    print *, "mean of tau is", sum(temparray, dim=1)/size(temparray, dim=1)
-    print *, "max, min of tau is", maxval(tau_sw), minval(tau_sw)
-    temparray = pack(ssa(:,:,:,:),.true.)
-    print *, "mean of ssa is", sum(temparray, dim=1)/size(temparray, dim=1)
-    deallocate(temparray)
-
-    print *, "Attempting to save outputs to" , inp_outp_file
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_sw', tau_sw)
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'ssa',    ssa)
-    print *, "Outputs were saved to ", inp_outp_file
-  end if
-
 
     ! Save fluxes ?
   if (save_flux) then

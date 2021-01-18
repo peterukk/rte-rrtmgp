@@ -299,7 +299,7 @@ contains
     integer,  dimension(            nlay, ncol       ), intent(in) :: jpress
     ! ---------------------
     ! output - optical depth
-    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: tau
+    real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
     ! ---------------------
     ! Local variables
     !
@@ -326,7 +326,7 @@ contains
     ! ---------------------
     ! Major Species
     ! ---------------------
-    tau = 0.0_wp
+    ! tau = 0.0_wp
     call gas_optical_depths_major(   &
           ncol,nlay,nbnd,ngpt,       & ! dimensions
           nflav,neta,npres,ntemp,    &
@@ -636,9 +636,6 @@ contains
     real(wp), dimension(nbnd       )    :: planck_function_sfc_Jac
     real(wp), dimension(nbnd        )   :: planck_function_lev, planck_function_lay
     real(wp), dimension(ngpt,nlay   )   :: pfrac ! Planck fraction per g-point
-
-    real(wp), dimension(ngpt        )   :: lev_src_inc, lev_src_dec
-
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one          = [1._wp, 1._wp]
@@ -703,21 +700,21 @@ contains
     real(wp), dimension(nlay+1,ncol),             intent(in)    :: tlev
     real(wp), dimension(ncol       ),             intent(in)    :: tsfc
     integer,                                      intent(in)    :: sfc_lay
-    integer,  dimension(ngpt),                    intent(in)    :: gpt_bands ! start and end g-point for each band
+    integer,  dimension(ngpt),                    intent(in)    :: gpt_bands    ! the band number for each g-point
     integer,  dimension(2, nbnd),                 intent(in)    :: band_lims_gpt ! start and end g-point for each band
     real(wp),                                     intent(in)    :: temp_ref_min, totplnk_delta
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in)    :: totplnk
     ! outputs
     real(wp), dimension(ngpt,       ncol),        intent(out)   :: sfc_source
     real(wp), dimension(ngpt,       ncol),        intent(out)   :: sfc_source_Jac
-    real(wp), dimension(ngpt,nlay,  ncol),        intent(inout) :: pfrac ! Planck fraction. trick to save memory: becomes lay_source on output
+    real(wp), dimension(ngpt,nlay,  ncol),        intent(inout) :: pfrac ! Planck fraction, which
+                                                                ! becomes lay_source on output (trick to save memory)
     real(wp), dimension(ngpt,nlay+1,ncol),        intent(out)   :: lev_source
     ! -----------------
     ! local
     real(wp), dimension(nbnd )  :: planck_function_sfc
     real(wp), dimension(nbnd )  :: planck_function_sfc_Jac
     real(wp), dimension(nbnd )  :: planck_function_lev, planck_function_lay
-    real(wp), dimension(ngpt )  :: lev_src_inc, lev_src_dec
     real(wp), parameter         :: delta_Tsurf  = 1.0_wp
     integer                     :: ilay, icol, igpt, ibnd, gptS, gptE
 
@@ -744,18 +741,26 @@ contains
 
       ! Source for levels and layers
       do ilay = 1, nlay
-        planck_function_lev(:) = interpolate1D_nocheck(tlev(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
-        planck_function_lay(:) = interpolate1D_nocheck(tlay(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
+        planck_function_lev(:) = interpolate1D(tlev(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
+        planck_function_lay(:) = interpolate1D(tlay(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
 
         do ibnd = 1, nbnd
           gptS = band_lims_gpt(1, ibnd)
           gptE = band_lims_gpt(2, ibnd)
-
-          lev_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay,icol) * planck_function_lev(ibnd)
-          pfrac     (gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay,icol) * planck_function_lay(ibnd)
-          ! NOTE: "pfrac" is now actually lay_source
-
+          !DIR$ SIMD
+          !DIR$ VECTOR ALIGNED 
+          do igpt = gptS, gptE
+            lev_source(igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd)
+            pfrac     (igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd)
+            ! NOTE: "pfrac" is now actually lay_source
+          end do
         end do ! band
+        ! !DIR$ SIMD
+        ! do igpt = 1, ngpt
+        !   ibnd = gpt_bands(igpt)
+        !   lev_source(igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd)
+        !   pfrac     (igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd)
+        ! end do
       end do ! lay
     end do ! col
 
