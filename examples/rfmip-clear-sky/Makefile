@@ -27,18 +27,18 @@ LIBS      += -lnetcdff -lnetcdf
 # -------- BLAS lbirary: required for RRTMGP-NN --------
 # 
 # Choose BLAS library: e.g. "blis", "openblas", "mkl"
-# 
 
 # Here we use BLIS (https://github.com/flame/blis) which is one of the fastest 
 # BLAS libraries available (on Intel platforms MKL is probably faster). 
 # Depending on your BLAS library you might have to make changes below
 
-export BLASLIB  = blis-amd
-export BLAS_DIR = $(HOME)/blis-amd
+# export BLASLIB  = blis-amd
+# export BLAS_DIR = $(HOME)/blis-amd
 
 # export BLASLIB = openblas
 # export BLAS_DIR =  $(HOME)/blis
 
+# If you use Intel compilers with another BLAS library than MKL comment out the lines below
 # ifeq ($(FC),ifort)
 # 	BLASLIB=mkl
 # endif
@@ -52,7 +52,7 @@ else ifeq ($(BLASLIB),blis-amd)
 else ifeq ($(BLASLIB),openblas)
 	LIBS 		+= -lopenblas 
 else ifeq ($(BLASLIB),mkl)
-	# Nothing needed here if -I${MKLROOT}/include was added to FCFLAGS in build/Makefile.conf
+	FCINCLUDE   += -I${MKLROOT}/include
 endif
 
 # -------- Use OpenMP? May be needed for BLAS -------
@@ -61,19 +61,17 @@ ifeq ($(BLASLIB),blis-amd)
 endif
 #USE_OPENMP=1
 
-ifdef USE_OPENMP
+ifeq ($(USE_OPENMP),1)
 	OMPFLAG = -fopenmp
-	FCFLAGS += -DUSE_OPENMP
+	# FCFLAGS += -DUSE_OPENMP
 endif
 
-ifdef USE_OPENACC
+ifeq ($(USE_OPENACC),1)
   FCFLAGS += -DUSE_OPENACC
 endif
 
-
-# Compiler specific - e.g. turn off for pgfortran, set to -cpp for gfortran
-#FCFLAGS += -fpp
-
+# -------- GPTL Timing -------
+# Use General Purpose Timing Library to profile code?
 ifeq ($(GPTL_TIMING),1)
 	#
 	# Timing library
@@ -83,6 +81,8 @@ ifeq ($(GPTL_TIMING),1)
 	FCFLAGS += -DUSE_TIMING
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
 	LIBS      += -lgptl
+# Use GPTL together with PAPI hardware instrumentation to measure computational intensity?
+# Requires that your GPTL was compiled to PAPI support
 else ifeq ($(GPTL_TIMING),2)
 	#
 	# Timing library
@@ -94,11 +94,6 @@ else ifeq ($(GPTL_TIMING),2)
 	LIBS      += -lgptl  -rdynamic  -lpapi
 endif
 
-
-ifeq ($(DEV_MODE),yes)
-	# Modify RRTMGP interface so it outputs the neural network inputs and col_dry
-	FCFLAGS += -DDEV_MODE 
-endif
 VPATH = ../
 
 # Compilation rules

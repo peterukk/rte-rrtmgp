@@ -1,4 +1,8 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE+RRTMGP using neural networks for the gas optics, and a refactored radiative transfer solver 
+
+## Recent changes
+January 2021: Use of two source functions (one for layers and one for levels) instead of three (one for layers and two for levels) like in RRTMGP. This had no significant accuracy loss and is faster. RRTMGP(-NN) also now computes the full spectral source functions instead of band-wise sources and finishing the computations in RTE (this was about as fast as the current source implementation, but clunky)
+
 December 2020: A paper on RTE-RRTMGP-NN has been [published in JAMES](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020MS002226). 
 
 September 2020: GPU code fully working again, fixes to gas optics code to support OpenMP from an outer loop (see rrtmgp_rfmip_lw.F90)
@@ -14,23 +18,17 @@ June 2020: RTE+RRTMGP-NN is now fully usable for the long-wave and a paper has b
 **How it works**: Instead of the original lookup-table interpolation routine and "eta" parameter to handle the overlapping absorption of gases in a given band, this fork implements neural networks (NNs) to predict optical properties for given atmospheric conditions and gas concentrations, which includes all minor longwave (LW) gases supported by RRTMGP. The NNs predict molecular absorption (LW/SW), scattering (SW) or emission (LW) for all spectral points from an input vector consisting of temperature, pressure and gas concentrations of an atmospheric layer. The models have been trained on 6-7 million samples (LW) spanning a wide range of conditions (pre-industrial, present-day, future...) so that they may be used for both weather and climate applications. 
 
 **Speed**: The optical depth kernel alone is 1-6 times faster while the computation of clear-sky fluxes using NNs and refactored code is 2-3 times faster. This is when all gases are included, which in the longwave results in a NN with 18 inputs in total. Expect large speedups with a fast BLAS library such as MKL and when comparing against a full computation (minor gases are expensive in the original code, "for free" with NNs"), otherwise smaller.  The NN implementation uses BLAS where the input data is packed into a (ngas * (ncol * nlay)) matrix which is then fed to GEMM call to predict a block of data at a time.
+
 Clear-sky timings: 
+
 <img src="https://github.com/peterukk/rte-rrtmgp-nn/blob/master/figures/figure_timings.png" width=60% height=60%>
 
 **Accuracy**: The errors in fluxes and heating rates are very similar to the original scheme in evaluation using RFMIP (below) and GCM profiles, as well as the [CKDMIP evaluation](https://confluence.ecmwf.int/display/CKDMIP/CKDMIP%3A+Correlated+K-Distribution+Model+Intercomparison+Project+Home). 
 
 <img src="https://github.com/peterukk/rte-rrtmgp-nn/blob/master/figures/figure_heatingrates.png" width=50% height=50%>
 
-**Building the libraries + clear-sky example** 
-The code should work very similarly to the end-user as the original, but the neural network models need to be provided at runtime: see examples/rfmip-clear-sky . Needs a fast BLAS library - if you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
-
-1. `cd build`
-2. Set required environment variables in Makefile.conf, curently using a Gfortran+BLIS platform:`FC` (the Fortran 2003 compiler),`FCFLAGS` (compiler flags). You also need specify the BLAS Library (default and recommended is BLIS) and location `BLASLIB`, `BLAS_DIR`, as well as NetCDF C and Fortran library locations  `NCHOME`,`NFHOME`. See Makefile.conf.ifort for an Intel Fortran + MKL example.
-3. (Optional) Set environment variable `USE_TIMING` (to anything) to use GPTL timing library, or  `USE_FULL_TIMING` for GPTL+PAPI instrumentation. Need to also set `TIME_DIR` in Makefile.conf
-4. (Optional) Set environment variable `USE_OPENACC` if you want to use OpenACC+CUDA for GPU acceleration. See Makefile.conf.nvfortran for an example.
-5. (Optional) For even more speed on non-Intel platforms (40-200% faster solver on GNU), set environment variable `FAST_EXPONENTIAL` to use an approximation to the exponential function. This only lead to a max. 0.2 W/m2 deviation in net shortwave fluxes, in the longwave much less.
-6. `make; cd ../examples/rfmip-clear-sky/; make`. If you have problems with building you might have to tinker with build/Makefile, build/Makefile.conf and/or examples/rfmip-clear-sky/Makefile a bit.
-7. Set options such as whether NNs are used and fluxes compared to reference in rrttmgp_rfmip_X.F90, and run like: ` ./rrtmgp_rfmip_lw 18 inputs_RFMIP.nc ../../rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc 1 1`. 
+## Building the libraries + clear-sky example 
+The code should work very similarly to the end-user as the original, but a BLAS library is required. The neural network models reside in ASCII files and are provided via an optional argument to the RRTMGP interface. [For instructions see examples/rfmip-clear-sky](https://github.com/peterukk/rte-rrtmgp-nn/tree/master/examples/rfmip-clear-sky).
 
 **to-do**
 
