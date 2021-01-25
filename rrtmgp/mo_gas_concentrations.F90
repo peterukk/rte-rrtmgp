@@ -159,7 +159,7 @@ contains
     end if
     if (.not. allocated(this%concs(igas)%conc)) then
       allocate(this%concs(igas)%conc(1,1))
-      !$acc enter data create(this%concs(igas)%conc)
+      ! !$acc enter data create(this%concs(igas)%conc)
     end if
 
     this%concs(igas)%conc(:,:) = w
@@ -207,7 +207,7 @@ contains
     end if
     if (.not. allocated(this%concs(igas)%conc)) then
       allocate(this%concs(igas)%conc(this%nlay,1))
-      !$acc enter data create(this%concs(igas)%conc)
+      ! !$acc enter data create(this%concs(igas)%conc)
     end if
 
     this%concs(igas)%conc(:,1) = w
@@ -228,10 +228,12 @@ contains
     ! ---------
     error_msg = ''
 
-    if (any_vals_outside(w, 0._wp, 1._wp)) then
-      print *, "max, min of ", trim(gas), ":", maxval(w), minval(w)
-      error_msg = 'ty_gas_concs%set_vmr_2d() (' // trim(gas) // '): concentrations should be >= 0, <= 1'
-    endif
+    if (check_values) then
+      if (any_vals_outside(w, 0._wp, 1._wp)) then
+        print *, "max, min of ", trim(gas), ":", maxval(w), minval(w)
+        error_msg = 'ty_gas_concs%set_vmr_2d() (' // trim(gas) // '): concentrations should be >= 0, <= 1'
+      endif
+    end if
 
     if(this%nlay > 0 .and. size(w, 1) /= this%nlay) then
       error_msg = 'ty_gas_concs%set_vmr: different dimension (nlay)'
@@ -263,7 +265,7 @@ contains
     end if
     if (.not. allocated(this%concs(igas)%conc)) then
       allocate(this%concs(igas)%conc(this%nlay,this%ncol))
-      !$acc enter data create(this%concs(igas)%conc)
+      ! !$acc enter data create(this%concs(igas)%conc)
     end if
     
     this%concs(igas)%conc(:,:) = w(:,:)

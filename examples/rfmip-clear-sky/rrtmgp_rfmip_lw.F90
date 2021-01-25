@@ -126,10 +126,6 @@ program rrtmgp_rfmip_lw
   character (len = 80)                :: modelfile_tau, modelfile_source
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting absorption cross section, second for Planck fraction
   logical 		                        :: use_nn, compare_flux, save_flux
-#ifdef USE_OPENACC   
-  type(cublasHandle) :: h
-#endif
-
   !
   ! Classes used by rte+rrtmgp
   !
@@ -143,6 +139,12 @@ program rrtmgp_rfmip_lw
   !   leverage what we know about the input file
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
+  ! Initialize GPU kernel
+#ifdef USE_OPENACC  
+  type(cublasHandle) :: h
+  istat = cublasCreate(h) 
+  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
+#endif
 
 #ifdef USE_TIMING
   print *, "using GPTL timing library"
@@ -161,10 +163,6 @@ program rrtmgp_rfmip_lw
 #endif  
   ret = gptlinitialize()
 #endif
-#ifdef USE_OPENACC  
-  istat = cublasCreate(h) 
-  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
-#endif
 
   ! -------------------------------------------------------------------------------------------------
   !
@@ -173,7 +171,7 @@ program rrtmgp_rfmip_lw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_nn      = .true.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -296,23 +294,14 @@ program rrtmgp_rfmip_lw
   !   gas optical properties, and source functions. The %alloc() routines carry along
   !   the spectral discretization from the k-distribution.
   !
-
   allocate(flux_up(    	nlay+1, block_size, nblocks), &
            flux_dn(    	nlay+1, block_size, nblocks))
   allocate(sfc_emis_spec(nbnd, block_size))
+  !$acc enter data create(sfc_emis_spec) copyin(sfc_emis)
 
   ! OpenACC: Arrays are allocated on device inside constructor
   call stop_on_err(source%alloc            (block_size, nlay, k_dist))   
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
-
-  !
-  ! OpenACC directives put data on the GPU where it can be reused with communication
-  ! NOTE: these are causing problems right now, most likely due to a compiler
-  ! bug related to the use of Fortran classes on the GPU.
-  !
-  !$acc enter data create(sfc_emis_spec) copyin(sfc_emis)
-  !$acc enter data create(optical_props, optical_props%tau)
-
   ! --------------------------------------------------
 
 ! #ifdef USE_OPENMP
@@ -373,7 +362,6 @@ do i = 1, 10
                                           tlev = t_lev(:,:,b),  &
                                           neural_nets = neural_nets))
     else        
-      optical_props%tau = 0.0 
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -384,9 +372,9 @@ do i = 1, 10
                                         tlev = t_lev(:,:,b) &
                                         )) 
     end if
-    ! !$acc update host(optical_props%tau, source%planck_frac)
-    ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
-    ! print *," max, min (pfrac)", maxval(source%planck_frac), minval(source%planck_frac)
+    ! !$acc update host(optical_props%tau)
+    ! print *, "max of tau is:", maxval(optical_props%tau)
+
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
 #endif
@@ -403,11 +391,15 @@ do i = 1, 10
                             sfc_emis_spec,   &
                             fluxes,          &
                             n_gauss_angles = n_quad_angles, use_2stream = .false., compute_gpoint_fluxes = .false.) )
-
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
     ret =  gptlstop('clear_sky_total (LW)')
 #endif
+  ! allocate(temparray(   block_size*(nlay+1))) 
+  ! temparray = pack(fluxes%flux_dn(:,:),.true.)
+  ! print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)  !  mean of flux_down is:   103.2458
+  ! deallocate(temparray)
+
 
   end do ! blocks
   ! !$OMP END DO
@@ -416,21 +408,19 @@ do i = 1, 10
 
 #ifdef USE_TIMING
 end do
-#endif
-
-call source%finalize()
-!$acc exit data delete(source)
-
-!$acc exit data delete(sfc_emis_spec, sfc_emis)
-!$acc exit data delete(optical_props%tau, optical_props)
-
-#ifdef USE_TIMING
   ! End timers
   !
   timing_file = "timing.lw-" // adjustl(trim(block_size_char))
   ret = gptlpr_file(trim(timing_file))
   ret = gptlfinalize()
 #endif
+
+  call optical_props%finalize() ! Also deallocates arrays on device
+  call        source%finalize() ! Also deallocates arrays on device
+  !$acc exit data delete(sfc_emis_spec, sfc_emis)
+
+  ! --------------------------------------------------------------------------------------------------
+
   call system_clock(iTime2)
   print *, "-----------------------------------------------------------------------------------------"
   print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
@@ -630,7 +620,7 @@ call source%finalize()
 
   end if
 
-  !$acc exit data delete(fluxes%flux_up,fluxes%flux_dn)
+  ! !$acc exit data delete(fluxes%flux_up,fluxes%flux_dn)
   deallocate(flux_up, flux_dn)
   print *, "SUCCESS!"
 

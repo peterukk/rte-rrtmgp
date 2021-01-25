@@ -243,7 +243,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc data create(a1, a2) copyin(ymeans) present(x, output, coldry)
+    !$acc enter data create(a1, a2) copyin(ymeans)
     associate(layers=>self%layers)
       
       wt => layers(1) % w_transposed
@@ -254,7 +254,7 @@ contains
       call sgemm('N','N', neurons, nsample, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
       !$acc end host_data
 
-      !$acc parallel loop gang vector collapse(2) present(a, b)
+      !$acc parallel loop gang vector collapse(2) default(present)
       do isample = 1, nsample
         do i = 1, neurons
           a(i, isample) = a(i, isample ) + b(i)
@@ -273,7 +273,7 @@ contains
         call sgemm("N","N", neurons, nsample, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
         !$acc end host_data
 
-        !$acc parallel loop gang vector collapse(2) present(a_next, b)
+        !$acc parallel loop gang vector collapse(2) default(present)
         do isample = 1, nsample
           do i = 1 , neurons 
             a_next(i, isample) = a_next(i, isample ) + b(i)
@@ -301,7 +301,7 @@ contains
 
       n = nlayers
 
-      !$acc parallel loop collapse(2) present(b)
+      !$acc parallel loop collapse(2) default(present)
       do isample = 1, nsample
         !DIR$ SIMD
         !DIR$ VECTOR ALIGNED
@@ -313,12 +313,14 @@ contains
           ! output(i, isample) =  output(i, isample) * coldry(isample)
 
           ! One-line solution
-          output(i, isample) = ((ysigma* (output(i, isample) + layers(n) % b(i)) + ymeans(i))**8) * coldry(isample)
+          ! output(i, isample) = ((ysigma* (output(i, isample) + layers(n) % b(i)) + ymeans(i))**8) * coldry(isample)
+          output(i, isample) = ((ysigma* (output(i, isample) + b(i)) + ymeans(i))**8) * coldry(isample)
+
         end do
       end do
 
     end associate
-    !$acc end data
+    !$acc exit data detach(a1,a2) delete(a1, a2, ymeans)
 
                                               
   end subroutine
@@ -346,7 +348,6 @@ contains
     associate(layers=>self%layers)    ! so it's easier to read
 
       ! FIRST LAYER
-      
       wt => layers(1) % w_transposed  ! Set the weights to the weights of the first layer
       a  => a1                        
       b  => layers(2) % b            

@@ -117,8 +117,8 @@ subroutine lw_solver_noscat( ngpt, nlay, ncol, top_at_1, D, weight, &
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) ::  lay_source      ! Planck source at layer average temperature [W/m2]
     real(wp), dimension(ngpt,nlay+1,ncol),  intent(in   ) ::  lev_source      ! Planck source at layer edges [W/m2]
     real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_emis        ! Surface emissivity      []
-    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source      ! Surface source function by band [W/m2]
-    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function by band[W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source      ! Surface source function  [W/m2]
+    real(wp), dimension(ngpt,       ncol),  intent(in   ) ::  sfc_source_Jac  ! Jacobian of surface source function  [W/m2/K]
     ! Outputs
     real(wp), dimension(ngpt,nlay+1,ncol),  intent(out)   :: radn_up      ! Broadband radiances [W/m2-str]
     real(wp), dimension(ngpt,nlay+1,ncol),  intent(inout) :: radn_dn      ! Top level must contain incident flux boundary condition
@@ -136,13 +136,15 @@ subroutine lw_solver_noscat( ngpt, nlay, ncol, top_at_1, D, weight, &
     ! Where it the top of atmosphere: at index 1 if top_at_1 true, otherwise nlay+1
     top_level = MERGE(1, nlay+1, top_at_1)
 
+    fac  = 2._wp * pi * weight
+
     do icol = 1, ncol
     
       !
       ! Transport is for intensity
       !   convert flux at top of domain to intensity assuming azimuthal isotropy
       !
-      radn_dn(:,top_level,icol) = radn_dn(:,top_level,icol)/(2._wp * pi * weight)
+      radn_dn(:,top_level,icol) = radn_dn(:,top_level,icol)/fac
 
       !
       ! Optical path and transmission, used in source function and transport calculations
@@ -169,7 +171,6 @@ subroutine lw_solver_noscat( ngpt, nlay, ncol, top_at_1, D, weight, &
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
-      fac                   = 2._wp * pi * weight
       radn_dn(:,:,icol)     = fac * radn_dn(:,:,icol)   
       radn_up(:,:,icol)     = fac * radn_up(:,:,icol)  
       radn_up_Jac(:,:,icol) = fac * radn_up_Jac(:,:,icol)
@@ -869,8 +870,8 @@ pure subroutine sw_solver_noscat_broadband(ngpt, nlay, ncol, &
 
           ! Compute downward radiance
           radn_dn(igpt,ilay+1) = trans(igpt,ilay)*radn_dn(igpt,ilay) + source_dn
-        end do
-      end do
+        end do ! gpt
+      end do ! lay
       
       ! Surface reflection and emission
       radn_up    (:,nlay+1)  = radn_dn(:,nlay+1)*(1-sfc_emis) + sfc_emis(:) * sfc_source(:)
