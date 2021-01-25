@@ -246,12 +246,8 @@ program rrtmgp_rfmip_sw
   !
   if(top_at_1) then
     p_lev(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
-    p_lay(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
-
   else
     p_lev(nlay+1,:,:) &
-                 = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
-    p_lay(nlay,:,:) &
                  = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
 
