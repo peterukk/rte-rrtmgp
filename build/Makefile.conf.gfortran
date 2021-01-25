@@ -1,10 +1,12 @@
 #  ------- GFORTRAN ----------
 export FC = gfortran
-
+# 
 # Fortran compiler flags
 export FCFLAGS = -O3 -ffree-line-length-none -march=native
 
-# more aggressive optimization with fast-math
+# more aggressive optimization with fast-math. 
+# export FCFLAGS = -O3 -ffree-line-length-none -m64 -march=native --fast-math  -funroll-loops
+# export FCFLAGS = -O3 -std=f2008 -ffree-line-length-none -m64 -march=native --fast-math  -funroll-loops
 # export FCFLAGS = -O3 -ffree-line-length-none -m64 -march=native --fast-math -funroll-loops -ftree-loop-linear -fprefetch-loop-arrays
 
 # Debugging

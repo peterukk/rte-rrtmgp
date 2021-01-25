@@ -299,7 +299,7 @@ contains
     integer,  dimension(            nlay, ncol       ), intent(in) :: jpress
     ! ---------------------
     ! output - optical depth
-    real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: tau
     ! ---------------------
     ! Local variables
     !
@@ -326,7 +326,6 @@ contains
     ! ---------------------
     ! Major Species
     ! ---------------------
-    ! tau = 0.0_wp
     call gas_optical_depths_major(   &
           ncol,nlay,nbnd,ngpt,       & ! dimensions
           nflav,neta,npres,ntemp,    &
@@ -408,10 +407,10 @@ contains
     integer,     dimension(nlay, ncol), intent(in) :: jtemp, jpress
 
     ! outputs
-    real(wp), dimension(ngpt,nlay,ncol), intent(inout) :: tau
+    real(wp), dimension(ngpt,nlay,ncol), intent(out) :: tau
     ! -----------------
     ! local variables
-    real(wp) :: tau_major(ngpt) ! major species optical depth
+    ! real(wp) :: tau_major(ngpt) ! major species optical depth
     ! local index
     integer :: icol, ilay, iflav, ibnd, igpt, itropo
     integer :: gptS, gptE
@@ -427,13 +426,13 @@ contains
           gptS = band_lims_gpt(1, ibnd)
           gptE = band_lims_gpt(2, ibnd)
           iflav = gpoint_flavor(itropo, gptS) !eta interpolation depends on band's flavor
-          tau_major(gptS:gptE) = &
+          tau(gptS:gptE,ilay,icol)  = &
             ! interpolation in temperature, pressure, and eta
             interpolate3D_byflav(col_mix(:,iflav,ilay,icol),                                     &
                                  fmajor(:,:,:,iflav,ilay,icol), kmajor,                          &
                                  band_lims_gpt(1, ibnd), band_lims_gpt(2, ibnd),                 &
                                  jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)
-          tau(gptS:gptE,ilay,icol) = tau(gptS:gptE,ilay,icol) + tau_major(gptS:gptE)
+          ! tau(gptS:gptE,ilay,icol) = tau(gptS:gptE,ilay,icol) + tau_major(gptS:gptE)
         end do ! igpt
       end do
     end do ! ilay
@@ -644,6 +643,7 @@ contains
     ! -----------------    
     do icol = 1, ncol
       do ilay = 1, nlay
+        ! Planck function by band for layers and levels
         planck_function_lev(:) = interpolate1D(tlev(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
         planck_function_lay(:) = interpolate1D(tlay(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
 
@@ -660,12 +660,13 @@ contains
                           band_lims_gpt(1, ibnd), band_lims_gpt(2, ibnd),                 &
                           jeta(:,iflav,ilay,icol), jtemp(ilay,icol),jpress(ilay,icol)+itropo)
 
+          ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
           lev_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lev(ibnd)
           lay_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lay(ibnd)
         end do ! band
       end do ! ilay
 
-      ! Source for surface and nlay+1
+      ! Planck function by band for the surface and nlay+1
       planck_function_sfc(:)          = interpolate1D(tsfc(icol),               temp_ref_min, totplnk_delta, totplnk)
       planck_function_sfc_Jac(:)      = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk)
       planck_function_lev(:)          = interpolate1D(tlev(nlay+1,icol),        temp_ref_min, totplnk_delta, totplnk)
@@ -674,10 +675,10 @@ contains
         gptS = band_lims_gpt(1, ibnd)
         gptE = band_lims_gpt(2, ibnd)
 
-        ! Source for nlay+1
+        ! Source irradiance for nlay+1
         lev_source(gptS:gptE,nlay+1,icol) = pfrac(gptS:gptE,nlay) * planck_function_lev(ibnd)
 
-        ! Surface source
+        ! Surface source irradiance
         sfc_source    (gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * planck_function_sfc(ibnd)
         sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * &
                               (planck_function_sfc_Jac(ibnd) - planck_function_sfc(ibnd))
@@ -755,12 +756,6 @@ contains
             ! NOTE: "pfrac" is now actually lay_source
           end do
         end do ! band
-        ! !DIR$ SIMD
-        ! do igpt = 1, ngpt
-        !   ibnd = gpt_bands(igpt)
-        !   lev_source(igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd)
-        !   pfrac     (igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd)
-        ! end do
       end do ! lay
     end do ! col
 
@@ -768,8 +763,8 @@ contains
 
   ! --------------------------------------------------------------------------------------
   !
-  ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as single precision
-  ! (avoids temporary output array, which is faster)
+  ! LW neural network kernel using matrix-matrix GEMM computations, used if working precision is
+  !  set as single precision (avoids temporary output array, which is faster)
   !
   subroutine predict_nn_lw_blas_sp(               &
                     ncol, nlay, ngpt, ninputs,    & 
@@ -824,8 +819,8 @@ contains
 
   ! --------------------------------------------------------------------------------------
   !
-  ! neural network kernel using matrix-matrix GEMM computations, used if working precision is set as double precision
-  ! (does computations in single precision but has to use temporary output array)
+  ! LW neural network kernel using matrix-matrix GEMM computations, used if working precision 
+  ! is set as double precision (does computations in single precision but has to use temporary output array)
   !
   subroutine predict_nn_lw_blas_mp(                  &
                     ncol, nlay, ngpt, ninputs,       & 
@@ -885,6 +880,11 @@ contains
 #endif
   end subroutine predict_nn_lw_blas_mp
 
+  ! --------------------------------------------------------------------------------------
+  !
+  ! SW neural network kernel using matrix-matrix GEMM computations, used if working precision 
+  ! is set as single precision
+  !
   subroutine predict_nn_sw_blas_sp(               &
                     ncol, nlay, ngpt, ninputs,       & 
                     nn_inputs, col_dry_wk,                    &
@@ -898,10 +898,10 @@ contains
                                           intent(in)    :: col_dry_wk                                    
     ! The neural network models
     type(network_type), dimension(2),   intent(in)    :: neural_nets
-
     ! outputs
-    real(sp), dimension(ngpt,nlay,ncol), target, &
+    real(wp), dimension(ngpt,nlay,ncol), target, &
                                         intent(out) :: tau, ssa !
+    ! ^ wp = sp but using wp here for consistency with combine_2_str_opt                                                                  
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
@@ -935,12 +935,17 @@ contains
 #endif
     ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
     ! inputs: tau_abs (called tau) and tau_ray (called ssa), outputs tau_tot and ssa without further allocations
-    call combine_2str_opt_sp(ncol, nlay, ngpt, tau, ssa) 
+    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
 #ifdef USE_TIMING
     ret =  gptlstop('combine_taus_compute_ssa')
 #endif
   end subroutine predict_nn_sw_blas_sp
 
+  ! --------------------------------------------------------------------------------------
+  !
+  ! SW neural network kernel using matrix-matrix GEMM computations, used if working precision 
+  ! is set as double precision (does computations in single precision but has to use temporary output array)
+  !
   subroutine predict_nn_sw_blas_mp(               &
                     ncol, nlay, ngpt, ninputs,       & 
                     nn_inputs, col_dry_wk,                    &
@@ -955,8 +960,9 @@ contains
     type(network_type), dimension(2),   intent(in)    :: neural_nets
 
     ! outputs
-    real(dp), dimension(ngpt,nlay,ncol), target, &
+    real(wp), dimension(ngpt,nlay,ncol), target, &
                                         intent(out) :: tau, ssa !
+    ! ^ wp = dp but using wp here for consistency with combine_2_str_opt                                                                
     ! local
     real(sp), dimension(nlay,ncol),       target      :: col_dry_wk_sp                                     
     real(sp), dimension(:,:), contiguous, pointer     :: input
@@ -990,7 +996,7 @@ contains
 #endif
 !     ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
 !     ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
-    call combine_2str_opt_dp(ncol, nlay, ngpt, tau, ssa) 
+    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
 
   end subroutine predict_nn_sw_blas_mp
 
@@ -1177,67 +1183,33 @@ contains
     end do
   end subroutine combine_2str
 
-  pure subroutine combine_2str_opt_dp(ncol, nlay, ngpt, tau, tau_ray) &
-      bind(C, name="combine_2str_opt_dp")
+  !
+  ! Combine absorption and Rayleigh optical depths for total tau, ssa
+  !
+  pure subroutine combine_2str_opt(ncol, nlay, ngpt, tau, tau_ray) &
+      bind(C, name="combine_2str_opt")
     integer,                                intent(in)    :: ncol, nlay, ngpt
-    real(dp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
-    real(dp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
     ! -----------------------
     integer  :: icol, ilay, igpt
-    real(dp) :: t
     ! -----------------------
-
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs + tau_ray
-           ! This conditional is not needed, tau is always >> tiny()?
-          !  if(tau(igpt,ilay,icol) > 2._dp * tiny( tau(igpt,ilay,icol))) then
-          !   ! ssa = tau_rayleigh / tau_tot
-          !     tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-          !  else
-          !     tau_ray(igpt,ilay,icol) = 0._dp
-          !  end if
-          tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-
-          ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
-          tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_dp)
-
+          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
+          if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+            ! ssa = tau_rayleigh / tau_tot
+              tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+            ! ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+            !   tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_wp)
+          else
+              tau_ray(igpt,ilay,icol) = 0._wp
+          end if
         end do
       end do
     end do
-  end subroutine combine_2str_opt_dp
-
-  pure subroutine combine_2str_opt_sp(ncol, nlay, ngpt, tau, tau_ray) &
-      bind(C, name="combine_2str_opt_sp")
-    integer,                                intent(in)    :: ncol, nlay, ngpt
-    real(sp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
-    real(sp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
-    ! -----------------------
-    integer  :: icol, ilay, igpt
-    real(sp) :: t
-    ! -----------------------
-
-    do icol = 1, ncol
-      do ilay = 1, nlay
-        do igpt = 1, ngpt
-          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs + tau_ray
-
-          ! This conditional is not needed, tau is always >> tiny()?
-          !  if(tau(igpt,ilay,icol) > 2._sp * tiny( tau(igpt,ilay,icol))) then
-          !   ! ssa = tau_rayleigh / tau_tot
-          !     tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-          !  else
-          !     tau_ray(igpt,ilay,icol) = 0._sp
-          !  end if
-           tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-
-            ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
-           tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_sp)
-        end do
-      end do
-    end do
-  end subroutine combine_2str_opt_sp
+  end subroutine combine_2str_opt
   ! ----------------------------------------------------------
   !
   ! Combine absoprtion and Rayleigh optical depths for total tau, ssa, p

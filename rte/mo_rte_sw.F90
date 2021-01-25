@@ -53,15 +53,17 @@ contains
 
   function rte_sw(atmos, top_at_1,                 &
                   mu0, inc_flux,                   &
-                  sfc_alb_dir, sfc_alb_dif,        &
+                  sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
                   fluxes, inc_flux_dif, compute_gpoint_fluxes) result(error_msg)
     class(ty_optical_props_arry), intent(in   ) :: atmos           ! Optical properties provided as arrays
     logical,                      intent(in   ) :: top_at_1        ! Is the top of the domain at index 1?
                                                                    ! (if not, ordering is bottom-to-top)
     real(wp), dimension(:),       intent(in   ) :: mu0             ! cosine of solar zenith angle (ncol)
     real(wp), dimension(:,:),     intent(in   ) :: inc_flux,    &  ! incident flux at top of domain [W/m2] (ngpt, ncol)
-                                                   sfc_alb_dir, &  ! surface albedo for direct and
-                                                   sfc_alb_dif     ! diffuse radiation (nband, ncol)
+                                                  !  sfc_alb_dir, &  ! surface albedo for direct and
+                                                  !  sfc_alb_dif     ! diffuse radiation (nband, ncol)
+                                                  sfc_alb_dir_gpt, &  ! surface albedo for direct and
+                                                  sfc_alb_dif_gpt     ! diffuse radiation (ngpt, ncol)
     class(ty_fluxes_broadband),   intent(inout) :: fluxes                 ! Array of ty_fluxes. Default computes broadband fluxes at all levels
     real(wp), dimension(:,:), optional, target, &
                                   intent(in   ) :: inc_flux_dif    ! incident diffuse flux at top of domain [W/m2] (ngpt, ncol)
@@ -78,7 +80,8 @@ contains
     logical :: computing_gpoint_fluxes
     integer, dimension(2,atmos%get_nband())   :: band_limits
     real(wp), dimension(:,:,:), allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dir
-    real(wp), dimension(:,:),   allocatable :: sfc_alb_dir_gpt, sfc_alb_dif_gpt
+    ! Surface albedos expanded to g-points (now done outside RTE)
+    ! real(wp), dimension(:,:),   allocatable :: sfc_alb_dir_gpt, sfc_alb_dif_gpt ! 
     real(wp), dimension(:,:), contiguous, pointer     :: inc_diff_flux
     real(wp), dimension(:,:), allocatable, target     :: inc_flux_zero
     ! ------------------------------------------------------------------------------------
@@ -86,7 +89,7 @@ contains
     nlay  = atmos%get_nlay()
     ngpt  = atmos%get_ngpt()
     nband = atmos%get_nband()
-    band_limits = atmos%get_band_lims_gpoint()
+    ! band_limits = atmos%get_band_lims_gpoint()
     error_msg = ""
 
     ! ------------------------------------------------------------------------------------
@@ -107,9 +110,11 @@ contains
         error_msg = "rte_sw: mu0 inconsistently sized"
       if(.not. extents_are(inc_flux, ngpt, ncol)) &
         error_msg = "rte_sw: inc_flux inconsistently sized"
-      if(.not. extents_are(sfc_alb_dir, nband, ncol)) &
+      !if(.not. extents_are(sfc_alb_dir, nband, ncol)) &
+      if(.not. extents_are(sfc_alb_dir_gpt, ngpt, ncol)) &
         error_msg = "rte_sw: sfc_alb_dir inconsistently sized"
-      if(.not. extents_are(sfc_alb_dif, nband, ncol)) &
+      !if(.not. extents_are(sfc_alb_dif, nband, ncol)) &
+      if(.not. extents_are(sfc_alb_dif_gpt, ngpt, ncol)) &
         error_msg = "rte_sw: sfc_alb_dif inconsistently sized"
       if(present(inc_flux_dif)) then
         if(.not. extents_are(inc_flux_dif, ngpt, ncol)) &
@@ -125,9 +130,11 @@ contains
         error_msg = "rte_sw: one or more mu0 <= 0 or > 1"
       if(any_vals_less_than(inc_flux, 0._wp)) &
         error_msg = "rte_sw: one or more inc_flux < 0"
-      if(any_vals_outside(sfc_alb_dir,  0._wp, 1._wp)) &
+      ! if(any_vals_outside(sfc_alb_dir,  0._wp, 1._wp)) &
+      if(any_vals_outside(sfc_alb_dir_gpt,  0._wp, 1._wp)) &
         error_msg = "rte_sw: sfc_alb_dir out of bounds [0,1]"
-      if(any_vals_outside(sfc_alb_dif,  0._wp, 1._wp)) &
+      !if(any_vals_outside(sfc_alb_dif,  0._wp, 1._wp)) &
+      if(any_vals_outside(sfc_alb_dif_gpt,  0._wp, 1._wp)) &
         error_msg = "rte_sw: sfc_alb_dif out of bounds [0,1]"
       if(present(inc_flux_dif)) then
         if(any_vals_less_than(inc_flux_dif, 0._wp)) &
@@ -147,7 +154,7 @@ contains
     end if
 
     !
-    ! Optionally - compute fluxes at g-points, not only broadband fluxes?
+    ! Optionally - output spectral fluxes, not only broadband fluxes?
     !
     computing_gpoint_fluxes = .false.
     if(present(compute_gpoint_fluxes)) computing_gpoint_fluxes = compute_gpoint_fluxes
@@ -156,16 +163,13 @@ contains
 #endif
 
     ! ------------------------------------------------------------------------------------
-    allocate(sfc_alb_dir_gpt(ngpt, ncol), sfc_alb_dif_gpt(ngpt, ncol))
-    ! ------------------------------------------------------------------------------------
-    ! Lower boundary condition -- expand surface albedos by band to gpoints
-    !   and switch dimension ordering
 
-    !$acc enter data copyin(band_limits)
-    !$acc enter data create(sfc_alb_dir_gpt, sfc_alb_dif_gpt)
-    
-    call expand(nband, ngpt, ncol, band_limits, sfc_alb_dir, sfc_alb_dir_gpt)
-    call expand(nband, ngpt, ncol, band_limits, sfc_alb_dif, sfc_alb_dif_gpt)
+    ! Lower boundary condition -- expand surface albedos by band to gpoints
+    ! Now done outside RTE
+    ! allocate(sfc_alb_dir_gpt(ngpt, ncol), sfc_alb_dif_gpt(ngpt, ncol))
+    ! !$acc enter data create(sfc_alb_dir_gpt, sfc_alb_dif_gpt) copyin(band_limits)
+    ! call expand(nband, ngpt, ncol, band_limits, sfc_alb_dir, sfc_alb_dir_gpt)
+    ! call expand(nband, ngpt, ncol, band_limits, sfc_alb_dif, sfc_alb_dif_gpt)
 
     ! ------------------------------------------------------------------------------------
     !
@@ -185,7 +189,7 @@ contains
       else
         allocate(inc_flux_zero(ngpt, ncol))
         !$acc enter data create(inc_flux_zero)
-        !$acc parallel loop collapse(2)
+        !$acc parallel loop collapse(2) present(inc_flux_zero)
         do icol = 1, ncol
           do igpt = 1, ngpt
             inc_flux_zero(igpt,icol) = 0.0_wp
@@ -193,6 +197,7 @@ contains
         end do
         inc_diff_flux => inc_flux_zero
       end if
+      !$acc enter data attach(inc_diff_flux)
 
       select type (atmos)
         class is (ty_optical_props_1scl)
@@ -289,7 +294,7 @@ contains
       !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
     end if
 
-    !$acc exit data delete(sfc_alb_dir_gpt, sfc_alb_dif_gpt, band_limits)
+    ! !$acc exit data delete(sfc_alb_dir_gpt, sfc_alb_dif_gpt, band_limits)
 
   end function rte_sw
   !--------------------------------------------------------------------------------------------------------------------
@@ -304,8 +309,7 @@ contains
     ! -------------
     integer :: icol, iband, igpt
 
-    !$acc data present(arr_in, arr_out, band_limits)
-    !$acc parallel loop collapse(2)
+    !$acc parallel loop collapse(2) default(present)
     do icol = 1, ncol
       do iband = 1, nband
         do igpt = band_limits(1, iband), band_limits(2, iband)
@@ -313,7 +317,6 @@ contains
         end do
       end do
     end do
-    !$acc end data
 
   end subroutine expand
   

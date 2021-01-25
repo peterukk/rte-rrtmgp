@@ -482,13 +482,13 @@ contains
     do b = 1, nblocks
       call stop_on_err(gas_conc_array(b)%init(gas_names))
     end do
+
     ! print *, "gas names:", gas_names
-    ! print *, "------------"
     ! print *, gas_conc_array(b)%get_gas_names()
+
     !
     ! Which gases are known to the k-distribution and available in the files?
     !
-
     ! Experiment index for each colum
     allocate(exp_num(blocksize,nblocks))
     exp_num = reshape(spread([(b, b = 1, nexp_l)], 1, ncopies = ncol_l), shape = [blocksize, nblocks], order=[1,2])
@@ -512,9 +512,9 @@ contains
     !   call stop_on_err(gas_conc_array(b)%set_vmr('o3', gas_conc_temp_3d(:,:,b)))
     !   !                                         nlay, ncol, nexp -> nlay, blocksize, nblock -> blocksize, nlay
     ! end do
+    !
 
-
-     ! EDIT: H2O and O3 can now be either  2D, (nlay, ncol) or 3D (nlay, ncol, nexp), check for dimensions
+    ! EDIT: Water vapor and ozone can now be either 2D (nlay, ncol) or 3D (nlay, ncol, nexp), check for dimensions
     if(nf90_inq_varid(ncid, "water_vapor", varid) /= NF90_NOERR) &
       call stop_on_err("get_var_size: can't find variable " // "water_vapor")
     if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
@@ -534,7 +534,6 @@ contains
     do b = 1, nblocks
       call stop_on_err(gas_conc_array(b)%set_vmr('h2o', gas_conc_temp_3d(:,:,b)))
     end do
-
     deallocate(gas_conc_temp_3d)
 
     if(nf90_inq_varid(ncid, "ozone", varid) /= NF90_NOERR) &
@@ -556,7 +555,6 @@ contains
     do b = 1, nblocks
       call stop_on_err(gas_conc_array(b)%set_vmr('o3', gas_conc_temp_3d(:,:,b)))
     end do
-
     deallocate(gas_conc_temp_3d)
 
     !
@@ -646,7 +644,6 @@ contains
           ! Does every value in this block belong to the same experiment?
           if(all(exp_num(1,b) == exp_num(2:,b))) then
             ! Provide a scalar value
-            
             call stop_on_err(gas_conc_array(b)%set_vmr(gas_names(g), gas_conc_temp_1d(exp_num(1,b))))
           else
             ! Create 2D field, blocksize x nlay, with scalar values from each experiment

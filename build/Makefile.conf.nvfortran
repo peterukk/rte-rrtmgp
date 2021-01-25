@@ -7,9 +7,9 @@ export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.0  -Mcuda -Mcudalib=cublas
 #export FCFLAGS =  -g -acc=gpu -gpu=cuda11.0 -traceback -Mcuda -Mcudalib=cublas
 
 # # debugging
-#export FCFLAGS = -g -ta=tesla:lineinfo  -traceback  -Mcuda -Mcudalib=cublas
-#export FCFLAGS = -g -ta=tesla:cc60  -Minfo=all -traceback -Mchkfpstk -Mchkstk -Mdalign -Mdclchk -Mdepchk -Miomutex -Mrecursive -Msave -Ktrap=fp -O0 -byteswapio -Mallocatable=03 -Mcuda -Mcudalib=cublas
-#export FCFLAGS = -g  -Minfo=all -traceback -Mchkfpstk -Mchkstk -Mdalign -Mchkptr  -Mdclchk -Mstandard -Mdepchk -Mrecursive  -Kieee -Ktrap=fp -Mallocatable=03 -Mpreprocess -Mcuda -Mcudalib=cublas
+# export FCFLAGS = -g -ta=tesla:lineinfo  -traceback  -Mcuda -Mcudalib=cublas
+# export FCFLAGS = -g   -acc=gpu -gpu=cuda11.0  -Minfo=all -traceback -Mchkfpstk -Mchkstk -Mdalign -Mchkptr  -Mdclchk -Mstandard -Mdepchk -Mrecursive  -Kieee -Ktrap=fp -Mallocatable=03 -Mpreprocess -Mcuda -Mcudalib=cublas
+# export FCFLAGS = -g -ta=tesla:cc60  -Minfo=all -traceback -Mchkfpstk -Mchkstk -Mdalign -Mdclchk -Mdepchk -Miomutex -Mrecursive -Msave -Ktrap=fp -O0 -byteswapio -Mallocatable=03 -Mcuda -Mcudalib=cublas
 
 
 
