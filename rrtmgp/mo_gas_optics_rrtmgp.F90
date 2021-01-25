@@ -276,8 +276,7 @@ contains
     ngpt  = this%get_ngpt()
     nband = this%get_nband()
 
-    ! OpenACC: copy everything in here, remove in the end?
-    !$acc enter data copyin(tlay, tlev, tsfc, plev, play) 
+    !$acc enter data copyin(tlay, tsfc, plev, play) 
 
     !
     ! check arrays sizes and values
@@ -315,6 +314,7 @@ contains
 
     if(present(tlev)) then
       tlev_wk => tlev
+       !$acc enter data copyin(tlev)
     else
       tlev_wk => tlev_arr
       !
@@ -357,7 +357,7 @@ contains
 
       ! NOTE: The above change was necessary since in the NN code gas concentrations are accessed directly from gas_conc 
       ! like below, instead of the original method filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
-      ! This is much faster (before, input preprocessing became expensive at small block sizes)
+      ! This is much faster (previously input preprocessing became expensive at small block sizes)
             
       ! if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
       !   error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
@@ -372,7 +372,6 @@ contains
     !
     ! Gas optics
     !
-
     if (present(neural_nets)) then
       ! ----------------------------------------------------------------------------------
       ! Use neural network for gas optics
@@ -388,7 +387,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('predict_nn_lw_blas')
 #endif
-
       call predict_nn_lw_blas(              &
               ncol, nlay, ngpt, ninputs,    &  ! dimensions
               nn_inputs, col_dry_wk,        &  ! data inputs
@@ -397,6 +395,7 @@ contains
                                                         ! but for this temporary variable we can utilize an already allocated variable
       !$acc exit data delete(nn_inputs) 
       deallocate(nn_inputs)
+
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw_blas')
     ret =  gptlstart('compute_source')
@@ -426,7 +425,7 @@ contains
       ! ----------------------------------------------------------------------------------
     end if
 
-    !$acc exit data delete(col_dry_arr, tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk)
+    !$acc exit data delete(col_dry, col_dry_arr, tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk)
 
   end function gas_optics_int
   !------------------------------------------------------------------------------------------
@@ -471,8 +470,7 @@ contains
     nband = this%get_nband()
     ngas  = this%get_ngas()
 
-      ! OpenACC: copy everything in here, remove in the end?
-    !$acc enter data copyin(tlay, plev, play) 
+    !$acc enter data copyin(tlay, play, plev) 
 
     !
     ! check arrays sizes and values
@@ -519,7 +517,6 @@ contains
     if (present(neural_nets)) then
     ! ----------------------------------------------------------------------------------
     ! Use neural network for gas optics
-
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
       allocate(nn_inputs(ninputs,nlay,ncol))
       !$acc enter data create(nn_inputs)
@@ -531,8 +528,12 @@ contains
 
       select type(optical_props)
         type is (ty_optical_props_1scl)
-          ! User is asking for absorption optical depth
-          ! do nothing
+        ! User is asking for absorption optical depth only
+          ! call predict_nn_sw_blas(              &
+          !           ncol, nlay, ngpt, ninputs,    &  ! dimensions
+          !           nn_inputs, col_dry_wk,        &  ! data inputs
+          !           neural_nets,                  &  ! NN models (input)
+          !           optical_props%tau)             ! outputs    
 
         type is (ty_optical_props_2str)
 
@@ -545,7 +546,9 @@ contains
           optical_props%g = 0.0_wp
 
       end select
+      
       !$acc exit data delete(nn_inputs) 
+      deallocate(nn_inputs)
      
     else
     ! ----------------------------------------------------------------------------------
@@ -563,18 +566,18 @@ contains
     !
     ! External source function is constant
     !
-    !$acc enter data create(toa_src)
     if(.not. extents_are(toa_src, ngpt, ncol)) &
       error_msg = "gas_optics(): array toa_src has wrong size"
     if(error_msg  /= '') return
 
-    !$acc parallel loop collapse(2)
+    !$acc parallel loop collapse(2) present(toa_src,this%solar_source)
     do icol = 1,ncol
        do igpt = 1,ngpt
           toa_src(igpt,icol) = this%solar_source(igpt)
        end do
     end do
-    !$acc exit data copyout(toa_src) delete(col_dry_arr, tlay, play, plev, plev) detach(col_dry_wk)
+    !$acc exit data delete(col_dry, col_dry_arr, tlay, play, plev) detach(col_dry_wk)
+
   end function gas_optics_ext
 
 !------------------------------------------------------------------------------------------
@@ -767,8 +770,9 @@ contains
       if(error_msg  /= '') return
     end if
 
+    ! !$acc update host(nn_inputs)
     ! do igas = 1, ninputs
-    !   print *, 'Neural network inputs: max of', igas, ":", maxval(nn_inputs(igas,:,:))
+    !   print *, 'Neural network inputs: min, max of', igas, ":",  minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
     ! end do
 
 #ifdef USE_TIMING
@@ -796,25 +800,26 @@ contains
     class(ty_optical_props_arry),     intent(inout) :: optical_props !inout because components are allocated
     ! Optional inputs used for long-wave
     class(ty_source_func_lw    ),     intent(inout), &
-                                                  optional :: sources       ! Planck sources
+                                                  optional :: sources ! Planck sources
     real(wp), dimension(nlay+1,ncol), intent(in), optional :: tlev
     real(wp), dimension(ncol       ), intent(in), optional :: tsfc  
-
+    ! ----------------------------------------------------------
+    ! Local variables
+    !
     ! Interpolation coefficients for use in internal source function
     integer,     dimension(                      nlay, ncol)  :: jtemp, jpress
     integer,     dimension(2,    get_nflav(this),nlay, ncol)  :: jeta
     logical(wl), dimension(                      nlay, ncol)  :: tropo
     real(wp),    dimension(2,2,2,get_nflav(this),nlay, ncol)  :: fmajor
-    character(len=128)                                         :: error_msg
-    ! ----------------------------------------------------------
-    ! Local variables
-    real(wp), dimension(:,:,:), allocatable           :: tau_rayleigh  ! absorption, Rayleigh scattering optical depths
-    real(wp), dimension(nlay, ncol, this%get_ngas())             :: vmr     ! volume mixing ratios
+    character(len=128)                                        :: error_msg
+
+    real(wp), dimension(:,:,:), allocatable               :: tau_rayleigh  ! absorption, Rayleigh scattering optical depths
+    real(wp), dimension(nlay, ncol, this%get_ngas())      :: vmr     ! volume mixing ratios
     !
     ! Interpolation variables used in major gas but not elsewhere, so don't need exporting
     !
-    real(wp), dimension(nlay,ncol,0:this%get_ngas())  :: col_gas ! column amounts for each gas (Num. of molecules per cm^2), plus col_dry
-    real(wp), dimension(2,    get_nflav(this),nlay,ncol) :: col_mix ! combination of major species's column amounts
+    real(wp), dimension(nlay, ncol,  0:this%get_ngas())   :: col_gas ! column amounts for each gas (Num. of molecules per cm^2), plus col_dry
+    real(wp), dimension(2,    get_nflav(this),nlay,ncol)  :: col_mix ! combination of major species's column amounts
                                                          ! index(1) : reference temperature level
                                                          ! index(2) : flavor
                                                          ! index(3) : layer
@@ -857,13 +862,10 @@ contains
     nminorupper  = size(this%minor_scales_with_density_upper)
     nminorkupper = size(this%kminor_upper, 1)
 
-    !$acc enter data create(jtemp, jpress, tropo, fmajor, jeta, col_gas)
-
     !
     ! compute column gas amounts [molec/cm^2]
     !
-  
-    !$acc enter data create(vmr)
+    !$acc enter data create(col_gas, vmr)
     do igas = 1, ngas
       !
       ! Get vmr if  gas is provided in ty_gas_concs
@@ -874,14 +876,15 @@ contains
       endif
     end do
   
-    !$acc parallel loop gang vector collapse(2) present(col_dry)
+    !$acc parallel default(present)
+    !$acc loop gang vector collapse(2) 
     do icol = 1, ncol
       do ilay = 1, nlay
         col_gas(ilay,icol,0) = col_dry(ilay,icol)
       end do
     end do
     
-    !$acc parallel loop gang vector collapse(3) present(col_gas, vmr, col_dry)
+    !$acc loop gang vector collapse(3)
     do igas = 1, ngas
       do icol = 1, ncol
         do ilay = 1, nlay
@@ -889,16 +892,17 @@ contains
         end do
       end do
     end do
+    !$acc end parallel
+
     !$acc exit data delete(vmr)
 
     !
     ! ---- calculate gas optical depths ----
     !
-    !$acc enter data create(col_mix, fminor)
+    !$acc enter data create(jtemp, jpress, jeta, tropo, fmajor, fminor, col_mix)
     !$acc enter data copyin(this)
     !$acc enter data copyin(this%gpoint_flavor)
-    !$acc enter data copyin(this%kmajor)
-
+    !$acc enter data copyin(this%flavor,this%press_ref_log,this%temp_ref,this%vmr_ref) 
     call interpolation(               &
             ncol,nlay,                &        ! problem dimensions
             ngas, nflav, neta, npres, ntemp, & ! interpolation dimensions
@@ -918,6 +922,7 @@ contains
             col_mix,      &
             tropo,        &
             jeta,jpress)
+    !$acc exit data delete(this%flavor,this%press_ref_log,this%temp_ref,this%vmr_ref) 
 
     !idx_h2o = string_loc_in_array('h2o', this%gas_names)
     idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
@@ -953,8 +958,6 @@ contains
             play,tlay,col_gas,                       &
             jeta,jtemp,jpress,                       &
             optical_props%tau)
-
-    !$acc exit data delete(this%kmajor)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_kernel')
 #endif
@@ -971,7 +974,7 @@ contains
             this%gpoint_flavor,          &
             this%get_band_lims_gpoint(), &
             this%krayl,                  & ! inputs from object
-            idx_h2o, col_dry ,col_gas, &
+            idx_h2o, col_dry, col_gas, &
             fminor,jeta,tropo,jtemp,     & ! local input
             tau_rayleigh)
 #ifdef USE_TIMING
@@ -987,7 +990,7 @@ contains
 #endif
     end if
 
-    !$acc exit data delete(col_mix, fminor)
+    !$acc exit data delete(col_gas, col_mix, fminor)
 
     if(present(sources)) then
 #ifdef USE_TIMING
@@ -1007,7 +1010,7 @@ contains
     if (error_msg /= '') return
 
     !$acc exit data delete(this%gpoint_flavor)
-    !$acc exit data delete(jtemp, jpress, jeta, tropo, fmajor, col_gas)
+    !$acc exit data delete(jtemp, jpress, jeta, tropo, fmajor)
     
   end function compute_gas_optics
 

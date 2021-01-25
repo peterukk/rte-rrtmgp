@@ -192,8 +192,9 @@ contains
       !$acc exit data delete(this%sfc_source_Jac)
       deallocate(this%sfc_source_Jac)
     end if 
+    
+    !$acc exit data delete(this)
 
-    call this%ty_optical_props%finalize()
   end subroutine finalize_lw
   ! --------------------------------------------------------------
   subroutine finalize_sw(this)
@@ -204,7 +205,8 @@ contains
       deallocate(this%toa_source)
     end if
 
-    call this%ty_optical_props%finalize()
+    !$acc exit data delete(this)
+
   end subroutine finalize_sw
   ! ------------------------------------------------------------------------------------------
   !

@@ -107,7 +107,7 @@ program rrtmgp_rfmip_sw
   character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, use_nn, compare_flux, save_flux
-  integer            :: b, icol, ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, ret, i
+  integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, ret, i, istat
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
@@ -138,7 +138,13 @@ program rrtmgp_rfmip_sw
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
   real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
-
+  real(wp) :: def_tsi_s
+  ! Initialize GPU kernel
+#ifdef USE_OPENACC  
+  type(cublasHandle) :: h
+  istat = cublasCreate(h) 
+  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
+#endif
   ! -------------------------------------------------------------------------------------------------
   !
   ! Code starts
@@ -146,7 +152,7 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_nn      = .true.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -201,7 +207,6 @@ program rrtmgp_rfmip_sw
   !
   call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
   print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  ! print *, "-----------------"
   ! print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
   ! --------------------------------------------------
   !
@@ -264,17 +269,18 @@ program rrtmgp_rfmip_sw
   !   gas optical properties, and source functions. The %alloc() routines carry along
   !   the spectral discretization from the k-distribution.
   !
-
   allocate(flux_up(    	nlay+1, block_size, nblocks), &
            flux_dn(    	nlay+1, block_size, nblocks))
-
   allocate(flux_dn_dir(    	nlay+1, block_size, nblocks))
+  ! allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
+  allocate(mu0(block_size), sfc_alb_spec(ngpt,block_size))
 
-  allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
+  ! OpenACC: Arrays are allocated on device inside constructor
   call stop_on_err(optical_props%alloc_2str(block_size, nlay, k_dist))
-  !$acc enter data create(optical_props, optical_props%tau, optical_props%ssa, optical_props%g)
+  
   !$acc enter data create (toa_flux, def_tsi)
-  !$acc enter data create (sfc_alb_spec, mu0)
+  !$acc enter data create (sfc_alb_spec, mu0) 
+  !$acc enter data copyin(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
 
 #ifdef USE_TIMING
   !
@@ -308,7 +314,6 @@ program rrtmgp_rfmip_sw
 do i = 1, 10
 #endif
   do b = 1, nblocks
-    ! print *, b, "/", nblocks
 
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
@@ -316,21 +321,20 @@ do i = 1, 10
     !
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
-    !true
+    !
 #ifdef USE_TIMING
     ret =  gptlstart('clear_sky_total (SW)')
     ret =  gptlstart('gas_optics (SW)')
 #endif
-
+    
     if (use_nn) then
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
-      p_lev(:,:,b),       &
-      t_lay(:,:,b),       &
-      gas_conc_array(b),  &
-      optical_props,      &
-      toa_flux, neural_nets=neural_nets))
+                                        p_lev(:,:,b),       &
+                                        t_lay(:,:,b),       &
+                                        gas_conc_array(b),  &
+                                        optical_props,      &
+                                        toa_flux, neural_nets=neural_nets))
     else
-      optical_props%tau = 0.0 
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -346,50 +350,39 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (SW)')
 #endif
+    !
     ! Boundary conditions
-    !   (This is partly to show how to keep work on GPUs using OpenACC in a host application)
+    !
     ! What's the total solar irradiance assumed by RRTMGP?
-    !
-#ifdef _OPENACC
-    call zero_array(block_size, def_tsi)
-    !$acc parallel loop collapse(2) copy(def_tsi) copyin(toa_flux)
+    ! 
+    !$acc parallel loop gang default(present)
     do icol = 1, block_size
+      def_tsi_s = 0.0_wp
+      !$acc loop vector reduction(+:def_tsi_s)
       do igpt = 1, ngpt
-        !$acc atomic update
-        def_tsi(icol) = def_tsi(icol) + toa_flux(igpt, icol)
+        def_tsi_s = def_tsi_s + toa_flux(igpt, icol)
       end do
+      def_tsi(icol) = def_tsi_s
     end do
-#else
-    !
-    ! More compactly...
-    !
-    def_tsi(1:block_size) = sum(toa_flux, dim=1)
-#endif
-    !
-    ! Normalize incoming solar flux to match RFMIP specification
-    !
-    !$acc parallel loop collapse(2) copyin(total_solar_irradiance, def_tsi) copy(toa_flux)
+
+    !$acc parallel default(present)    
+    !$acc loop collapse(2)
     do icol = 1, block_size
       do igpt = 1, ngpt
+        ! Normalize incoming solar flux to match RFMIP specification
         toa_flux(igpt,icol) = toa_flux(igpt,icol) * total_solar_irradiance(icol,b)/def_tsi(icol)
-      end do
-    end do
-    !
-    ! Expand the spectrally-constant surface albedo to a per-band albedo for each column
-    !
-    !$acc parallel loop collapse(2) copyin(surface_albedo)
-    do icol = 1, block_size
-      do ibnd = 1, nbnd
-        sfc_alb_spec(ibnd,icol) = surface_albedo(icol,b)
+        ! Expand the spectrally-constant surface albedo to a per-g-point albedo for each column
+        sfc_alb_spec(igpt,icol) = surface_albedo(icol,b)
       end do
     end do
     !
     ! Cosine of the solar zenith angle
     !
-    !$acc parallel loop copyin(solar_zenith_angle, usecol)
+    !$acc loop
     do icol = 1, block_size
       mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
     end do
+    !$acc end parallel
 
     !
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
@@ -398,7 +391,7 @@ do i = 1, 10
 #ifdef USE_TIMING
     ret =  gptlstart('rte_sw')
 #endif
-
+    
     call stop_on_err(rte_sw(optical_props,   &
                             top_at_1,        &
                             mu0,             &
@@ -414,7 +407,6 @@ do i = 1, 10
     !
     ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
     !
-
     do icol = 1, block_size
       if(.not. usecol(icol,b)) then
         flux_up(:,icol,b)  = 0._wp
@@ -422,7 +414,7 @@ do i = 1, 10
       end if
     end do
 
-  end do
+  end do !blocks
 
   !
   ! End timers
@@ -434,10 +426,13 @@ do i = 1, 10
   ret = gptlfinalize()
 #endif
 
+  !$acc exit data delete(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
+  !$acc exit data delete(sfc_alb_spec, mu0)
+  !$acc exit data delete(toa_flux, def_tsi)
+  call optical_props%finalize() ! Also deallocates arrays on device
+
   call system_clock(iTime2)
   print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
-
-  ! print *, "max flux_up, flux_dn:", maxval(flux_up(:,:,:)), maxval(flux_dn(:,:,:))
 
   allocate(temparray(   block_size*(nlay+1)*nblocks)) 
   temparray = pack(flux_dn(:,:,:),.true.)
@@ -445,13 +440,9 @@ do i = 1, 10
   temparray = pack(flux_up(:,:,:),.true.)
   print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
   deallocate(temparray)
-
   ! mean of flux_down is:   292.71945410963957     
   ! mean of flux_up is:   41.835381782065106 
 
-  !$acc exit data delete(optical_props%tau, optical_props%ssa, optical_props%g, optical_props)
-  !$acc exit data delete(sfc_alb_spec, mu0)
-  !$acc exit data delete(toa_flux, def_tsi)
   ! --------------------------------------------------
 
     ! Save fluxes ?

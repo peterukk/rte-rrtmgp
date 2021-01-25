@@ -70,8 +70,9 @@ module mo_optical_props
     procedure, private :: init_base_from_copy
     procedure, public  :: is_initialized => is_initialized_base
     procedure, private :: is_initialized_base
-    procedure, public  :: finalize => finalize_base
-    procedure, private :: finalize_base
+    ! generic finalize now refers to procedures which deallocate optical property arrays
+    !procedure, public  :: finalize => finalize_base
+    procedure, public  :: finalize_base
     procedure, public  :: get_nband
     procedure, public  :: get_ngpt
     procedure, public  :: get_gpoint_bands
@@ -168,6 +169,9 @@ module mo_optical_props
     procedure, private :: init_and_alloc_1scl
     procedure, private :: copy_and_alloc_1scl
     generic,   public  :: alloc_1scl => alloc_only_1scl, init_and_alloc_1scl, copy_and_alloc_1scl
+
+    procedure, public :: finalize => finalize_1scl
+
   end type
 
   ! --- 2 stream ------------------------------------------------------------------------
@@ -183,6 +187,8 @@ module mo_optical_props
     procedure, private :: init_and_alloc_2str
     procedure, private :: copy_and_alloc_2str
     generic,   public  :: alloc_2str => alloc_only_2str, init_and_alloc_2str, copy_and_alloc_2str
+
+    procedure, public :: finalize => finalize_2str
   end type
 
   ! --- n stream ------------------------------------------------------------------------
@@ -199,6 +205,8 @@ module mo_optical_props
     procedure, private :: init_and_alloc_nstr
     procedure, private :: copy_and_alloc_nstr
     generic,   public  :: alloc_nstr => alloc_only_nstr, init_and_alloc_nstr, copy_and_alloc_nstr
+
+    procedure, public :: finalize => finalize_nstr
   end type
   ! -------------------------------------------------------------------------------------------------
 contains
@@ -315,7 +323,7 @@ contains
   !
   ! ------------------------------------------------------------------------------------------
   !
-  ! Straight allocation routines
+  ! Straight allocation & deallocation routines
   !
   ! --- 1 scalar ------------------------------------------------------------------------
   function alloc_only_1scl(this, ncol, nlay) result(err_message)
@@ -338,6 +346,18 @@ contains
     end if
   end function alloc_only_1scl
 
+  subroutine finalize_1scl(this)
+    class(ty_optical_props_1scl),    intent(inout) :: this
+
+    if(allocated(this%tau)) then
+      !$acc exit data delete(this%tau)
+      deallocate(this%tau)
+    end if
+    !$acc exit data delete(this)
+
+    call this%ty_optical_props%finalize_base()
+  end subroutine finalize_1scl
+
   ! --- 2 stream ------------------------------------------------------------------------
   function alloc_only_2str(this, ncol, nlay) result(err_message)
     class(ty_optical_props_2str)    :: this
@@ -354,13 +374,35 @@ contains
     else
       if(allocated(this%tau)) deallocate(this%tau)
       allocate(this%tau(this%get_ngpt(),nlay,ncol))
+      if(allocated(this%ssa)) deallocate(this%ssa)
+      if(allocated(this%g  )) deallocate(this%g  )
+      allocate(this%ssa(this%get_ngpt(),nlay,ncol), this%g(this%get_ngpt(),nlay,ncol))
+      !$acc enter data create(this)
+      !$acc enter data create(this%tau, this%ssa, this%g)
     end if
-    if(allocated(this%ssa)) deallocate(this%ssa)
-    if(allocated(this%g  )) deallocate(this%g  )
-    allocate(this%ssa(this%get_ngpt(),nlay,ncol), this%g(this%get_ngpt(),nlay,ncol))
-    !$acc enter data create(this)
-    !$acc enter data create(this%tau, this%ssa, this%g)
   end function alloc_only_2str
+
+  subroutine finalize_2str(this)
+    class(ty_optical_props_2str),    intent(inout) :: this
+
+    if(allocated(this%tau)) then
+      !$acc exit data delete(this%tau)
+      deallocate(this%tau)
+    end if
+
+    if(allocated(this%ssa)) then
+      !$acc exit data delete(this%ssa)
+      deallocate(this%ssa)
+    end if
+
+    if(allocated(this%g)) then
+      !$acc exit data delete(this%g)
+      deallocate(this%g)
+    end if
+    !$acc exit data delete(this)
+
+    call this%ty_optical_props%finalize_base()
+  end subroutine finalize_2str
 
   ! --- n stream ------------------------------------------------------------------------
   function alloc_only_nstr(this, nmom, ncol, nlay) result(err_message)
@@ -386,7 +428,32 @@ contains
     !$acc enter data create(this)
     !$acc enter data create(this%tau, this%ssa, this%p)
   end function alloc_only_nstr
+
+  subroutine finalize_nstr(this)
+    class(ty_optical_props_nstr),    intent(inout) :: this
+
+    if(allocated(this%tau)) then
+      !$acc exit data delete(this%tau)
+      deallocate(this%tau)
+    end if
+
+    if(allocated(this%ssa)) then
+      !$acc exit data delete(this%ssa)
+      deallocate(this%ssa)
+    end if
+
+    if(allocated(this%p)) then
+      !$acc exit data delete(this%p)
+      deallocate(this%p)
+    end if
+    !$acc exit data delete(this)
+
+    call this%ty_optical_props%finalize_base()
+  end subroutine finalize_nstr
+
   ! ------------------------------------------------------------------------------------------
+
+
   !
   ! Combined allocation/initialization routines
   !
@@ -407,7 +474,7 @@ contains
     err_message = this%ty_optical_props%init(band_lims_wvn, &
                                              band_lims_gpt, name)
     if(err_message /= "") return
-    err_message = this%alloc_1scl(ncol, nlay)
+    err_message = this%alloc_only_1scl(ncol, nlay)
   end function init_and_alloc_1scl
   ! ---------------------------------------------------------------------------
   function init_and_alloc_2str(this, ncol, nlay, band_lims_wvn, band_lims_gpt, name) result(err_message)
@@ -422,7 +489,7 @@ contains
     err_message = this%ty_optical_props%init(band_lims_wvn, &
                                              band_lims_gpt, name)
     if(err_message /= "") return
-    err_message = this%alloc_2str(ncol, nlay)
+    err_message = this%alloc_only_2str(ncol, nlay)
   end function init_and_alloc_2str
   ! ---------------------------------------------------------------------------
   function init_and_alloc_nstr(this, nmom, ncol, nlay, band_lims_wvn, band_lims_gpt, name) result(err_message)
@@ -437,7 +504,7 @@ contains
     err_message = this%ty_optical_props%init(band_lims_wvn, &
                                              band_lims_gpt, name)
     if(err_message /= "") return
-    err_message = this%alloc_nstr(nmom, nlay, ncol)
+    err_message = this%alloc_only_nstr(nmom, nlay, ncol)
   end function init_and_alloc_nstr
   !-------------------------------------------------------------------------------------------------
   !
@@ -452,7 +519,7 @@ contains
     character(len=128)                       :: err_message
 
     err_message = ""
-    if(this%ty_optical_props%is_initialized()) call this%ty_optical_props%finalize()
+    if(this%ty_optical_props%is_initialized()) call this%ty_optical_props%finalize_base()
     err_message = this%ty_optical_props%init(spectral_desc%get_band_lims_wavenumber(), &
                                              spectral_desc%get_band_lims_gpoint(), name)
     if(err_message /= "") return
@@ -467,7 +534,7 @@ contains
     character(len=128)                       :: err_message
 
     err_message = ""
-    if(this%ty_optical_props%is_initialized()) call this%ty_optical_props%finalize()
+    if(this%ty_optical_props%is_initialized()) call this%ty_optical_props%finalize_base()
     err_message = this%ty_optical_props%init(spectral_desc%get_band_lims_wavenumber(), &
                                              spectral_desc%get_band_lims_gpoint(), name)
     if(err_message /= "") return
@@ -482,7 +549,7 @@ contains
     character(len=128)                       :: err_message
 
     err_message = ""
-    if(this%ty_optical_props%is_initialized()) call this%ty_optical_props%finalize()
+    if(this%ty_optical_props%is_initialized()) call this%ty_optical_props%finalize_base()
     err_message = this%ty_optical_props%init(spectral_desc%get_band_lims_wavenumber(), &
                                              spectral_desc%get_band_lims_gpoint(), name)
     if(err_message /= "") return
@@ -668,7 +735,7 @@ contains
        err_message = "optical_props%subset: Asking for columns outside range"
     if(err_message /= "") return
 
-    if(subset%is_initialized()) call subset%finalize()
+    if(subset%is_initialized()) call subset%finalize_base()
     err_message = subset%init(full)
     ! Seems like the deallocation statements should be needed under Fortran 2003
     !   but Intel compiler doesn't run without them
@@ -721,7 +788,7 @@ contains
        err_message = "optical_props%subset: Asking for columns outside range"
     if(err_message /= "") return
 
-    if(subset%is_initialized()) call subset%finalize()
+    if(subset%is_initialized()) call subset%finalize_base()
     err_message = subset%init(full)
     select type (subset)
       class is (ty_optical_props_1scl)
@@ -774,7 +841,7 @@ contains
        err_message = "optical_props%subset: Asking for columns outside range"
     if(err_message /= "") return
 
-    if(subset%is_initialized()) call subset%finalize()
+    if(subset%is_initialized()) call subset%finalize_base()
     err_message = subset%init(full)
     if(allocated(subset%tau)) deallocate(subset%tau)
     select type (subset)
