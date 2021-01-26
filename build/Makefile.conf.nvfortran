@@ -1,9 +1,10 @@
 
-#  ------- GPU ----------
+#  ------- GPU ---------- 
+
+export USE_OPENACC = 1 # Use the OpenACC kernels (required)
 
 export FC = nvfortran 
 export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.0  -Mcuda -Mcudalib=cublas
-
 #export FCFLAGS =  -g -acc=gpu -gpu=cuda11.0 -traceback -Mcuda -Mcudalib=cublas
 
 # # debugging
