@@ -657,7 +657,10 @@ contains
     !
     if(any_vals_less_than(this%tau,  0._wp)) &
       err_message = "validate: tau values out of range"
-    if(any_vals_outside  (this%ssa,  0._wp, 1._wp)) &
+    ! if(any_vals_outside  (this%ssa,  0._wp, 1.0_wp)) & 
+    ! FIX: ssa can become slightly (~1e-7) larger than 1 with aggressive compiler options e.g. --fast-math with GNU.
+    ! This is caused by a rounding error and is in itself harmless (fast-math may cause inaccuracies elsewhere)
+    if(any_vals_outside  (this%ssa,  0._wp, 1.0001_wp)) & 
       err_message = "validate: ssa values out of range"
     if(any_vals_outside  (this%g  , -1._wp, 1._wp)) &
       err_message = "validate: g values out of range"
@@ -694,10 +697,12 @@ contains
     !
     if(any_vals_less_than(this%tau,  0._wp)) &
       err_message = "validate: tau values out of range"
-    if(any_vals_outside  (this%ssa,  0._wp, 1._wp)) &
+    ! if(any_vals_outside  (this%ssa,  0._wp, 1.0_wp)) & 
+    ! FIX: ssa can become slightly (~1e-7) larger than 1 with aggressive compiler options e.g. --fast-math with GNU.
+    ! This is caused by a rounding error and is in itself harmless (fast-math may cause inaccuracies elsewhere)
+    if(any_vals_outside  (this%ssa,  0._wp, 1.0001_wp)) & 
       err_message = "validate: ssa values out of range"
-    if(any_vals_outside  (this%p(1,:,:,:),  &
-                                                                           -1._wp, 1._wp)) &
+    if(any_vals_outside  (this%p(1,:,:,:),  -1._wp, 1._wp)) &
       err_message = "validate: p(1,:,:,:)  = g values out of range"
 
     if(len_trim(err_message) > 0 .and. len_trim(this%get_name()) > 0) &

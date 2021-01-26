@@ -1015,7 +1015,10 @@ contains
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(inout) :: tau, ssa !
+                                        intent(out) :: tau 
+    real(wp), dimension(ngpt,nlay,ncol), target, &
+                           optional,    intent(out) :: ssa                                     
+    ! ^ wp = sp but using wp here for consistency with combine_2_str_opt        
     ! ^ wp = sp but using wp here for consistency with combine_2_str_opt                                    
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
@@ -1034,14 +1037,18 @@ contains
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
               
-    call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
+    if (present(ssa)) then
 
-    call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                          input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
+      call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
 
-    ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
-    ! inputs: tau_abs (called tau) and tau_ray (called ssa), outputs tau_tot and ssa without further allocations
-    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                            input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
+
+      ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+      ! inputs: tau_abs (called tau) and tau_ray (called ssa)
+      ! first argument becomes tau_tot and second becomes ssa
+      call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+    end if
 
   end subroutine predict_nn_sw_blas_sp
 
@@ -1065,8 +1072,10 @@ contains
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(out) :: tau, ssa !
-    ! ^ wp = dp but using wp here for consistency with combine_2_str_opt                                    
+                                        intent(out) :: tau 
+    real(wp), dimension(ngpt,nlay,ncol), target, &
+                           optional,    intent(out) :: ssa                                     
+    ! ^ wp = dp but using wp here for consistency with combine_2_str_opt                            
     ! local
     real(sp), dimension(:,:), contiguous, pointer   :: input
     real(sp), dimension(nlay*ncol)                  :: input_coldry          
@@ -1100,24 +1109,27 @@ contains
       end do
     end do
 
-    call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                        input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
-    
-    !$acc parallel loop collapse(3) present(ssa,output_sp)
-    do icol = 1, ncol
-      do ilay = 1, nlay
-        do igpt = 1, ngpt
-          ssa(igpt,ilay,icol) = real(output_sp(igpt,ilay,icol), dp)
+    if (present(ssa)) then
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
+      
+      !$acc parallel loop collapse(3) present(ssa,output_sp)
+      do icol = 1, ncol
+        do ilay = 1, nlay
+          do igpt = 1, ngpt
+            ssa(igpt,ilay,icol) = real(output_sp(igpt,ilay,icol), dp)
+          end do
         end do
       end do
-    end do
 
+      ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+      ! inputs: tau_abs (called tau) and tau_ray (called ssa)
+      ! first argument becomes tau_tot and second becomes ssa
+      call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+
+    end if 
 
     !$acc exit data delete(output_sp, input_coldry)
-
-    ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
-    ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
-    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
 
   end subroutine predict_nn_sw_blas_mp
 
