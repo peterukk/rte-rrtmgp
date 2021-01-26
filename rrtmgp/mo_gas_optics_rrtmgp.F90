@@ -525,15 +525,15 @@ contains
                           ncol, nlay, ngas, ninputs,  &
                           play, tlay, gas_desc,       &
                           nn_inputs)   
-
+                          
       select type(optical_props)
         type is (ty_optical_props_1scl)
-        ! User is asking for absorption optical depth only
-          ! call predict_nn_sw_blas(              &
-          !           ncol, nlay, ngpt, ninputs,    &  ! dimensions
-          !           nn_inputs, col_dry_wk,        &  ! data inputs
-          !           neural_nets,                  &  ! NN models (input)
-          !           optical_props%tau)             ! outputs    
+          ! User is asking for absorption optical depth only
+          call predict_nn_sw_blas(              &
+                    ncol, nlay, ngpt, ninputs,    &  ! dimensions
+                    nn_inputs, col_dry_wk,        &  ! data inputs
+                    neural_nets,                  &  ! NN models (input)
+                    optical_props%tau)             ! outputs    
 
         type is (ty_optical_props_2str)
 
@@ -543,8 +543,10 @@ contains
                   neural_nets,                  &  ! NN models (input)
                   optical_props%tau, optical_props%ssa)    ! outputs    
 
+          !$acc kernels
           optical_props%g = 0.0_wp
-
+          !$acc end kernels
+          
       end select
       
       !$acc exit data delete(nn_inputs) 

@@ -899,8 +899,12 @@ contains
     ! The neural network models
     type(network_type), dimension(2),   intent(in)    :: neural_nets
     ! outputs
+    ! real(wp), dimension(ngpt,nlay,ncol), target, &
+    !                                     intent(out) :: tau, ssa !
     real(wp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(out) :: tau, ssa !
+                                        intent(out) :: tau 
+    real(wp), dimension(ngpt,nlay,ncol), target, &
+                           optional,    intent(out) :: ssa                                     
     ! ^ wp = sp but using wp here for consistency with combine_2_str_opt                                                                  
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output
@@ -923,22 +927,28 @@ contains
                           
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_abs')
+#endif
+
+    if (present(ssa)) then
+#ifdef USE_TIMING
     ret =  gptlstart('compute_tau_ray')
 #endif
-    call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
+      call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
 
-    call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                          input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                            input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_ray')
     ret =  gptlstart('combine_taus_compute_ssa')
 #endif
-    ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
-    ! inputs: tau_abs (called tau) and tau_ray (called ssa), outputs tau_tot and ssa without further allocations
-    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+      ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+      ! inputs: tau_abs (called tau) and tau_ray (called ssa)
+      ! first argument becomes tau_tot and second becomes ssa
+      call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
 #ifdef USE_TIMING
     ret =  gptlstop('combine_taus_compute_ssa')
 #endif
+    end if
   end subroutine predict_nn_sw_blas_sp
 
   ! --------------------------------------------------------------------------------------
@@ -961,7 +971,9 @@ contains
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(out) :: tau, ssa !
+                                        intent(out) :: tau 
+    real(wp), dimension(ngpt,nlay,ncol), target, &
+                           optional,    intent(out) :: ssa                                     
     ! ^ wp = dp but using wp here for consistency with combine_2_str_opt                                                                
     ! local
     real(sp), dimension(nlay,ncol),       target      :: col_dry_wk_sp                                     
@@ -985,18 +997,22 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_abs')
 #endif
+
+    if (present(ssa)) then
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_ray')
 #endif
-    call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                          input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, tmp_output)
-    ssa = reshape(tmp_output,(/ngpt,nlay,ncol/))
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                            input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, tmp_output)
+      ssa = reshape(tmp_output,(/ngpt,nlay,ncol/))
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_ray')
 #endif
-!     ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
-!     ! inputs: tau_abs and tau_ray, outputs tau_tot and ssa without further allocations
-    call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+      ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+      ! inputs: tau_abs (called tau) and tau_ray (called ssa)
+      ! first argument becomes tau_tot and second becomes ssa
+      call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+    end if
 
   end subroutine predict_nn_sw_blas_mp
 
