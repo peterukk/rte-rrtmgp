@@ -43,7 +43,8 @@ module mo_rte_sw
   !
   use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead
-#endif  implicit none
+#endif  
+  implicit none
   private
 
   public :: rte_sw
