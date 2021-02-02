@@ -35,8 +35,8 @@ module mo_rte_rrtmgp_config
   ! are scalar, i.e. height independent, and stored in rrtmgp_ref_concentrations for each greenhouse gas 
   ! except H2O and O3 and for three different scenarios (present-day, pre-industrial or future). 
   ! Configure using the integer variable scenario_index: 
-  ! Set 1 for zero, 2 for present-day, 3 for pre-industrial or 4 for future reference value.  
-  integer, protected, public    :: scenario_index     = 2
+  ! Set 0 for zero, 1 for present-day, 2 for pre-industrial or 3 for future reference value.  
+  integer, protected, public    :: scenario_index     = 0  ! must be 0, 1, 2, or 3
   ! --------------------------------------------------------------- 
 
   interface rte_rrtmgp_config_checks
