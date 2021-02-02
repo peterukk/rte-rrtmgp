@@ -22,7 +22,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_gas_optics_rrtmgp
   use mo_rte_kind,           only: wp, wl, dp, sp
-  use mo_rte_config,         only: check_extents, check_values
+  use mo_rte_rrtmgp_config,  only: check_extents, check_values, all_gases_exist, scenario_index
   use mo_rte_util_array,     only: zero_array, any_vals_less_than, any_vals_outside, extents_are
   use mo_optical_props,      only: ty_optical_props
   use mo_source_functions,   only: ty_source_func_lw
@@ -379,7 +379,7 @@ contains
       allocate(nn_inputs(ninputs,nlay,ncol))
       !$acc enter data create(nn_inputs)
 
-      error_msg = compute_nn_inputs(this,             &
+      error_msg = compute_nn_inputs(                  &
                           ncol, nlay, ngas, ninputs,  &
                           play, tlay, gas_desc,       &
                           nn_inputs)
@@ -521,7 +521,7 @@ contains
       allocate(nn_inputs(ninputs,nlay,ncol))
       !$acc enter data create(nn_inputs)
 
-      error_msg = compute_nn_inputs(this,             &
+      error_msg = compute_nn_inputs(                  &
                           ncol, nlay, ngas, ninputs,  &
                           play, tlay, gas_desc,       &
                           nn_inputs)   
@@ -586,12 +586,10 @@ contains
 ! Routine for preparing neural network inputs from the gas concentrations, temperature and pressure
 ! The model needs all 16 RRTMGP long-wave gases as input. If a gas is missing, a global-mean reference concentration
 ! is used which can be either pre-industrial, present, or future
-  function compute_nn_inputs(this,        &
-    ncol, nlay, ngas, ninputs,            &
-    play, tlay, gas_desc,           &
-    nn_inputs) result(error_msg)
+  function compute_nn_inputs(ncol, nlay, ngas, ninputs,       &
+                              play, tlay, gas_desc,           &
+                              nn_inputs) result(error_msg)
 
-    class(ty_gas_optics_rrtmgp),          intent(in   ) ::  this
     integer,                              intent(in   ) ::  ncol, nlay, ngas, ninputs
     real(wp), dimension(nlay,ncol),       intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                             tlay
@@ -609,10 +607,10 @@ contains
     ! Reference gas concentrations are stored in rrtmgp_ref_concentrations for each greenhouse gas except H2O and O3,
     ! for three different scenarios (present-day, pre-industrial or future). If a given gas in nn_gas_names was not provided by user, 
     ! one of the three reference concentrations is used (default: present-day)
+    !integer                                   :: scenario_index     = 1 ! =  1 (zero concentration), 2 (Present-day), 3 (Pre-industrial) or 4 (Future)
     character(len=32)                         :: gas_name 
-    integer                                   :: scenario_index     = 1 ! =  1 (zero concentration), 2 (Present-day), 3 (Pre-industrial) or 4 (Future)
     logical                                   :: print_warnings     = .false.
-    logical                                   :: all_gases_exist    = .false.
+    ! logical                                   :: all_gases_exist    = .false.
     character(1) :: a_string
     character(18), dimension(4)  :: scenario_names = &
         [character(len=18) :: 'zero concentration', 'present-day', 'pre-industrial', 'future']   
@@ -629,45 +627,27 @@ contains
     character(32),  dimension(ninputs-2) :: nn_gas_names
     real(sp),       dimension(ninputs)   :: input_maxvals, input_minvals
 
-    all_gases_exist = .false.
-
     error_msg = ''
-    ! Check for initialization
-    if (.not. this%is_initialized()) then
-      error_msg = 'ERROR: spectral configuration not loaded'
-      return
-    end if
-    !
-    ! Check input data sizes and values
-    if(.not. extents_are(play, nlay, ncol  )) &
-    error_msg = "gas_optics(): array play has wrong size"
-    if(.not. extents_are(tlay, nlay, ncol  )) &
-    error_msg = "gas_optics(): array tlay has wrong size"
-    if(error_msg  /= '') return
-
-    if(any_vals_outside(play, this%press_ref_min,this%press_ref_max)) &
-    error_msg = "gas_optics(): array play has values outside range"
-    if(any_vals_outside(tlay, this%temp_ref_min,  this%temp_ref_max)) &
-    error_msg = "gas_optics(): array tlay has values outside range"
-    if(error_msg  /= '') return
 
     if (ninputs == 18) then         !  tlay,    log(play),   h2o**(1/4), o3**(1/4), co2, ... 
-      if (print_warnings) print *, "using more complex neural network which takes all 16 non-constant RRTMGP longwave gases as input"
+      if (print_warnings) print *, "using longwave neural network models which take all 16 non-constant RRTMGP LW gases as input"
       nn_gas_names  = nn_gas_names_all
       input_minvals = input_minvals_all
       input_maxvals = input_maxvals_all
-    else if (ninputs == 9) then
-      if (print_warnings) print *, "using less complex neural network which only uses h2o, o3, co2, n2o, ch4, cfc11-EQ and cfc12"
-      nn_gas_names    = nn_gas_names_all(1:7)
-      input_minvals   = input_minvals_all(1:9)               
-      input_maxvals   = input_maxvals_all(1:9)
+    ! Old code: this functionality is currently not supported
+    ! else if (ninputs == 9) then
+    !   if (print_warnings) print *, "using less complex neural network which only uses h2o, o3, co2, n2o, ch4, cfc11-EQ and cfc12"
+    !   nn_gas_names    = nn_gas_names_all(1:7)
+    !   input_minvals   = input_minvals_all(1:9)               
+    !   input_maxvals   = input_maxvals_all(1:9)
     else if (ninputs == 7) then
-      if (print_warnings) print *, "using short-wave neural network which only uses h2o, o3, co2, n2o, ch4"
+      if (print_warnings) print *, "using shortwave neural network model which take as input the concentrations of h2o, o3, co2, n2o and ch4"
       nn_gas_names    = nn_gas_names_all(1:5)
       input_minvals   = input_minvals_all(1:7)               
       input_maxvals   = input_maxvals_all(1:7)
     else 
-      error_msg = "ninputs should be either 18 (full longwave model), 9 (reduced longwave model ala CKDMIP using CFC11-eq) or 7 (shortwave)"
+     ! error_msg = "ninputs should be either 18 (full longwave model), 9 (reduced longwave model ala CKDMIP using CFC11-eq) or 7 (shortwave)"
+      error_msg = "ninputs should be either 18 (longwavel) or 7 (shortwave)"
     end if
 
     if(error_msg  /= '') return
@@ -675,62 +655,62 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('compute_nn_inputs')
 #endif
+    !$acc enter data copyin(nn_gas_names, input_maxvals, input_minvals)
 
-    if (all_gases_exist) then
-      !$acc enter data copyin(nn_gas_names, input_maxvals, input_minvals)
-      !$acc data present(tlay,play,gas_desc,nn_inputs,input_maxvals,input_minvals)
-      error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(1), ndims, idx_h2o)
-      error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(2), ndims, idx_o3)
-      !$acc parallel loop collapse(2)
-      do icol = 1, ncol
-        do ilay = 1, nlay
-            nn_inputs(1,ilay,icol)    =  (tlay(ilay,icol)     - input_minvals(1)) / (input_maxvals(1) - input_minvals(1))
-            nn_inputs(2,ilay,icol)    = (log(play(ilay,icol)) - input_minvals(2)) / (input_maxvals(2) - input_minvals(2))
-            nn_inputs(3,ilay,icol)    = ( sqrt(sqrt(gas_desc%concs(idx_h2o)%conc(ilay,icol))) - input_minvals(3)) / (input_maxvals(3) - input_minvals(3))
-            nn_inputs(4,ilay,icol)    = ( sqrt(sqrt(gas_desc%concs(idx_o3) %conc(ilay,icol))) - input_minvals(4)) / (input_maxvals(4) - input_minvals(4))
-        end do
+    ! First lets write temperature, log-pressure, water vapor and ozone into the inputs
+    ! These are assumed to always be present!
+    error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(1), ndims, idx_h2o)
+    error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(2), ndims, idx_o3)
+    if(error_msg  /= '') return
+
+    !$acc parallel loop collapse(2) default(present)
+    do icol = 1, ncol
+      do ilay = 1, nlay
+          nn_inputs(1,ilay,icol)    =  (tlay(ilay,icol)     - input_minvals(1)) / (input_maxvals(1) - input_minvals(1))
+          nn_inputs(2,ilay,icol)    = (log(play(ilay,icol)) - input_minvals(2)) / (input_maxvals(2) - input_minvals(2))
+          nn_inputs(3,ilay,icol)    = ( sqrt(sqrt(gas_desc%concs(idx_h2o)%conc(ilay,icol))) - input_minvals(3)) / (input_maxvals(3) - input_minvals(3))
+          nn_inputs(4,ilay,icol)    = ( sqrt(sqrt(gas_desc%concs(idx_o3) %conc(ilay,icol))) - input_minvals(4)) / (input_maxvals(4) - input_minvals(4))
       end do
-  
-      do igas = 5, ninputs
-        error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(igas-2), ndims, idx_gas)
-        
+    end do
+
+    ! Now lets get the remaining gases in nn_gas_names_all. A boolean in rte_rrtmgp_config can be set to
+    ! instruct that all gases are provided, in which case faster code is used
+    if (all_gases_exist) then
+
+      do igas = 3, ninputs-2
+        error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(igas), ndims, idx_gas)
+        if(error_msg  /= '') return
+
         if (ndims == 0) then
-          !$acc parallel loop collapse(2)
+          !$acc parallel loop collapse(2) default(present)
           do icol = 1, ncol
             do ilay = 1, nlay
-                nn_inputs(igas,ilay,icol)    =  (gas_desc%concs(idx_gas)%conc(1,1)  - input_minvals(igas)) / (input_maxvals(igas) - input_minvals(igas))
+                nn_inputs(igas+2,ilay,icol)    =  (gas_desc%concs(idx_gas)%conc(1,1)  - input_minvals(igas+2)) / (input_maxvals(igas+2) - input_minvals(igas+2))
             end do
           end do
         else if (ndims == 1) then
-          !$acc parallel loop collapse(2)
+          !$acc parallel loop collapse(2) default(present)
           do icol = 1, ncol
             do ilay = 1, nlay
-                nn_inputs(igas,ilay,icol)    =  (gas_desc%concs(idx_gas)%conc(ilay,1)  - input_minvals(igas)) / (input_maxvals(igas) - input_minvals(igas))
+                nn_inputs(igas+2,ilay,icol)    =  (gas_desc%concs(idx_gas)%conc(ilay,1)  - input_minvals(igas+2)) / (input_maxvals(igas+2) - input_minvals(igas+2))
             end do
           end do
         else 
-          !$acc parallel loop collapse(2)
+          !$acc parallel loop collapse(2) default(present)
           do icol = 1, ncol
             do ilay = 1, nlay
-                nn_inputs(igas,ilay,icol)    =  (gas_desc%concs(idx_gas)%conc(ilay,icol)  - input_minvals(igas)) / (input_maxvals(igas) - input_minvals(igas))
+                nn_inputs(igas+2,ilay,icol)    =  (gas_desc%concs(idx_gas)%conc(ilay,icol)  - input_minvals(igas+2)) / (input_maxvals(igas+2) - input_minvals(igas+2))
             end do
           end do
         end if 
       end do
-      !$acc end data
-      !$acc exit data delete(nn_gas_names, input_maxvals, input_minvals)
-      if(error_msg  /= '') return
 
-    else 
+    else  
+      ! if all gases are not guaranteed to be present, the "get" procedure from mo_gas_concentrations is used, 
+      ! and if a gas is missing, its concentration is by default set to be zero, with an optional reference concentration
+      
       !$acc enter data create(gas_array)
-      !$acc enter data copyin(nn_gas_names, input_maxvals, input_minvals)
-
-      !$acc kernels present(nn_inputs, tlay,play, input_maxvals, input_minvals)
-      nn_inputs(1,:,:) =  (tlay(:,:)        -  input_minvals(1) ) / (input_maxvals(1) - input_minvals(1))
-      nn_inputs(2,:,:) =  (log(play(:,:))    -  input_minvals(2) ) / (input_maxvals(2) - input_minvals(2))
-      !$acc end kernels
-
-      do igas = 1, ninputs-2
+      do igas = 3, ninputs-2
         ! Get the 2D array with the gas concentration for this gas
         ! print *, "igas", igas, "nn_gas_names", nn_gas_names(igas)
         error_msg = gas_desc%get_vmr(nn_gas_names(igas), gas_array)
@@ -751,26 +731,16 @@ contains
           end if 
         end if
 
-#ifdef USE_TIMING
-    ret =  gptlstart('nn_inputs_write')
-#endif
-        !$acc kernels present(nn_inputs, gas_array, input_maxvals, input_minvals)
-        
-        ! nn_inputs(igas+3,:,:) = gas_array(:,:)
-
-        if ((nn_gas_names(igas) == 'h2o') .or. (nn_gas_names(igas) == 'o3')) then
-          gas_array(:,:) = sqrt(sqrt(gas_array(:,:)))
-        end if
-        nn_inputs(igas+2,:,:) =  (gas_array(:,:)        -  input_minvals(igas+2) ) / (input_maxvals(igas+2) - input_minvals(igas+2))
-
-#ifdef USE_TIMING
-    ret =  gptlstop('nn_inputs_write')
-#endif
+        ! Write the concentration to nn_inputs
+        !$acc kernels default(present)
+        nn_inputs(igas+2,:,:) =  (gas_array(:,:) - input_minvals(igas+2) ) / (input_maxvals(igas+2) - input_minvals(igas+2))
         !$acc end kernels
+
       end do
-      !$acc exit data delete(nn_gas_names, input_maxvals, input_minvals, gas_array)
+      !$acc exit data delete(gas_array)
       if(error_msg  /= '') return
     end if
+     !$acc exit data delete(nn_gas_names, input_maxvals, input_minvals)
 
     ! !$acc update host(nn_inputs)
     ! do igas = 1, ninputs

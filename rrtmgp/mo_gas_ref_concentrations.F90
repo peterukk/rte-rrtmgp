@@ -73,8 +73,9 @@ contains
     if(error_msg /= "") return
 
     vmr = ref_conc_arrays(find_gas, iexp)
-    do concurrent(icol = 1 : size(array,2))
-      do concurrent (ilay = 1 : size(array,1))
+    !$acc parallel loop collapse(2) copyin(vmr) present(array)
+    do icol = 1, size(array,2)
+      do ilay = 1, size(array,1)
         array(ilay,icol) = vmr
       end do
     end do
