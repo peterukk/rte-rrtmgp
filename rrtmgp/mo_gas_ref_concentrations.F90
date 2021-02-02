@@ -73,6 +73,7 @@ contains
     if(error_msg /= "") return
 
     vmr = ref_conc_arrays(find_gas, iexp)
+    print *, "VMR is:", vmr
     !$acc parallel loop collapse(2) copyin(vmr) present(array)
     do icol = 1, size(array,2)
       do ilay = 1, size(array,1)

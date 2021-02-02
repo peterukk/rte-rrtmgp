@@ -590,33 +590,28 @@ contains
                               play, tlay, gas_desc,           &
                               nn_inputs) result(error_msg)
 
-    integer,                              intent(in   ) ::  ncol, nlay, ngas, ninputs
-    real(wp), dimension(nlay,ncol),       intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
-                                                            tlay
-    type(ty_gas_concs),                   intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
-
-    real(sp), dimension(ninputs, nlay, ncol),  intent(inout) :: nn_inputs !
+    integer,                                  intent(in   ) ::  ncol, nlay, ngas, ninputs
+    real(wp), dimension(nlay,ncol),           intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
+                                                                tlay
+    type(ty_gas_concs),                       intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
+    real(sp), dimension(ninputs, nlay, ncol), intent(inout) ::  nn_inputs !
 
     character(len=128)                                  :: error_msg
- 
     ! ----------------------------------------------------------
     ! Local variables
     integer :: igas, ilay, idx_gas, icol, ndims,idx_h2o,idx_o3 
     real(wp), dimension(nlay, ncol)           :: gas_array
-    ! Handle missing gases: 
-    ! Reference gas concentrations are stored in rrtmgp_ref_concentrations for each greenhouse gas except H2O and O3,
-    ! for three different scenarios (present-day, pre-industrial or future). If a given gas in nn_gas_names was not provided by user, 
-    ! one of the three reference concentrations is used (default: present-day)
-    !integer                                   :: scenario_index     = 1 ! =  1 (zero concentration), 2 (Present-day), 3 (Pre-industrial) or 4 (Future)
+    ! How to handle required gases which are missing !!these settings are now set in rte_rrtmgp_config!!
+    ! Reference gas concentrations are stored in rrtmgp_ref_concentrations for each greenhouse gas 
+    ! except H2O and O3, for three different scenarios (present-day, pre-industrial or future)
+    ! integer                                   :: scenario_index     = 0 ! =  0 (zero concentration), 1 (Present-day), 2 (Pre-industrial) or 3 (Future)
+    ! logical                                   :: all_gases_exist    = .false.
     character(len=32)                         :: gas_name 
     logical                                   :: print_warnings     = .false.
-    ! logical                                   :: all_gases_exist    = .false.
-    character(1) :: a_string
-    character(18), dimension(4)  :: scenario_names = &
-        [character(len=18) :: 'zero concentration', 'present-day', 'pre-industrial', 'future']   
-    character(32), dimension(16)        :: nn_gas_names_all = [character(len=32)  :: 'h2o',   'o3',      'co2',    'n2o',   'ch4',   &
+    character(18), dimension(3)               :: scenario_names = &
+        [character(len=18) :: 'present-day', 'pre-industrial', 'future']   
+    character(32), dimension(16)              :: nn_gas_names_all = [character(len=32)  :: 'h2o',   'o3',      'co2',    'n2o',   'ch4',   &
     'cfc11', 'cfc12', 'co',  'ccl4',  'cfc22',  'hfc143a', 'hfc125', 'hfc23', 'hfc32', 'hfc134a', 'cf4'] 
-    ! ----------------------------------------------------------
     ! Neural network inputs must be preprocessed using min-max (0,1) normalization
     ! The inputs are:   tlay,    log(play),   h2o**(1/4), o3**(1/4), co2, ... 
     real(sp), dimension(18)   :: input_minvals_all =  (/ 1.60E2, 5.15E-3, 1.01E-2, 4.36E-3, 1.41E-4, 0.00E0, 2.55E-8, 0.00E0, 0.00E0, &
@@ -626,6 +621,7 @@ contains
      7.7914392E-10, 9.8880004E-10, 3.1067642E-11, 1.3642075E-11, 4.2330001E-10, 1.6702625E-10 /)
     character(32),  dimension(ninputs-2) :: nn_gas_names
     real(sp),       dimension(ninputs)   :: input_maxvals, input_minvals
+    ! ----------------------------------------------------------
 
     error_msg = ''
 
@@ -706,18 +702,18 @@ contains
       end do
 
     else  
-      ! if all gases are not guaranteed to be present, the "get" procedure from mo_gas_concentrations is used, 
-      ! and if a gas is missing, its concentration is by default set to be zero, with an optional reference concentration
-      
+      ! if all gases are not guaranteed to be present, the "get" procedure from mo_gas_concentrations is used. 
+      ! If a gas is missing, it's either set to zero or a reference value is used.
+
       !$acc enter data create(gas_array)
       do igas = 3, ninputs-2
-        ! Get the 2D array with the gas concentration for this gas
-        ! print *, "igas", igas, "nn_gas_names", nn_gas_names(igas)
+        ! Get the concentration from gas_desc and use this to fill the 2D array 
         error_msg = gas_desc%get_vmr(nn_gas_names(igas), gas_array)
+        ! print *, "igas", igas, "nn_gas_names", nn_gas_names(igas)
 
-        ! If not successful, the gas was not provided, and we need to use a reference concentration
+        ! If not successful, the gas was not found in gas_desc, and we need to use a reference concentration
         if (error_msg /= '') then 
-          if (scenario_index==1) then
+          if (scenario_index==0) then
             gas_array = 0.0_wp
             error_msg = ''
           else
@@ -725,9 +721,13 @@ contains
           end if 
           if (print_warnings) then
             print *, 'WARNING: Neural network uses the gas '// trim(nn_gas_names(igas)) //  ' as input but it was not provided'
-            write(a_string,'(i1)') scenario_index
-            print *, 'Scenario_index in gas_optics_rrtmgp was set to ' // a_string // ' (' // scenario_names(scenario_index) // &
-            '), using a constant reference concentration of:', gas_array(1,1) 
+            if (scenario_index==0) then
+              print *, 'Scenario_index in rte_rrtmgp_config was set to 0 -> using a concentration of zero'
+            else
+              !$acc update host(gas_array)
+              print '("Scenario index was set to ", I0, " (", A, ") -> using a reference concentration of ", E10.4)', &
+                    scenario_index, trim(scenario_names(scenario_index)), gas_array(1,1)
+            end if
           end if 
         end if
 
