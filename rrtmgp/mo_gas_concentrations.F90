@@ -31,7 +31,7 @@
 
 module mo_gas_concentrations
   use mo_rte_kind,           only: wp
-  use mo_rte_config,         only: check_values
+  use mo_rte_rrtmgp_config,  only: check_values
   use mo_rrtmgp_util_string, only: lower_case
   use mo_rte_util_array,     only: any_vals_outside
 #ifdef USE_TIMING
@@ -404,7 +404,6 @@ contains
     else if(.not. allocated(this%concs(igas)%conc)) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
     end if
-
 
     if(size(this%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
       dims = 2
