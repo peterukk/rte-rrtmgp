@@ -41,7 +41,8 @@ else ifeq ($(GPTL_TIMING),2)
 	FCFLAGS += -I$(TIME_DIR)/include -DUSE_TIMING -DUSE_PAPI
 endif
 
-all: ../lib/librte.a ../lib/librrtmgp.a ../lib/libneural.a
+LIBRRTMGP = ../lib/librte.a ../lib/librrtmgp.a ../lib/libneural.a
+all: $(LIBRRTMGP)
 
 COMPILE = $(FC) $(FCFLAGS) $(FCINCLUDE) -c
 %.o: %.F90
@@ -61,4 +62,5 @@ include $(NEURAL_DIR)/Make.depends
 	ar r ../lib/libneural.a $(NEURAL_SRC)
 
 clean:
-	rm -f *.optrpt *.mod *.o librrtmgp.a librte.a libneural.a
+	rm -f *.optrpt *.mod *.o $(LIBRRTMGP)
+
