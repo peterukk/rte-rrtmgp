@@ -13,7 +13,7 @@
 ! Encapsulate source function arrays for longwave/lw/internal sources
 !    and shortwave/sw/external source.
 !
-! -------------------------------------------------------------------------------------------------
+! -------------------------------------------------------------------------------------------------z
 module mo_source_functions
   use mo_rte_kind,      only: wp
   use mo_optical_props, only: ty_optical_props
@@ -95,12 +95,14 @@ contains
     if(allocated(this%lay_source)) deallocate(this%lay_source)
 
     ngpt = this%get_ngpt()
-    allocate(this%sfc_source(ngpt , ncol), this%lev_source(ngpt,nlay+1,ncol))
-    allocate(this%sfc_source_Jac(ngpt, ncol), this%lay_source(ngpt,nlay,ncol))
-    
+    allocate(this%sfc_source(ngpt , ncol),this%sfc_source_Jac(ngpt, ncol))
+    allocate(this%lev_source(ngpt,nlay+1,ncol))
     !$acc enter data create(this)
-    !$acc enter data create(this%sfc_source, this%sfc_source_Jac, this%lev_source, this%lay_source)
-
+    !$acc enter data create(this%sfc_source, this%sfc_source_Jac, this%lev_source)
+#ifndef NO_LAY_SOURCE
+    allocate(this%lay_source(ngpt,nlay,ncol))
+    !$acc enter data create(this%lay_source)
+#endif
   end function alloc_lw
   ! --------------------------------------------------------------
   function copy_and_alloc_lw(this, ncol, nlay, spectral_desc) result(err_message)
@@ -218,7 +220,7 @@ contains
     integer :: get_ncol_lw
 
     if(this%is_allocated()) then
-      get_ncol_lw = size(this%lev_source,3) -1
+      get_ncol_lw = size(this%lev_source,3)
     else
       get_ncol_lw = 0
     end if

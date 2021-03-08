@@ -21,11 +21,11 @@
 module mo_rte_kind
   use parkind1!,         only : jprb
 
-  ! use, intrinsic :: iso_c_binding, only: c_float, c_double, c_long, c_int, c_bool
+ use, intrinsic :: iso_c_binding, only: c_float, c_double, c_long, c_int, c_bool
   implicit none
   public
   ! integer, parameter :: dp = c_double, sp = c_float, i8 = c_long, i4 = c_int
-  integer, parameter :: dp = JPRD, sp = JPRM, wp = JPRB, wl = JPLM
+  integer, parameter :: dp = JPRD, sp = JPRM, wp = JPRB, wl = JPLM, i4 = c_int
   !
   ! Floating point working precision
   !

@@ -20,8 +20,8 @@ module mo_rte_rrtmgp_config
   implicit none
   private
 
-  logical(wl), protected, public :: check_extents = .false.
-  logical(wl), protected, public :: check_values  = .false.
+  logical(wl), protected, public :: check_extents = .true.
+  logical(wl), protected, public :: check_values  = .true.
 
   ! ------------------------ FOR RRTMGP-NN ------------------------ 
   ! The NN models use ALL RRTMGP gases as input. In the shortwave, these are: h2o, o3, co2, n2o, ch4 

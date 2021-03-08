@@ -5,7 +5,7 @@ RRTMGP_DIR = rrtmgp
 #
 # Compiler variables FC, FCFLAGS can be set in the environment or in Makefile.conf
 #
--include Makefile.conf
+# -include Makefile.conf
 #
 # Choose kernels depending on environment variable
 #

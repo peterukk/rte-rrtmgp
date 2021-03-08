@@ -604,7 +604,7 @@ contains
                     fmajor, jeta, tropo, jtemp, jpress,    &
                     gpoint_bands, band_lims_gpt,           &
                     temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
-                    sfc_source, sfc_source_Jac, lay_source, lev_source) bind(C, name="compute_Planck_source")
+                    sfc_source, lev_source, sfc_source_Jac, lay_source) bind(C, name="compute_Planck_source")
     integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
     integer,                                    intent(in) :: nflav, neta, npres, ntemp, nPlanckTemp
     real(wp),    dimension(nlay, ncol  ),       intent(in) :: tlay
@@ -625,9 +625,9 @@ contains
     integer,  dimension(2,ngpt),                  intent(in) :: gpoint_flavor
     ! Outputs
     real(wp), dimension(ngpt,     ncol),          intent(out) :: sfc_source
-    real(wp), dimension(ngpt,     ncol),          intent(out) :: sfc_source_Jac
-    real(wp), dimension(ngpt,nlay,ncol),          intent(out) :: lay_source
     real(wp), dimension(ngpt,nlay+1,ncol),        intent(out) :: lev_source
+    real(wp), dimension(ngpt,     ncol),optional, intent(out) :: sfc_source_Jac
+    real(wp), dimension(ngpt,nlay,ncol),optional, intent(out) :: lay_source
 
     ! -----------------
     ! local                                ! Planck functions per band
@@ -662,7 +662,7 @@ contains
 
           ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
           lev_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lev(ibnd)
-          lay_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lay(ibnd)
+          if (present(lay_source)) lay_source(gptS:gptE, ilay, icol) = pfrac(gptS:gptE,ilay) * planck_function_lay(ibnd)
         end do ! band
       end do ! ilay
 
@@ -680,8 +680,10 @@ contains
 
         ! Surface source irradiance
         sfc_source    (gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * planck_function_sfc(ibnd)
-        sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * &
+        if (present(sfc_source_Jac)) then
+          sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay) * &
                               (planck_function_sfc_Jac(ibnd) - planck_function_sfc(ibnd))
+        end if                     
       end do
 
     end do ! icol
@@ -695,7 +697,8 @@ contains
                     tlay, tlev, tsfc, sfc_lay,             &
                     gpt_bands, band_lims_gpt,           &
                     temp_ref_min, totplnk_delta, totplnk, &
-                    sfc_source, sfc_source_Jac, pfrac, lev_source)
+                    compute_laysrc, &
+                    sfc_source, pfrac, lev_source, sfc_source_Jac)
     integer,                                      intent(in)    :: ncol, nlay, nbnd, ngpt, nPlanckTemp
     real(wp), dimension(nlay,  ncol),             intent(in)    :: tlay
     real(wp), dimension(nlay+1,ncol),             intent(in)    :: tlev
@@ -705,12 +708,14 @@ contains
     integer,  dimension(2, nbnd),                 intent(in)    :: band_lims_gpt ! start and end g-point for each band
     real(wp),                                     intent(in)    :: temp_ref_min, totplnk_delta
     real(wp), dimension(nPlanckTemp,nbnd),        intent(in)    :: totplnk
+    logical,                                      intent(in)    :: compute_laysrc
     ! outputs
     real(wp), dimension(ngpt,       ncol),        intent(out)   :: sfc_source
-    real(wp), dimension(ngpt,       ncol),        intent(out)   :: sfc_source_Jac
     real(wp), dimension(ngpt,nlay,  ncol),        intent(inout) :: pfrac ! Planck fraction, which
-                                                                ! becomes lay_source on output (trick to save memory)
+                                                                ! lay_source on output if compute_laysrc = .true.
     real(wp), dimension(ngpt,nlay+1,ncol),        intent(out)   :: lev_source
+    real(wp), dimension(ngpt,  ncol), optional,   intent(out)   :: sfc_source_Jac
+
     ! -----------------
     ! local
     real(wp), dimension(nbnd )  :: planck_function_sfc
@@ -719,7 +724,7 @@ contains
     real(wp), parameter         :: delta_Tsurf  = 1.0_wp
     integer                     :: ilay, icol, igpt, ibnd, gptS, gptE
 
-    ! -----------------    
+    ! -----------------    z
     do icol = 1, ncol
 
       ! Source for surface and nlay+1
@@ -736,8 +741,10 @@ contains
 
         ! Surface source
         sfc_source    (gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay,icol) * planck_function_sfc(ibnd)
-        sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay,icol) * &
+        if (present(sfc_source_Jac)) then
+          sfc_source_Jac(gptS:gptE, icol) = pfrac(gptS:gptE,sfc_lay,icol) * &
                               (planck_function_sfc_Jac(ibnd) - planck_function_sfc(ibnd))
+        end if                       
       end do
 
       ! Source for levels and layers
@@ -751,9 +758,9 @@ contains
           !DIR$ SIMD
           !DIR$ VECTOR ALIGNED 
           do igpt = gptS, gptE
-            lev_source(igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd)
-            pfrac     (igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd)
-            ! NOTE: "pfrac" is now actually lay_source
+            lev_source(igpt, ilay, icol)                = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd)
+            if (compute_laysrc) pfrac(igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd)
+              ! note "pfrac" is now actually lay_source
           end do
         end do ! band
       end do ! lay
@@ -1011,7 +1018,13 @@ contains
       ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
       ! inputs: tau_abs (called tau) and tau_ray (called ssa)
       ! first argument becomes tau_tot and second becomes ssa
+#ifdef USE_TIMING
+    ret =  gptlstart('combine_taus_compute_ssa')
+#endif
       call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+#ifdef USE_TIMING
+    ret =  gptlstop('combine_taus_compute_ssa')
+#endif
     end if
 
   end subroutine predict_nn_sw_blas_mp
@@ -1213,7 +1226,7 @@ contains
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
+          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs + tau_ray
           if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
             ! ssa = tau_rayleigh / tau_tot
               tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)

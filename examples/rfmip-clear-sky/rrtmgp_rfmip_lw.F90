@@ -236,7 +236,7 @@ program rrtmgp_rfmip_lw
   !
   call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
   print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  ! print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
+  print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
 
   ! --------------------------------------------------
   !

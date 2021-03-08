@@ -38,6 +38,14 @@
 ! Subsets of optical properties held as arrays may be extracted along the column dimension.
 !
 ! -------------------------------------------------------------------------------------------------
+!
+! Modifications
+!   2021-02-16  P. Ukkonen  Added constructor functions (make_1scl, make_2str..) and generic finalize and alloc.
+!                           These enable using the parent class ty_optical_props_arry in high-level code,
+!                           and initializing this as 1scl or 2str e.g. optical_props = make_2str().
+!       
+!
+! -------------------------------------------------------------------------------------------------
 module mo_optical_props
   use mo_rte_kind,              only: wp
   use mo_rte_util_array,        only: any_vals_less_than, any_vals_outside, extents_are
@@ -105,6 +113,11 @@ module mo_optical_props
     !
     procedure, public  :: increment
 
+    ! Generic finalize
+    procedure, public :: finalize
+    ! Generic alloc
+    procedure, public :: alloc
+
     !
     ! Deferred procedures -- each must be implemented in each child class with
     !   arguments following the abstract interface (defined below)
@@ -161,6 +174,7 @@ module mo_optical_props
   ! -------------------------------------------------------------------------------------------------
   type, public, extends(ty_optical_props_arry) :: ty_optical_props_1scl
   contains
+    procedure, nopass, public :: make_1scl
     procedure, public  :: validate => validate_1scalar
     procedure, public  :: get_subset => subset_1scl_range
     procedure, public  :: delta_scale => delta_scale_1scl
@@ -170,7 +184,7 @@ module mo_optical_props
     procedure, private :: copy_and_alloc_1scl
     generic,   public  :: alloc_1scl => alloc_only_1scl, init_and_alloc_1scl, copy_and_alloc_1scl
 
-    procedure, public :: finalize => finalize_1scl
+    procedure, public :: finalize_1scl
 
   end type
 
@@ -179,6 +193,7 @@ module mo_optical_props
     real(wp), dimension(:,:,:), allocatable :: ssa ! single-scattering albedo (ngpt, nlay, ncol)
     real(wp), dimension(:,:,:), allocatable :: g   ! asymmetry parameter (ngpt, nlay, ncol)
   contains
+    procedure, nopass, public  :: make_2str
     procedure, public  :: validate => validate_2stream
     procedure, public  :: get_subset => subset_2str_range
     procedure, public  :: delta_scale => delta_scale_2str
@@ -188,7 +203,7 @@ module mo_optical_props
     procedure, private :: copy_and_alloc_2str
     generic,   public  :: alloc_2str => alloc_only_2str, init_and_alloc_2str, copy_and_alloc_2str
 
-    procedure, public :: finalize => finalize_2str
+    procedure, public :: finalize_2str
   end type
 
   ! --- n stream ------------------------------------------------------------------------
@@ -196,6 +211,7 @@ module mo_optical_props
     real(wp), dimension(:,:,:),   allocatable :: ssa ! single-scattering albedo (ngpt, nlay, ncol)
     real(wp), dimension(:,:,:,:), allocatable :: p   ! phase-function moments (nmom, ngpt, nlay, ncol)
   contains
+    procedure, nopass, public  :: make_nstr
     procedure, public :: validate => validate_nstream
     procedure, public :: get_subset => subset_nstr_range
     procedure, public :: delta_scale => delta_scale_nstr
@@ -206,7 +222,7 @@ module mo_optical_props
     procedure, private :: copy_and_alloc_nstr
     generic,   public  :: alloc_nstr => alloc_only_nstr, init_and_alloc_nstr, copy_and_alloc_nstr
 
-    procedure, public :: finalize => finalize_nstr
+    procedure, public :: finalize_nstr
   end type
   ! -------------------------------------------------------------------------------------------------
 contains
@@ -451,13 +467,76 @@ contains
     call this%ty_optical_props%finalize_base()
   end subroutine finalize_nstr
 
+  ! Generic finalize routine which calls appropriate finalize depending on type
+  subroutine finalize(this)
+    class(ty_optical_props_arry),    intent(inout) :: this
+
+    select type(this)
+    type is(ty_optical_props_1scl)
+      call finalize_1scl(this)
+
+    type is(ty_optical_props_2str)
+      call finalize_2str(this)
+    
+    type is(ty_optical_props_nstr)
+      call finalize_nstr(this)
+    endselect
+
+  end subroutine finalize
+
+  ! Generic allocation routine which calls appropriate alloc depending on type and arguments
+  function alloc(this, ncol, nlay, spectral_desc, name, band_lims_wvn, band_lims_gpt) result(err_message)
+    class(ty_optical_props_arry),           intent(inout) :: this
+    integer,                                intent(in) :: ncol, nlay
+    class(ty_optical_props     ), optional, intent(in) :: spectral_desc
+    character(len=*),             optional, intent(in) :: name
+    real(wp), dimension(:,:),     optional, intent(in) :: band_lims_wvn
+    integer,  dimension(:,:),     optional, intent(in) :: band_lims_gpt
+    character(len=128)      :: err_message
+
+    err_message = ""
+
+    select type(this)
+    type is(ty_optical_props_1scl)
+      if (present(spectral_desc)) then
+        err_message = copy_and_alloc_1scl(this, ncol, nlay, spectral_desc, name)
+      else if (present(band_lims_wvn)) then
+        err_message = init_and_alloc_1scl(this, ncol, nlay, band_lims_wvn, band_lims_gpt, name)
+      else
+        err_message = alloc_only_1scl(this, ncol, nlay)
+      end if
+    type is(ty_optical_props_2str)
+      if (present(spectral_desc)) then
+        err_message = copy_and_alloc_2str(this, ncol, nlay, spectral_desc, name)
+      else if (present(band_lims_wvn)) then
+        err_message = init_and_alloc_2str(this, ncol, nlay, band_lims_wvn, band_lims_gpt, name)
+      else
+        err_message = alloc_only_2str(this, ncol, nlay)
+      end if
+    
+    type is(ty_optical_props_nstr)
+      err_message = "to initialize optical_props_nstr use alloc_nstr"
+    endselect
+
+  end function alloc
   ! ------------------------------------------------------------------------------------------
 
+  ! Constructors for specific types of optical_props
+  function make_1scl() result( ret )   
+    type(ty_optical_props_1scl) :: ret   !<-- returns a concrete-type object
+  end
+  function make_2str() result( ret )   
+    type(ty_optical_props_2str) :: ret   !<-- returns a concrete-type object
+  end
+  function make_nstr() result( ret )   
+    type(ty_optical_props_nstr) :: ret   !<-- returns a concrete-type object
+  end
 
   !
   ! Combined allocation/initialization routines
   !
   ! ------------------------------------------------------------------------------------------
+
   !
   ! Initialization by specifying band limits and possibly g-point/band mapping
   !

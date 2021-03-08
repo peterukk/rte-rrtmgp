@@ -2,17 +2,17 @@
 # Here set variables RRTMGP_BUILD, NCHOME, NFHOME, TIME_DIR (for GPTL)
 # and link against BLAS library, or have those variables set in the environment
 #
-RRTMGP_ROOT=../../
+RRTMGP_ROOT=../../../lib 
 $(info VAR="$(RRTMGP_ROOT)")
-RRTMGP_BUILD=$(RRTMGP_ROOT)/build
--include Makefile.libs
--include $(RRTMGP_BUILD)/Makefile.conf
+RRTMGP_BUILD=$(RRTMGP_ROOT)
+-include ../../../Makefile_include.gfortran
+#-include $(RRTMGP_BUILD)/Makefile.conf
 #
 # RRTMGP library, module files
 #
 LDFLAGS   += -L$(RRTMGP_BUILD)
 LIBS      += -lrrtmgp -lrte -lneural
-FCINCLUDE += -I$(RRTMGP_BUILD)
+FCINCLUDE += -I$(RRTMGP_BUILD) -I../../../mod
 
 #
 # netcdf library, module files
@@ -21,6 +21,10 @@ FCINCLUDE += -I$(RRTMGP_BUILD)
 FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
+
+BASICFLAGS =  -fconvert=big-endian -fno-range-check
+
+FCFLAGS =  $(BASICFLAGS) $(CPPFLAGS) $(OPTFLAGS) $(DEBUGFLAGS) $(LIBXSMM_INCLUDE)
 
 
 # 
@@ -97,7 +101,7 @@ endif
 VPATH = ../
 
 # Compilation rules
-%.o: %.F90
+%.o: %.F90 
 	$(FC) $(FCFLAGS) $(FCINCLUDE) -c $< $(OMPFLAG)
 
 %: %.o
@@ -110,11 +114,11 @@ ADDITIONS = mo_simple_netcdf.o mo_rfmip_io.o mo_load_coefficients.o
 
 all: rrtmgp_rfmip_lw rrtmgp_rfmip_sw
 
-rrtmgp_rfmip_lw:   rrtmgp_rfmip_lw.o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+rrtmgp_rfmip_lw:   rrtmgp_rfmip_lw.o   $(ADDITIONS) ../../../lib/librte.a ../../../lib/librrtmgp.a ../../../lib/libneural.a
 
 rrtmgp_rfmip_lw.o: rrtmgp_rfmip_lw.F90 $(ADDITIONS)
 
-rrtmgp_rfmip_sw:   rrtmgp_rfmip_sw.o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+rrtmgp_rfmip_sw:   rrtmgp_rfmip_sw.o   $(ADDITIONS) ../../../lib/librte.a ../../../lib/librrtmgp.a ../../../lib/libneural.a
 
 rrtmgp_rfmip_sw.o: rrtmgp_rfmip_sw.F90 $(ADDITIONS)
 

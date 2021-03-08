@@ -7,7 +7,9 @@ RRTMGP_SRC = \
   mo_gas_concentrations.o \
   mo_gas_optics_kernels.o \
   mo_gas_optics.o \
-  mo_gas_optics_rrtmgp.o
+  mo_gas_optics_rrtmgp.o \
+  mo_simple_netcdf.o \
+  mo_load_coefficients.o
 
 #####
 # RRTMGP: RRTM for GCM Applications - Parallel
@@ -47,3 +49,9 @@ mo_gas_optics_rrtmgp.o: mo_rte_kind.o mo_rrtmgp_constants.o mo_rrtmgp_util_reord
   mo_gas_optics.o \
   mod_network.o \
   mo_gas_optics_rrtmgp.F90
+
+# New for ecRAD integration: moved utility procedure load_coefficients from examples to main rrtmgp directory
+mo_simple_netcdf.o: mo_rte_kind.o mo_simple_netcdf.F90
+
+mo_load_coefficients.o: mo_rte_kind.o mo_gas_concentrations.o mo_gas_optics_rrtmgp.o \
+  mo_simple_netcdf.o mo_load_coefficients.F90 
