@@ -604,7 +604,7 @@ contains
                     fmajor, jeta, tropo, jtemp, jpress,    &
                     gpoint_bands, band_lims_gpt,           &
                     temp_ref_min, totplnk_delta, pfracin, totplnk, gpoint_flavor, &
-                    sfc_source, sfc_source_Jac, lay_source, lev_source) bind(C, name="compute_Planck_source")
+                    sfc_source, sfc_source_Jac, lay_source, lev_source, pfrac_inout)
     integer,                                    intent(in) :: ncol, nlay, nbnd, ngpt
     integer,                                    intent(in) :: nflav, neta, npres, ntemp, nPlanckTemp
     real(wp),    dimension(nlay, ncol  ),       intent(in) :: tlay
@@ -628,13 +628,16 @@ contains
     real(wp), dimension(ngpt,     ncol),          intent(out) :: sfc_source_Jac
     real(wp), dimension(ngpt,nlay,ncol),          intent(out) :: lay_source
     real(wp), dimension(ngpt,nlay+1,ncol),        intent(out) :: lev_source
+    real(wp), dimension(ngpt,nlay,ncol), optional,target,&
+                                                  intent(inout) :: pfrac_inout
 
     ! -----------------
     ! local                                ! Planck functions per band
     real(wp), dimension(nbnd       )    :: planck_function_sfc
     real(wp), dimension(nbnd       )    :: planck_function_sfc_Jac
     real(wp), dimension(nbnd        )   :: planck_function_lev, planck_function_lay
-    real(wp), dimension(ngpt,nlay   )   :: pfrac ! Planck fraction per g-point
+    real(wp), dimension(ngpt,nlay   ), target  :: pfrac_local ! Planck fraction per g-point
+    real(wp), dimension(:,:), pointer, contiguous :: pfrac
     integer  :: ilay, icol, igpt, ibnd, itropo, iflav
     integer  :: gptS, gptE
     real(wp), dimension(2), parameter :: one          = [1._wp, 1._wp]
@@ -642,6 +645,11 @@ contains
 
     ! -----------------    
     do icol = 1, ncol
+      if(present(pfrac_inout)) then 
+        pfrac => pfrac_inout(:,:,icol)
+      else 
+        pfrac => pfrac_local
+      end if
       do ilay = 1, nlay
         ! Planck function by band for layers and levels
         planck_function_lev(:) = interpolate1D(tlev(ilay,icol),  temp_ref_min, totplnk_delta, totplnk)
