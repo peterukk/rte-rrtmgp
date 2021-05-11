@@ -42,6 +42,9 @@ program rrtmgp_rfmip_sw
   !
   ! Modules for working with rte and rrtmgp
   !
+#ifdef USE_OPENMP
+  use omp_lib
+#endif
   ! Working precision for real variables
   !
   use mo_rte_kind,           only: wp, sp
@@ -54,6 +57,7 @@ program rrtmgp_rfmip_sw
   !   In the longwave we include only absorption optical depth (_1scl)
   !   Shortwave calculations use optical depth, single-scattering albedo, asymmetry parameter (_2str)
   !
+  ! use mo_optical_props,      only: ty_optical_props_arry, make_2str, make_1scl
   use mo_optical_props,      only: ty_optical_props_2str
   !
   ! Gas optics: maps physical state of the atmosphere to optical properties
@@ -84,7 +88,11 @@ program rrtmgp_rfmip_sw
                                    read_and_block_sw_bc, determine_gas_names, unblock_and_write2                             
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
-  use mod_network                                
+  use mod_network    
+#ifdef USE_OPENACC  
+  use cublas
+  use openacc
+#endif          
 #ifdef USE_TIMING
   !
   ! Timing library
@@ -106,8 +114,8 @@ program rrtmgp_rfmip_sw
                         kdist_file = 'coefficients_sw.nc'
   character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
-  logical 		       :: top_at_1, use_nn, compare_flux, save_flux
-  integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, ret, i, istat
+  logical 		       :: top_at_1, use_nn, compare_flux, save_flux, do_scattering
+  integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, iTime3, ret, i, istat
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
@@ -126,6 +134,7 @@ program rrtmgp_rfmip_sw
   ! Classes used by rte+rrtmgp
   !
   type(ty_gas_optics_rrtmgp)                     :: k_dist
+  ! class(ty_optical_props_arry), allocatable      :: optical_props
   type(ty_optical_props_2str)                    :: optical_props
   type(ty_fluxes_broadband)                      :: fluxes
 
@@ -225,6 +234,9 @@ program rrtmgp_rfmip_sw
   ! Read the gas concentrations and surface properties
   !
   call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_names, gas_conc_array)
+  ! do b = 1, size(gas_conc_array(1)%concs)
+  !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
+  ! end do
 
   call read_and_block_sw_bc(rfmip_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
   !
@@ -271,7 +283,20 @@ program rrtmgp_rfmip_sw
   ! allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   allocate(mu0(block_size), sfc_alb_spec(ngpt,block_size))
 
-  ! OpenACC: Arrays are allocated on device inside constructor
+  ! ! Below is to show how we can use abstract types in high-level code, which is
+  ! ! useful for letting the actual type be configured from I/O: in this instance,
+  ! ! if calculations which include scattering are desired, the abstract derived type 
+  ! ! optical_props will be initialized as optical_props_2str which holds ssa and g
+  ! do_scattering = .true.
+
+  ! if(do_scattering) then
+  !   optical_props = make_2str()
+  ! else
+  !   optical_props = make_1scl()
+  ! end if
+
+  ! Alloc is generic and calls appropriate allocation routine for the specific type of optical_props
+  ! call stop_on_err(optical_props%alloc(block_size, nlay, k_dist))
   call stop_on_err(optical_props%alloc_2str(block_size, nlay, k_dist))
   
   !$acc enter data create (toa_flux, def_tsi)
@@ -307,7 +332,12 @@ program rrtmgp_rfmip_sw
   ! Loop over blocks
   !
 #ifdef USE_TIMING
-do i = 1, 10
+  ret =  gptlstart('clear_sky_total (SW)')
+do i = 1, 32
+#endif
+#ifdef USE_OPENMP
+  !$OMP PARALLEL shared(neural_nets, k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,optical_props)
+  !$OMP DO 
 #endif
   do b = 1, nblocks
 
@@ -319,7 +349,6 @@ do i = 1, 10
     !    from pressures, temperatures, and gas concentrations...
     !
 #ifdef USE_TIMING
-    ret =  gptlstart('clear_sky_total (SW)')
     ret =  gptlstart('gas_optics (SW)')
 #endif
     
@@ -339,9 +368,11 @@ do i = 1, 10
                                         toa_flux))
     end if
     ! !$acc update host(optical_props%tau, optical_props%ssa, optical_props%g)
+    ! print *, "mean tau", mean3(optical_props%tau)
     ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
     ! print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
     ! print *," max, min (g)",   maxval(optical_props%g), minval(optical_props%g)
+    if (nblocks==1) call system_clock(iTime2)
 
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (SW)')
@@ -394,11 +425,10 @@ do i = 1, 10
                             toa_flux,        &
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
-                            fluxes, compute_gpoint_fluxes = .false.))
+                            fluxes, save_gpt_flux = .false.))
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
-    ret =  gptlstop('clear_sky_total (SW)')
 #endif
     !
     ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
@@ -411,12 +441,17 @@ do i = 1, 10
     end do
 
   end do !blocks
-
+#ifdef USE_OPENMP
+  !$OMP END DO
+  !$OMP END PARALLEL
+  !$OMP barrier
+#endif
   !
   ! End timers
   !
 #ifdef USE_TIMING
  end do
+  ret =  gptlstop('clear_sky_total (SW)')
   timing_file = "timing.sw-" // adjustl(trim(block_size_char))
   ret = gptlpr_file(trim(timing_file))
   ret = gptlfinalize()
@@ -427,8 +462,22 @@ do i = 1, 10
   !$acc exit data delete(toa_flux, def_tsi)
   call optical_props%finalize() ! Also deallocates arrays on device
 
-  call system_clock(iTime2)
-  print *,'Elapsed time on everything ',real(iTime2-iTime1)/real(count_rate)
+#ifdef USE_OPENACC  
+  istat = cublasDestroy(h) 
+#endif
+
+  if (nblocks==1) then
+    call system_clock(iTime3)
+    print *, "-----------------------------------------------------------------------------------------"
+    print '(a,f11.4,/,a,f11.4,/,a,f11.4,a)', ' Time elapsed in gas optics:',real(iTime2-iTime1)/real(count_rate), &
+    ' Time elapsed in solver:    ', real(iTime3-iTime2)/real(count_rate), ' Time elapsed in total:     ', &
+    real(iTime3-iTime1)/real(count_rate)
+    print *, "-----------------------------------------------------------------------------------------"
+  else 
+    call system_clock(iTime3)
+    print *,'Elapsed time on everything ',real(iTime3-iTime1)/real(count_rate)
+  end if
+
 
   allocate(temparray(   block_size*(nlay+1)*nblocks)) 
   temparray = pack(flux_dn(:,:,:),.true.)
@@ -451,13 +500,13 @@ do i = 1, 10
 
 
   if (compare_flux) then
-      print *, "-------------------------------------------------------------------------------------------------"
+    print *, "-----------------------------------------------------------------------------------------------------"
     if (use_nn) then
-      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (using NNs) AND ORIGINAL CODE ---------"
+      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (using NNs) AND ORIGINAL CODE IN DP -------"
     else
-      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (not using NNs) AND ORIGINAL CODE -----"
+      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (not using NNs) AND ORIGINAL CODE IN DP ---"
     end if
-    print *, "---------------------------------------------------------------------------------------------------"
+      print *, "-----------------------------------------------------------------------------------------------------"
 
     allocate(rsd_ref( nlay+1, ncol, nexp))
     allocate(rsu_ref( nlay+1, ncol, nexp))  
@@ -469,7 +518,7 @@ do i = 1, 10
     allocate(rsu_lbl( nlay+1, ncol, nexp))
     allocate(rsdu_lbl( nlay+1, ncol, nexp))
 
-    flx_file_ref = 'output_fluxes/rsud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
+    flx_file_ref = 'output_fluxes/rsud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn_REF-DP.nc'
     flx_file_lbl = 'output_fluxes/rsud_Efx_LBLRTM-12-8_rad-irf_r1i1p1f1_gn.nc'
 
     call unblock(flux_up, rsu_nn)
@@ -509,9 +558,9 @@ do i = 1, 10
       bias(reshape(rsu_lbl(1,:,4), shape = [1*ncol]),    reshape(rsu_nn(1,:,4), shape = [1*ncol])), &
       bias(reshape(rsu_lbl(1,:,4), shape = [1*ncol]),    reshape(rsu_ref(1,:,4), shape = [1*ncol])) 
 
-    print *, "bias in upwelling flux of new result and RRTMGP, future-all, top-of-atm.: ", &
-      bias(reshape(rsu_lbl(1,:,17), shape = [1*ncol]),    reshape(rsu_nn(1,:,17), shape = [1*ncol])), &
-      bias(reshape(rsu_lbl(1,:,17), shape = [1*ncol]),    reshape(rsu_ref(1,:,17), shape = [1*ncol])) 
+    ! print *, "bias in upwelling flux of new result and RRTMGP, future-all, top-of-atm.: ", &
+    !   bias(reshape(rsu_lbl(1,:,17), shape = [1*ncol]),    reshape(rsu_nn(1,:,17), shape = [1*ncol])), &
+    !   bias(reshape(rsu_lbl(1,:,17), shape = [1*ncol]),    reshape(rsu_ref(1,:,17), shape = [1*ncol])) 
 
     print *, "bias in upwelling flux of new result and RRTMGP, ALL EXPS, top-of-atm.:   ", &
       bias(reshape(rsu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rsu_nn(1,:,:), shape = [nexp*ncol])), &
@@ -533,8 +582,8 @@ do i = 1, 10
      print *, "Max-vertical-error in net fluxes of new result and RRTMGP, pres.day:  ", &
      maxval(abs(rsdu_lbl(:,:,1)-rsdu_nn(:,:,1))), maxval(abs(rsdu_lbl(:,:,1)-rsdu_ref(:,:,1)))
 
-     print *, "Max-vertical-error in net fluxes of new result and RRTMGP, future:    ", &
-     maxval(abs(rsdu_lbl(:,:,4)-rsdu_nn(:,:,4))), maxval(abs(rsdu_lbl(:,:,4)-rsdu_ref(:,:,4)))
+    !  print *, "Max-vertical-error in net fluxes of new result and RRTMGP, future:    ", &
+    !  maxval(abs(rsdu_lbl(:,:,4)-rsdu_nn(:,:,4))), maxval(abs(rsdu_lbl(:,:,4)-rsdu_ref(:,:,4)))
 
      print *, "Max-vertical-error in net fluxes of new result and RRTMGP, future-all:", &
      maxval(abs(rsdu_lbl(:,:,17)-rsdu_nn(:,:,17))), maxval(abs(rsdu_lbl(:,:,17)-rsdu_ref(:,:,17)))
@@ -545,9 +594,9 @@ do i = 1, 10
      mae(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,1), shape = [1*ncol*(nlay+1)])), &
      mae(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,1), shape = [1*ncol*(nlay+1)])) 
 
-    print *, "MAE in net fluxes of new result and RRTMGP, future:                    ", &
-     mae(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
-     mae(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
+    ! print *, "MAE in net fluxes of new result and RRTMGP, future:                    ", &
+    !  mae(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
+    !  mae(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
     print *, "MAE in net fluxes of new result and RRTMGP, future-all:                ", &
      mae(reshape(rsdu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,17), shape = [1*ncol*(nlay+1)])),&
@@ -557,22 +606,22 @@ do i = 1, 10
      mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)])), &
      mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)])) 
 
-    print *, "---------"
+    ! print *, "---------"
 
-    print *, "MAE in net fluxes at TOA of new result and RRTMGP, future:             ", &
-     mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,4), shape = [1*ncol*(1)])), &
-     mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,4), shape = [1*ncol*(1)]))
+    ! print *, "MAE in net fluxes at TOA of new result and RRTMGP, future:             ", &
+    !  mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,4), shape = [1*ncol*(1)])), &
+    !  mae(reshape(rsdu_lbl(1,:,4), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,4), shape = [1*ncol*(1)]))
 
-     print *, "MAE in net fluxes at TOA of new result and RRTMGP, present-day:        ", &
-     mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,1), shape = [1*ncol*(1)])), &
-     mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,1), shape = [1*ncol*(1)]))
+    !  print *, "MAE in net fluxes at TOA of new result and RRTMGP, present-day:        ", &
+    !  mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_nn(1,:,1), shape = [1*ncol*(1)])), &
+    !  mae(reshape(rsdu_lbl(1,:,1), shape = [1*ncol*(1)]), reshape(rsdu_ref(1,:,1), shape = [1*ncol*(1)]))
 
      print *, "---------"
 
 
-    print *, "RMSE in net fluxes of new result and RRTMGP, present-day, PBL:         ", &
-     rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_nn(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)])), &
-     rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_ref(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]))
+    ! print *, "RMSE in net fluxes of new result and RRTMGP, present-day, PBL:         ", &
+    !  rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_nn(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)])), &
+    !  rmse(reshape(rsdu_lbl(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]),    reshape(rsdu_ref(33:nlay+1,:,1), shape = [1*ncol*(nlay+1-33)]))
 
     print *, "RMSE in net fluxes of new result and RRTMGP, present-day, SURFACE:     ", &
      rmse(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol])), &
@@ -596,9 +645,9 @@ do i = 1, 10
      bias(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol])), &
      bias(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_ref(nlay+1,:,1), shape = [1*ncol])) 
 
-    print *, "bias in net fluxes of new result and RRTMGP, future:                   ", &
-     bias(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
-     bias(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
+    ! print *, "bias in net fluxes of new result and RRTMGP, future:                   ", &
+    !  bias(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
+    !  bias(reshape(rsdu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rsdu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
     print *, "bias in net fluxes of new result and RRTMGP, future-all:               ", &
      bias(reshape(rsdu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,17), shape = [1*ncol*(nlay+1)])), &
@@ -610,11 +659,15 @@ do i = 1, 10
 
     print *, "---------"
 
-    print *, "MAE in upwelling fluxes of new result w.r.t RRTMGP, present-day:       ", &
-     mae(reshape(rsu_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+    ! print *, "MAE in upwelling fluxes of new result w.r.t RRTMGP, present-day:       ", &
+    !  mae(reshape(rsu_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
 
-    print *, "MAE in downwelling fluxes of new result w.r.t RRTMGP, present-day:     ", &
-     mae(reshape(rsd_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+    ! print *, "MAE in downwelling fluxes of new result w.r.t RRTMGP, present-day:     ", &
+    !  mae(reshape(rsd_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "MAE in net flux w.r.t RRTMGP       ", &
+    mae(reshape(rsdu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
+
 
     print *, "Max-diff in d.w. flux w.r.t RRTMGP ", &
      maxval(abs(rsd_ref(:,:,:)-rsd_nn(:,:,:)))
@@ -622,7 +675,7 @@ do i = 1, 10
     print *, "Max-diff in u.w. flux w.r.t RRTMGP ", &
      maxval(abs(rsu_ref(:,:,:)-rsu_nn(:,:,:)))
 
-    print *, "Max-diff in net flux w.r.t RRTMGP ", &
+    print *, "Max-diff in net flux w.r.t RRTMGP  ", &
      maxval(abs(rsdu_ref(:,:,:)-rsdu_nn(:,:,:))) 
 
     deallocate(rsd_ref,rsu_ref,rsd_nn,rsu_nn,rsd_lbl,rsu_lbl,rsdu_ref,rsdu_nn,rsdu_lbl)
@@ -685,5 +738,13 @@ do i = 1, 10
     mean1 = sum(x1, dim=1)/size(x1, dim=1)
 
   end function mean
+
+  function mean3(x) result(mean)
+    real(wp), dimension(:,:,:), intent(in) :: x
+    real(wp) :: mean
+    
+    mean = sum(sum(sum(x, dim=1),dim=1),dim=1) / size(x)
+
+  end function mean3
 
 end program rrtmgp_rfmip_sw

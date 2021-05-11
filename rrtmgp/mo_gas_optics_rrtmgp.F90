@@ -462,7 +462,7 @@ contains
     real(sp), dimension(:,:,:), allocatable             :: nn_inputs
 
     integer :: ncol, nlay, ngpt, nband, ngas, idx_h2o, ninputs
-    integer :: igpt, icol
+    integer :: igpt, icol, ilay
     ! ----------------------------------------------------------
     nlay  = size(play,dim=1)
     ncol  = size(play,dim=2)
@@ -500,8 +500,8 @@ contains
     ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
     !
     if (present(col_dry)) then
-      !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
+      !$acc enter data copyin(col_dry)
     else
       !$acc enter data create(col_dry_arr)
       !idx_h2o = string_loc_in_array('h2o', this%gas_names)
@@ -543,9 +543,15 @@ contains
                   neural_nets,                  &  ! NN models (input)
                   optical_props%tau, optical_props%ssa)    ! outputs    
 
-          !$acc kernels
-          optical_props%g = 0.0_wp
-          !$acc end kernels
+          !$acc parallel loop collapse(3) present(optical_props%g)
+          do icol = 1, ncol
+            do ilay = 1, nlay
+              do igpt = 1, ngpt
+                optical_props%g(igpt,ilay,icol) = 0.0_wp
+              end do
+            end do
+          end do
+        
           
       end select
       
@@ -621,6 +627,7 @@ contains
      7.7914392E-10, 9.8880004E-10, 3.1067642E-11, 1.3642075E-11, 4.2330001E-10, 1.6702625E-10 /)
     character(32),  dimension(ninputs-2) :: nn_gas_names
     real(sp),       dimension(ninputs)   :: input_maxvals, input_minvals
+    integer, allocatable :: idx_gases(:)
     ! ----------------------------------------------------------
 
     error_msg = ''
@@ -700,7 +707,18 @@ contains
           end do
         end if 
       end do
-
+      ! allocate(idx_gases( ninputs-4 ))
+      ! do igas = 5, ninputs
+      !   error_msg = gas_desc%get_conc_dims_and_igas(nn_gas_names(igas-2), ndims, idx_gases(igas-4))
+      ! end do
+      ! !$acc parallel loop collapse(2) default(present) copyin(idx_gases)
+      ! do igas = 5, ninputs
+      !   do icol = 1, ncol
+      !     do ilay = 1, nlay
+      !         nn_inputs(igas,ilay,icol)    =  (gas_desc%concs(idx_gases(igas-4))%conc(ilay,icol)  - input_minvals(igas)) / (input_maxvals(igas) - input_minvals(igas))
+      !     end do
+      !   end do
+      ! end do
     else  
       ! if all gases are not guaranteed to be present, the "get" procedure from mo_gas_concentrations is used. 
       ! If a gas is missing, it's either set to zero or a reference value is used.
@@ -730,7 +748,6 @@ contains
             end if
           end if 
         end if
-
         ! Write the concentration to nn_inputs
         !$acc kernels default(present)
         nn_inputs(igas+2,:,:) =  (gas_array(:,:) - input_minvals(igas+2) ) / (input_maxvals(igas+2) - input_minvals(igas+2))
@@ -742,9 +759,9 @@ contains
     end if
      !$acc exit data delete(nn_gas_names, input_maxvals, input_minvals)
 
-    ! !$acc update host(nn_inputs)
     ! do igas = 1, ninputs
-    !   print *, 'Neural network inputs: min, max of', igas, ":",  minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
+    !   print *, 'Neural network inputs: min, max, mean', igas, ":",  &
+    !     minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:)), mean2(nn_inputs(igas,:,:))
     ! end do
 
 #ifdef USE_TIMING
@@ -2114,5 +2131,13 @@ end subroutine combine
 
     get_nPlanckTemp = size(this%totplnk,dim=1) ! dimensions are Planck-temperature, band
   end function get_nPlanckTemp
+
+  function mean2(x) result(mean)
+    real(sp), dimension(:,:), intent(in) :: x
+    real(sp) :: mean
+    
+    mean = sum(sum(x, dim=1),dim=1) / size(x)
+
+  end function mean2
 end module mo_gas_optics_rrtmgp
 

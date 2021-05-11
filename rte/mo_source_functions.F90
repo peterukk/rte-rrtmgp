@@ -218,7 +218,7 @@ contains
     integer :: get_ncol_lw
 
     if(this%is_allocated()) then
-      get_ncol_lw = size(this%lev_source,3) -1
+      get_ncol_lw = size(this%lev_source,3)
     else
       get_ncol_lw = 0
     end if
