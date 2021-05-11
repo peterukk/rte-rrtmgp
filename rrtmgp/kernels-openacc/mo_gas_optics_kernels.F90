@@ -29,6 +29,7 @@ module mo_gas_optics_kernels
     module procedure predict_nn_sw_blas_sp, predict_nn_sw_blas_mp
   end interface predict_nn_sw_blas
 
+
   real(sp), parameter                 :: ysigma_lw_tau = 0.0008864219_sp
   real(sp), parameter, dimension(256) :: ymeans_lw_tau = (/ &
   0.0007013, 0.00081638, 0.00088407, 0.0009376, 0.00100272,  0.00108871, 0.00119965, 0.00136057, 0.00162019, 0.00185225,&
@@ -822,16 +823,19 @@ contains
         sfc_source_Jac(igpt, icol) = pfrac(igpt,sfc_lay,icol) * &
                        (planck_function_sfc(gpoint_bands(igpt),2, icol) - planck_function_sfc(gpoint_bands(igpt),1, icol))
       end do
-
-    end do ! icol
+    end do 
 
     !$acc parallel loop collapse(3)
-    do icol = 1, ncol
+    do icol = 1, ncol, 2
       do ilay = 1, nlay
         do igpt = 1, ngpt
          ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
           lev_source(igpt, ilay, icol)  = pfrac(igpt,ilay,icol) * planck_function_lev(gpoint_bands(igpt), ilay, icol)
           pfrac(igpt, ilay, icol)       = pfrac(igpt,ilay,icol) * planck_function_lay(gpoint_bands(igpt), ilay, icol)
+          if (icol < ncol) then
+            lev_source(igpt, ilay, icol+1)  = pfrac(igpt,ilay,icol+1) * planck_function_lev(gpoint_bands(igpt), ilay, icol+1)
+            pfrac(igpt, ilay, icol+1)       = pfrac(igpt,ilay,icol+1) * planck_function_lay(gpoint_bands(igpt), ilay, icol+1)
+          end if
         end do ! band
       end do ! lay
     end do ! col
@@ -839,6 +843,121 @@ contains
     !$acc end data
 
   end subroutine compute_Planck_source_nn
+
+    ! ----------------------------------------------------------
+  ! Like compute_Planck_source, but Planck fraction has already been computed by a neural network
+  pure subroutine compute_Planck_source_nn2(             &
+                    ncol, nlay, nbnd, ngpt, nPlanckTemp, &
+                    tlay, tlev, tsfc, sfc_lay,             &
+                    gpoint_bands, band_lims_gpt,           &
+                    temp_ref_min, totplnk_delta, totplnk, &
+                    sfc_source, sfc_source_Jac, pfrac, lev_source)
+    integer,                                      intent(in)    :: ncol, nlay, nbnd, ngpt, nPlanckTemp
+    real(wp), dimension(nlay,  ncol),             intent(in)    :: tlay
+    real(wp), dimension(nlay+1,ncol),             intent(in)    :: tlev
+    real(wp), dimension(ncol       ),             intent(in)    :: tsfc
+    integer,                                      intent(in)    :: sfc_lay
+    integer,  dimension(ngpt),                    intent(in)    :: gpoint_bands    ! the band number for each g-point
+    integer,  dimension(2, nbnd),                 intent(in)    :: band_lims_gpt ! start and end g-point for each band
+    real(wp),                                     intent(in)    :: temp_ref_min, totplnk_delta
+    real(wp), dimension(nPlanckTemp,nbnd),        intent(in)    :: totplnk
+    ! outputs
+    real(wp), dimension(ngpt,       ncol),        intent(inout)   :: sfc_source
+    real(wp), dimension(ngpt,       ncol),        intent(inout)   :: sfc_source_Jac
+    real(wp), dimension(ngpt,nlay,  ncol),        intent(inout) :: pfrac ! Planck fraction, which
+                                                                ! becomes lay_source on output (trick to save memory)
+    real(wp), dimension(ngpt,nlay+1,ncol),        intent(inout)   :: lev_source
+    ! -----------------
+    ! local                                   Planck functions per band
+    real(wp), dimension(nbnd,  2, ncol)     :: planck_function_sfc
+    real(wp), dimension(nbnd)   :: planck_function_lay
+    real(wp), dimension(nbnd) :: planck_function_lev, planck_function_levp
+
+    real(wp), parameter         :: delta_Tsurf  = 1.0_wp
+    integer                     :: ilay, icol, igpt, ibnd, gptS, gptE
+
+    ! -----------------    
+       ! -----------------    
+    !$acc data create(planck_function_sfc,planck_function_lay,planck_function_lev, planck_function_levp) &
+    !$acc& present(sfc_source,sfc_source_Jac,lev_source,pfrac,tsfc,tlay,tlev,temp_ref_min,totplnk_delta,totplnk)
+
+    !
+    ! Planck function by band for the surface and lev 1
+    !
+    !$acc parallel loop 
+    do icol = 1, ncol
+      call interpolate1D(tsfc(icol),              temp_ref_min, totplnk_delta, totplnk, planck_function_sfc(:,1,icol))
+      call interpolate1D(tsfc(icol) + delta_Tsurf,temp_ref_min, totplnk_delta, totplnk, planck_function_sfc(:,2,icol))
+      ! call interpolate1D(tlev(1,icol),            temp_ref_min, totplnk_delta, totplnk, planck_function_lev(:,1,icol))
+    end do
+
+    !
+    ! Planck function by band for layers and levels
+    !
+    ! explicit loop unrolling
+
+    !$acc parallel loop collapse(2)
+    do icol = 1, ncol
+      do igpt = 1, ngpt
+        ! Level source irradiance for nlay+1
+        ! lev_source(igpt,nlay+1,icol) = pfrac(igpt,nlay,icol) * planck_function_lev(gpoint_bands(igpt),nlay+1,icol)
+
+        ! Surface source irradiance
+        sfc_source    (igpt, icol) = pfrac(igpt,sfc_lay,icol) * planck_function_sfc(gpoint_bands(igpt),1, icol)
+        sfc_source_Jac(igpt, icol) = pfrac(igpt,sfc_lay,icol) * &
+                       (planck_function_sfc(gpoint_bands(igpt),2, icol) - planck_function_sfc(gpoint_bands(igpt),1, icol))
+      end do
+    end do 
+
+    !$acc parallel loop gang  
+    do icol = 1, ncol
+      !$acc loop worker private(planck_function_lev, planck_function_lay)
+      do ilay = 1, nlay
+
+        call interpolate1D_vec(tlev(ilay,  icol),  temp_ref_min, totplnk_delta, totplnk, planck_function_lev(:))
+        call interpolate1D_vec(tlay(ilay,  icol),  temp_ref_min, totplnk_delta, totplnk, planck_function_lay(:))
+        if (ilay==nlay)  call interpolate1D_vec(tlev(ilay,  icol),  temp_ref_min, totplnk_delta, totplnk, planck_function_levp(:))
+
+        !$acc loop vector
+        do igpt = 1, ngpt
+          ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
+           lev_source(igpt, ilay, icol)  = pfrac(igpt,ilay,icol) * planck_function_lev(gpoint_bands(igpt))
+           if (ilay==nlay) lev_source(igpt,nlay+1,icol) = pfrac(igpt,nlay,icol) * planck_function_levp(gpoint_bands(igpt))
+           pfrac(igpt, ilay, icol)       = pfrac(igpt,ilay,icol) * planck_function_lay(gpoint_bands(igpt))
+
+         end do ! gpt
+
+      end do
+
+      ! !$acc loop vector collapse(2)
+      ! do ilay = 1, nlay
+      !   do igpt = 1, ngpt
+      !     ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
+      !      lev_source(igpt, ilay, icol)  = pfrac(igpt,ilay,icol) * planck_function_lev(gpoint_bands(igpt), ilay)
+      !      if (ilay==nlay) lev_source(igpt,nlay+1,icol) = pfrac(igpt,nlay,icol) * planck_function_lev(gpoint_bands(igpt),nlay+1)
+      !      pfrac(igpt, ilay, icol)       = pfrac(igpt,ilay,icol) * planck_function_lay(gpoint_bands(igpt), ilay)
+
+      !    end do ! gpt
+      ! end do
+    end do
+
+
+
+    ! !$acc parallel loop collapse(3)
+    ! do icol = 1, ncol
+    !   do ilay = 1, nlay
+    !     do igpt = 1, ngpt
+    !      ! Compute source irradiance for g-point, equals band irradiance x fraction for g-point
+    !       lev_source(igpt, ilay, icol)  = pfrac(igpt,ilay,icol) * planck_function_lev(gpoint_bands(igpt), ilay, icol)
+    !       pfrac(igpt, ilay, icol)       = pfrac(igpt,ilay,icol) * planck_function_lay(gpoint_bands(igpt), ilay, icol)
+    !     end do ! band
+    !   end do ! lay
+    ! end do ! col
+
+    !$acc end data
+
+  end subroutine compute_Planck_source_nn2
+
 
   subroutine compute_source_bybnd(                    &
                     ncol, nlay, nbnd,                 &
@@ -959,7 +1078,7 @@ contains
     ! local
     real(sp), dimension(:,:), contiguous, pointer :: input
     real(sp), dimension(nlay*ncol)                :: input_coldry          
-    real(sp), dimension(ngpt,nlay,ncol)           :: output_sp
+    real(sp), dimension(ngpt,nlay,ncol), target   :: output_sp
     real(sp), dimension(:,:), contiguous, pointer   :: output
     integer                                       :: nobs, icol, ilay, igpt
 
@@ -1079,7 +1198,7 @@ contains
     ! local
     real(sp), dimension(:,:), contiguous, pointer   :: input
     real(sp), dimension(nlay*ncol)                  :: input_coldry          
-    real(sp), dimension(ngpt,nlay,ncol)             :: output_sp
+    real(sp), dimension(ngpt,nlay,ncol), target     :: output_sp
     real(sp), dimension(:,:), contiguous, pointer   :: output
     integer                                         :: nobs, icol, ilay, igpt
 
@@ -1158,6 +1277,31 @@ contains
     index = min(size(table,dim=1)-1, max(1, int(val0)+1)) ! limit the index range
     res(:) = table(index,:) + frac * (table(index+1,:) - table(index,:))
   end subroutine interpolate1D
+
+  pure subroutine interpolate1D_vec(val, offset, delta, table, res)
+  !$acc routine vector
+    ! input
+    real(wp), intent(in) :: val,    & ! axis value at which to evaluate table
+                            offset, & ! minimum of table axis
+                            delta     ! step size of table axis
+    real(wp), dimension(:,:), contiguous, &
+              intent(in) :: table ! dimensions (axis, values)
+    ! output
+    real(wp), intent(out), dimension(size(table,dim=2)) :: res
+
+    ! local
+    real(wp) :: val0 ! fraction index adjusted by offset and delta
+    integer :: index, i ! index term
+    real(wp) :: frac ! fractional term
+    ! -------------------------------------
+    val0 = (val - offset) / delta
+    frac = val0 - int(val0) ! get fractional part
+    index = min(size(table,dim=1)-1, max(1, int(val0)+1)) ! limit the index range
+    !$acc loop vector
+    do i = 1, size(table,dim=2)
+      res(i) = table(index,i) + frac * (table(index+1,i) - table(index,i))
+    end do
+  end subroutine interpolate1D_vec
   ! ------------
   !   This function returns a single value from a subset (in gpoint) of the k table
   !

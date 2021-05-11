@@ -35,7 +35,7 @@ module mo_rte_sw
                               ty_optical_props_arry, ty_optical_props_1scl, ty_optical_props_2str, ty_optical_props_nstr
   use mo_fluxes,            only: ty_fluxes, ty_fluxes_broadband
   use mo_rte_solver_kernels, &
-                            only: apply_BC, sw_solver_noscat, sw_solver_2stream, sw_solver_noscat_broadband, sw_solver_2stream_broadband
+                            only: apply_BC, sw_solver_noscat, sw_solver_2stream
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
 #ifdef USE_TIMING
   !
@@ -55,7 +55,7 @@ contains
   function rte_sw(atmos, top_at_1,                 &
                   mu0, inc_flux,                   &
                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                  fluxes, inc_flux_dif, compute_gpoint_fluxes) result(error_msg)
+                  fluxes, inc_flux_dif, save_gpt_flux) result(error_msg)
     class(ty_optical_props_arry), intent(in   ) :: atmos           ! Optical properties provided as arrays
     logical,                      intent(in   ) :: top_at_1        ! Is the top of the domain at index 1?
                                                                    ! (if not, ordering is bottom-to-top)
@@ -69,7 +69,7 @@ contains
     real(wp), dimension(:,:), optional, target, &
                                   intent(in   ) :: inc_flux_dif    ! incident diffuse flux at top of domain [W/m2] (ngpt, ncol)
     logical,                  optional, &
-                                  intent(in   ) :: compute_gpoint_fluxes    ! Compute fluxes at g-points, not only broadband fluxes
+                                  intent(in   ) :: save_gpt_flux    ! Compute fluxes at g-points, not only broadband fluxes
 
     character(len=128)                          :: error_msg       ! If empty, calculation was successful
     ! --------------------------------
@@ -78,8 +78,8 @@ contains
     !
     integer :: ncol, nlay, ngpt, nband
     integer :: icol, igpt, ret
-    logical :: computing_gpoint_fluxes
-    integer, dimension(2,atmos%get_nband())   :: band_limits
+    logical :: save_gpt_fluxes
+    ! integer, dimension(2,atmos%get_nband())   :: band_limits
     real(wp), dimension(:,:,:), allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dir
     ! Surface albedos expanded to g-points (now done outside RTE)
     ! real(wp), dimension(:,:),   allocatable :: sfc_alb_dir_gpt, sfc_alb_dif_gpt ! 
@@ -143,117 +143,89 @@ contains
       end if
     end if
 
-    !
-    ! Ensure values of tau, ssa, and g are reasonable
-    !
-    error_msg =  atmos%validate()
-
     if(len_trim(error_msg) > 0) then
       if(len_trim(atmos%get_name()) > 0) &
         error_msg = trim(atmos%get_name()) // ': ' // trim(error_msg)
       return
     end if
 
+    if(len_trim(error_msg) > 0) return
+
+    !
+    ! Ensure values of tau, ssa, and g are reasonable
+    !
+    if(check_values) error_msg =  atmos%validate()
+    if(len_trim(error_msg) > 0) return
+
+
     !
     ! Optionally - output spectral fluxes, not only broadband fluxes?
+    ! 
     !
-    computing_gpoint_fluxes = .false.
-    if(present(compute_gpoint_fluxes)) computing_gpoint_fluxes = compute_gpoint_fluxes
-#ifdef USE_OPENACC
-    computing_gpoint_fluxes = .true.
-#endif
+    save_gpt_fluxes = .false.
+    if(present(save_gpt_flux)) save_gpt_fluxes = save_gpt_flux
+
+    select type (atmos)
+      class is (ty_optical_props_1scl)
+      save_gpt_fluxes = .true.
+    end select
+
+    ! Now allocate spectral fluxes if needed (when using GPU acceleration they are always allocated)
+    #ifndef USE_OPENACC
+    if (save_gpt_fluxes) then
+    #endif
+      allocate(gpt_flux_up (ngpt, nlay+1, ncol), gpt_flux_dn(ngpt, nlay+1, ncol), gpt_flux_dir(ngpt, nlay+1, ncol))
+      !$acc enter data create(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+    #ifndef USE_OPENACC 
+    end if
+    #endif
 
     ! ------------------------------------------------------------------------------------
 
+    !   ---------------------- NOW DONE OUTSIDE RTE  ----------------------
     ! Lower boundary condition -- expand surface albedos by band to gpoints
-    ! Now done outside RTE
     ! allocate(sfc_alb_dir_gpt(ngpt, ncol), sfc_alb_dif_gpt(ngpt, ncol))
     ! !$acc enter data create(sfc_alb_dir_gpt, sfc_alb_dif_gpt) copyin(band_limits)
     ! call expand(nband, ngpt, ncol, band_limits, sfc_alb_dir, sfc_alb_dir_gpt)
     ! call expand(nband, ngpt, ncol, band_limits, sfc_alb_dif, sfc_alb_dif_gpt)
+    !   ---------------------- NOW DONE OUTSIDE RTE  ----------------------
+
+
+    ! Boundary conditions - for computations with scattering these are passed to the kernel
+    ! 
+    ! If inc_flux_dif is not provided, it is zero
+    if(present(inc_flux_dif)) then
+      !$acc enter data copyin(inc_flux_dif)
+      inc_diff_flux => inc_flux_dif
+    else
+      allocate(inc_flux_zero(ngpt, ncol))
+      !$acc enter data create(inc_flux_zero)
+      !$acc parallel loop collapse(2) present(inc_flux_zero)
+      do icol = 1, ncol
+        do igpt = 1, ngpt
+          inc_flux_zero(igpt,icol) = 0.0_wp
+        end do
+      end do
+      inc_diff_flux => inc_flux_zero
+    end if
+    !$acc enter data attach(inc_diff_flux)
 
     ! ------------------------------------------------------------------------------------
     !
     ! Compute the radiative transfer...
     !
     !
-    ! Apply boundary conditions
-    !   On input flux_dn is the diffuse component; the last action in each solver is to add
-    !   direct and diffuse to represent the total, consistent with the LW
-    !
-
-    if (.not. computing_gpoint_fluxes) then ! only broadband fluxes desired, don't bother allocating gpt_flux_x
-
-      if(present(inc_flux_dif)) then
-        !$acc enter data copyin(inc_flux_dif)
-        inc_diff_flux => inc_flux_dif
-      else
-        allocate(inc_flux_zero(ngpt, ncol))
-        !$acc enter data create(inc_flux_zero)
-        !$acc parallel loop collapse(2) present(inc_flux_zero)
-        do icol = 1, ncol
-          do igpt = 1, ngpt
-            inc_flux_zero(igpt,icol) = 0.0_wp
-          end do
-        end do
-        inc_diff_flux => inc_flux_zero
-      end if
-      !$acc enter data attach(inc_diff_flux)
-
       select type (atmos)
         class is (ty_optical_props_1scl)
           !
           ! Direct beam only
           !
-          call sw_solver_noscat_broadband(ngpt, nlay, ncol, logical(top_at_1, wl), &
-                                inc_flux, atmos%tau, mu0,                          &
-                                fluxes%flux_dn_dir)
-
-
-        class is (ty_optical_props_2str)
-          !
-          ! two-stream calculation with scattering
-          !
-          call sw_solver_2stream_broadband(ngpt, nlay, ncol, logical(top_at_1, wl), &
-                                inc_flux, inc_diff_flux,                 &
-                                atmos%tau, atmos%ssa, atmos%g, mu0,      &
-                                sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                                fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir)
-
-        class is (ty_optical_props_nstr)
-          !
-          ! n-stream calculation
-          !
-          ! not yet implemented so fail
-          !
-          error_msg = 'sw_solver(...ty_optical_props_nstr...) not yet implemented'
-      end select
-      
-
-    else ! g-point fluxes ARE desired
-
-      allocate(gpt_flux_up (ngpt, nlay+1, ncol), gpt_flux_dn(ngpt, nlay+1, ncol), gpt_flux_dir(ngpt, nlay+1, ncol))
-      !$acc enter data create(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
-
-      !$acc enter data copyin(inc_flux)
-      call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl),   inc_flux, mu0, gpt_flux_dir)
-      !$acc exit data delete(inc_flux)
-      if(present(inc_flux_dif)) then
-        !$acc enter data copyin(inc_flux_dif)
-        call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl), inc_flux_dif,  gpt_flux_dn )
-        !$acc exit data delete(inc_flux_dif)
-      else
-        call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl),                gpt_flux_dn )
-      end if
-
-      select type (atmos)
-        class is (ty_optical_props_1scl)
-          !
-          ! Direct beam only
-          !
+          !$acc enter data copyin(inc_flux)
+          call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl),  inc_flux, mu0, gpt_flux_dir)
+          !$acc exit data delete(inc_flux)
           call sw_solver_noscat(ngpt, nlay, ncol, logical(top_at_1, wl), &
                                 atmos%tau, mu0,                          &
-                                gpt_flux_dir)
+                                fluxes%flux_dn_dir, gpt_flux_dir)
           !
           ! No diffuse flux
           !
@@ -265,9 +237,11 @@ contains
           ! two-stream calculation with scattering
           !
           call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
+                                inc_flux, inc_diff_flux,                 &
                                 atmos%tau, atmos%ssa, atmos%g, mu0,      &
                                 sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                                gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+                                fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, &
+                                logical(save_gpt_fluxes, wl), gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
 
         class is (ty_optical_props_nstr)
           !
@@ -277,22 +251,19 @@ contains
           !
           error_msg = 'sw_solver(...ty_optical_props_nstr...) not yet implemented'
       end select
-      if (error_msg /= '') return
-      !
-      ! ...and reduce spectral fluxes to desired output quantities
-      !
-#ifdef USE_TIMING
-    ret =  gptlstart('sum_broadband_')
-#endif  
-      ! error_msg = fluxes%reduce(gpt_flux_up, gpt_flux_dn, atmos, top_at_1, gpt_flux_dir)
-      call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_up,   fluxes%flux_up)
-      call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_dn,   fluxes%flux_dn)
-      call sum_broadband(ngpt, nlay+1, ncol, gpt_flux_dir,  fluxes%flux_dn_dir)
+    !
+    ! ------------------------------------------------------------------------------------
+    !
+    if (error_msg /= '') return
 
-#ifdef USE_TIMING
-    ret =  gptlstop('sum_broadband_')
-#endif  
-      !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+    !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+
+    if (save_gpt_fluxes) then
+      deallocate(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
+    end if
+
+    if(.not. present(inc_flux_dif)) then
+      !$acc exit data delete(inc_flux_zero)
     end if
 
     ! !$acc exit data delete(sfc_alb_dir_gpt, sfc_alb_dif_gpt, band_limits)

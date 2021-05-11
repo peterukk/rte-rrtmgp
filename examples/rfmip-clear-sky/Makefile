@@ -56,15 +56,16 @@ else ifeq ($(BLASLIB),mkl)
 endif
 
 # -------- Use OpenMP? May be needed for BLAS -------
-ifeq ($(BLASLIB),blis-amd)
-   USE_OPENMP=1
-endif
+# ifeq ($(BLASLIB),blis-amd)
+#    USE_OPENMP=1
+# endif
 #USE_OPENMP=1
 
 ifeq ($(USE_OPENMP),1)
-	OMPFLAG = -fopenmp
-	# FCFLAGS += -DUSE_OPENMP
+	# OMPFLAG = -fopenmp
+	FCFLAGS += -DUSE_OPENMP
 endif
+OMPFLAG = -fopenmp
 
 ifeq ($(USE_OPENACC),1)
   FCFLAGS += -DUSE_OPENACC
@@ -91,7 +92,11 @@ else ifeq ($(GPTL_TIMING),2)
 	# Compiler specific
 	FCFLAGS += -DUSE_TIMING -DUSE_PAPI
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
-	LIBS      += -lgptl  -rdynamic  -lpapi
+	# LIBS      += -lgptl  -rdynamic  -lpapi
+	LIBS      += -lgptl -lpapi
+ifeq ($(FC),gfortran)
+	LIBS      += -rdynamic  
+endif
 endif
 
 VPATH = ../

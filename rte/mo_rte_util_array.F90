@@ -47,7 +47,9 @@ contains
 
     real(wp) :: minValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array)
+    !$acc end kernels
 
     any_vals_less_than_1D = (minValue < check_value)
 
@@ -59,7 +61,9 @@ contains
 
     real(wp) :: minValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array)
+    !$acc end kernels
 
     any_vals_less_than_2D = (minValue < check_value)
 
@@ -71,7 +75,9 @@ contains
 
     real(wp) :: minValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array)
+    !$acc end kernels
 
     any_vals_less_than_3D = (minValue < check_value)
 
@@ -86,7 +92,9 @@ contains
 
     real(wp) :: minValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array, mask=mask)
+    !$acc end kernels
 
     any_vals_less_than_1D_masked = (minValue < check_value)
 
@@ -99,7 +107,9 @@ contains
 
     real(wp) :: minValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array, mask=mask)
+    !$acc end kernels
 
     any_vals_less_than_2D_masked = (minValue < check_value)
 
@@ -112,7 +122,9 @@ contains
 
     real(wp) :: minValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array, mask=mask)
+    !$acc end kernels
 
     any_vals_less_than_3D_masked = (minValue < check_value)
 
@@ -126,8 +138,10 @@ contains
 
     real(wp) :: minValue, maxValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array)
     maxValue = maxval(array)
+    !$acc end kernels
     any_vals_outside_1D = minValue < checkMin .or. maxValue > checkMax
 
   end function any_vals_outside_1D
@@ -138,8 +152,10 @@ contains
 
     real(wp) :: minValue, maxValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array)
     maxValue = maxval(array)
+    !$acc end kernels
     any_vals_outside_2D = minValue < checkMin .or. maxValue > checkMax
 
   end function any_vals_outside_2D
@@ -152,8 +168,10 @@ contains
       ! but an explicit loop is the only current solution on GPUs
     real(wp) :: minValue, maxValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array)
     maxValue = maxval(array)
+    !$acc end kernels
     any_vals_outside_3D = minValue < checkMin .or. maxValue > checkMax
 
   end function any_vals_outside_3D
@@ -167,8 +185,10 @@ contains
 
     real(wp) :: minValue, maxValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array, mask=mask)
     maxValue = maxval(array, mask=mask)
+    !$acc end kernels
     any_vals_outside_1D_masked = minValue < checkMin .or. maxValue > checkMax
 
   end function any_vals_outside_1D_masked
@@ -180,8 +200,10 @@ contains
 
     real(wp) :: minValue, maxValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array, mask=mask)
     maxValue = maxval(array, mask=mask)
+    !$acc end kernels
     any_vals_outside_2D_masked = minValue < checkMin .or. maxValue > checkMax
 
   end function any_vals_outside_2D_masked
@@ -193,9 +215,10 @@ contains
 
     real(wp) :: minValue, maxValue
 
+    !$acc kernels copyin(array)
     minValue = minval(array, mask=mask)
     maxValue = maxval(array, mask=mask)
-
+    !$acc end kernels
     any_vals_outside_3D_masked = minValue < checkMin .or. maxValue > checkMax
 
   end function any_vals_outside_3D_masked
