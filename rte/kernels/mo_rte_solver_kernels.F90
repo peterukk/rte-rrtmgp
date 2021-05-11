@@ -518,7 +518,7 @@ contains
     real(wp), dimension(ngpt,nlay,  ncol),  intent(in   ) :: tau, &  ! Optical thickness,
                                                             ssa, &  ! single-scattering albedo,
                                                             g       ! asymmetry parameter []
-    real(wp), dimension(ncol            ),  intent(in   ) :: mu0     ! cosine of solar zenith angle
+    real(wp), dimension(            ncol),  intent(in   ) :: mu0     ! cosine of solar zenith angle
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: sfc_alb_dir, sfc_alb_dif
                                                                     ! Spectral albedo of surface to direct and diffuse radiation
     real(wp), dimension(nlay+1,ncol),       intent(out) :: flux_up, flux_dn, flux_dir ! Broadband fluxes  [W/m2]
