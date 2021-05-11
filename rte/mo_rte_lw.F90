@@ -45,8 +45,7 @@ module mo_rte_lw
   use mo_fluxes,            only: ty_fluxes_broadband
   use mo_rte_solver_kernels, &
                             only: apply_BC, lw_solver_noscat, lw_solver_noscat_GaussQuad, &
-                        lw_solver_noscat_broadband, lw_solver_noscat_GaussQuad_broadband, &
-                        lw_solver_2stream
+                            lw_solver_2stream
 
   implicit none
   private

@@ -171,14 +171,14 @@ contains
     end select
 
     ! Now allocate spectral fluxes if needed (when using GPU acceleration they are always allocated)
-    #ifndef USE_OPENACC
+#ifndef USE_OPENACC
     if (save_gpt_fluxes) then
-    #endif
+#endif
       allocate(gpt_flux_up (ngpt, nlay+1, ncol), gpt_flux_dn(ngpt, nlay+1, ncol), gpt_flux_dir(ngpt, nlay+1, ncol))
       !$acc enter data create(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
-    #ifndef USE_OPENACC 
+#ifndef USE_OPENACC 
     end if
-    #endif
+#endif
 
     ! ------------------------------------------------------------------------------------
 
