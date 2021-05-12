@@ -5,7 +5,6 @@
 RRTMGP_ROOT=../../
 $(info VAR="$(RRTMGP_ROOT)")
 RRTMGP_BUILD=$(RRTMGP_ROOT)/build
--include Makefile.libs
 -include $(RRTMGP_BUILD)/Makefile.conf
 #
 # RRTMGP library, module files
