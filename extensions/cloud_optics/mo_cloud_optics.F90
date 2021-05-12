@@ -362,7 +362,7 @@ contains
                                reice (:,:)      ! cloud liquid particle effective radius (microns)
     class(ty_optical_props_arry), &
               intent(inout) :: optical_props
-                                               ! Dimensions: (ncol,nlay,nbnd)
+                                               ! Dimensions: (nbnd,nlay,ncol)
 
     character(len=128)      :: error_msg
     ! ------- Local -------
@@ -501,27 +501,27 @@ contains
         !$acc parallel loop gang vector default(none) collapse(3) &
         !$acc               copyin(optical_props) copyout(optical_props%tau)
 
-        do ibnd = 1, nbnd
+        do icol = 1,ncol
           do ilay = 1, nlay
-            do icol = 1,ncol
+            do ibnd = 1, nbnd
               ! Absorption optical depth  = (1-ssa) * tau = tau - taussa
-              optical_props%tau(icol,ilay,ibnd) = (ltau(icol,ilay,ibnd) - ltaussa(icol,ilay,ibnd)) + &
-                                                  (itau(icol,ilay,ibnd) - itaussa(icol,ilay,ibnd))
+              optical_props%tau(ibnd,ilay,icol) = (ltau(ibnd,ilay,icol) - ltaussa(ibnd,ilay,icol)) + &
+                                                  (itau(ibnd,ilay,icol) - itaussa(ibnd,ilay,icol))
             end do
           end do
         end do
       type is (ty_optical_props_2str)
         !$acc parallel loop gang vector default(none) collapse(3) &
         !$acc               copyin(optical_props) copyout(optical_props%tau, optical_props%ssa, optical_props%g)
-        do ibnd = 1, nbnd
+        do icol = 1,ncol
           do ilay = 1, nlay
-            do icol = 1,ncol
-              tau    = ltau   (icol,ilay,ibnd) + itau   (icol,ilay,ibnd)
-              taussa = ltaussa(icol,ilay,ibnd) + itaussa(icol,ilay,ibnd)
-              optical_props%g  (icol,ilay,ibnd) = (ltaussag(icol,ilay,ibnd) + itaussag(icol,ilay,ibnd)) / &
+            do ibnd = 1, nbnd
+              tau    = ltau   (ibnd,ilay,icol) + itau   (ibnd,ilay,icol)
+              taussa = ltaussa(ibnd,ilay,icol) + itaussa(ibnd,ilay,icol)
+              optical_props%g  (ibnd,ilay,icol) = (ltaussag(ibnd,ilay,icol) + itaussag(ibnd,ilay,icol)) / &
                                                         max(epsilon(tau), taussa)
-              optical_props%ssa(icol,ilay,ibnd) = taussa/max(epsilon(tau), tau)
-              optical_props%tau(icol,ilay,ibnd) = tau
+              optical_props%ssa(ibnd,ilay,icol) = taussa/max(epsilon(tau), tau)
+              optical_props%tau(ibnd,ilay,icol) = tau
             end do
           end do
         end do
@@ -608,7 +608,7 @@ contains
     real(wp),    dimension(ncol,nlay),      intent(in) :: lwp, re
     real(wp),                               intent(in) :: step_size, offset
     real(wp),    dimension(nsteps,   nbnd), intent(in) :: tau_table, ssa_table, asy_table
-    real(wp),    dimension(ncol,nlay,nbnd)             :: tau, taussa, taussag
+    real(wp),    dimension(nbnd,nlay,ncol)             :: tau, taussa, taussag
     ! ---------------------------
     integer  :: icol, ilay, ibnd
     integer  :: index
@@ -616,9 +616,9 @@ contains
     real(wp) :: t, ts, tsg  ! tau, tau*ssa, tau*ssa*g
     ! ---------------------------
     !$acc parallel loop gang vector default(present) collapse(3)
-    do ibnd = 1, nbnd
-      do ilay = 1,nlay
-        do icol = 1, ncol
+    do icol = 1,ncol
+      do ilay = 1, nlay
+        do ibnd = 1, nbnd
           if(mask(icol,ilay)) then
             index = min(floor((re(icol,ilay) - offset)/step_size)+1, nsteps-1)
             fint = (re(icol,ilay) - offset)/step_size - (index-1)
@@ -626,15 +626,15 @@ contains
                   (tau_table(index,  ibnd) + fint * (tau_table(index+1,ibnd) - tau_table(index,ibnd)))
             ts  = t              * &
                   (ssa_table(index,  ibnd) + fint * (ssa_table(index+1,ibnd) - ssa_table(index,ibnd)))
-            taussag(icol,ilay,ibnd) =  &
+            taussag(ibnd,ilay,icol) =  &
                   ts             * &
                   (asy_table(index,  ibnd) + fint * (asy_table(index+1,ibnd) - asy_table(index,ibnd)))
-            taussa (icol,ilay,ibnd) = ts
-            tau    (icol,ilay,ibnd) = t
+            taussa (ibnd,ilay,icol) = ts
+            tau    (ibnd,ilay,icol) = t
           else
-            tau    (icol,ilay,ibnd) = 0._wp
-            taussa (icol,ilay,ibnd) = 0._wp
-            taussag(icol,ilay,ibnd) = 0._wp
+            tau    (ibnd,ilay,icol) = 0._wp
+            taussa (ibnd,ilay,icol) = 0._wp
+            taussag(ibnd,ilay,icol) = 0._wp
           end if
         end do
       end do
@@ -664,15 +664,15 @@ contains
     integer,                        intent(in) :: m_asy, n_asy
     real(wp), dimension(nbnd,nsizes,0:m_asy+n_asy), &
                                     intent(in) :: coeffs_asy
-    real(wp), dimension(ncol,nlay,nbnd)        :: tau, taussa, taussag
+    real(wp), dimension(nbnd,nlay,ncol)        :: tau, taussa, taussag
     ! ---------------------------
     integer  :: icol, ilay, ibnd, irad, count
     real(wp) :: t, ts
 
     !$acc parallel loop gang vector default(present) collapse(3)
-    do ibnd = 1, nbnd
+    do icol = 1,ncol
       do ilay = 1, nlay
-        do icol = 1, ncol
+        do ibnd = 1, nbnd
           if(mask(icol,ilay)) then
             !
             ! Finds index into size regime table
@@ -689,16 +689,16 @@ contains
                   pade_eval(ibnd, nbnd, nsizes, m_ssa, n_ssa, irad, re(icol,ilay), coeffs_ssa)))
 
             irad = min(floor((re(icol,ilay) - re_bounds_asy(2))/re_bounds_asy(3))+2, 3)
-            taussag(icol,ilay,ibnd) =  &
+            taussag(ibnd,ilay,icol) =  &
                   ts             *     &
                   pade_eval(ibnd, nbnd, nsizes, m_asy, n_asy, irad, re(icol,ilay), coeffs_asy)
 
-            taussa (icol,ilay,ibnd) = ts
-            tau    (icol,ilay,ibnd) = t
+            taussa (ibnd,ilay,icol) = ts
+            tau    (ibnd,ilay,icol) = t
           else
-            tau    (icol,ilay,ibnd) = 0._wp
-            taussa (icol,ilay,ibnd) = 0._wp
-            taussag(icol,ilay,ibnd) = 0._wp
+            tau    (ibnd,ilay,icol) = 0._wp
+            taussa (ibnd,ilay,icol) = 0._wp
+            taussag(ibnd,ilay,icol) = 0._wp
           end if
         end do
       end do
