@@ -13,9 +13,20 @@ export FCFLAGS = -O3 -mkl=sequential
 
 # Debug export FCFLAGS = -O0 -g -traceback -check all -warn interface -fp-stack-check -mkl -I${MKLROOT}/include
 
+# ---------------------------------------------------------------------------
+# -------  (REQUIRED) NetCDF C and Fortran libraries ------------------------
+# --------------------------------------------------------------------------
+#export NCHOME = /home/peter/netcdf-pgi/netcdf
+#export NFHOME = /home/peter/netcdf-pgi/netcdf
 
-# ------------------------------------------------------------------------------------------
-# -------  (OPTIONAL) GPTL TIMING LIBRARY --------------------------------------------------
-# ------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# -------  (REQUIRED) BLAS library for neural network computations ---------
+# --------------------------------------------------------------------------
+export BLASLIB = mkl
+# BLAS_DIR not needed, but MKLROOT needs to be set
+
+# --------------------------------------------------------------------------
+# -------  (OPTIONAL) GPTL library for timing ------------------------------
+# --------------------------------------------------------------------------
 export TIME_DIR = /home/puk/gptl-8.0.3-ifort/
 #export TIME_DIR = /data/puk/soft/gptl/
