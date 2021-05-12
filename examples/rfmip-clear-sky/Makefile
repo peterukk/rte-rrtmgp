@@ -22,7 +22,6 @@ FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
 
-
 # 
 # -------- BLAS lbirary: required for RRTMGP-NN --------
 # 
@@ -30,18 +29,8 @@ LIBS      += -lnetcdff -lnetcdf
 
 # Here we use BLIS (https://github.com/flame/blis) which is one of the fastest 
 # BLAS libraries available (on Intel platforms MKL is probably faster). 
+# the flags BLAS_DIR and BLASLIB can be specified in Makefile.conf or the environment
 # Depending on your BLAS library you might have to make changes below
-
-# export BLASLIB  = blis-amd
-# export BLAS_DIR = $(HOME)/blis-amd
-
-# export BLASLIB = openblas
-# export BLAS_DIR =  $(HOME)/blis
-
-# If you use Intel compilers with another BLAS library than MKL comment out the lines below
-# ifeq ($(FC),ifort)
-# 	BLASLIB=mkl
-# endif
 
 ifeq ($(BLASLIB),blis)
 	FCINCLUDE   += -I$(BLAS_DIR)/include/blis
@@ -54,6 +43,7 @@ else ifeq ($(BLASLIB),openblas)
 else ifeq ($(BLASLIB),mkl)
 	FCINCLUDE   += -I${MKLROOT}/include
 endif
+
 
 # -------- Use OpenMP? May be needed for BLAS -------
 # ifeq ($(BLASLIB),blis-amd)

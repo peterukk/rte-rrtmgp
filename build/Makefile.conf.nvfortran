@@ -6,9 +6,9 @@
 export FC = nvfortran 
 
 #CPU
-# export FCFLAGS = -O3 -g 
+export FCFLAGS = -O3 -g 
 
-export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.2  -Mcuda -Mcudalib=cublas -Minfo=all   -DNGPT=224 -DNLAY=60
+# export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.2  -Mcuda -Mcudalib=cublas -Minfo=all   -DNGPT=224 -DNLAY=60
 
 # export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.2 -gpu=fastmath -Munroll=c:1 -fast -Minline -Mcuda -Mcudalib=cublas  -Minfo=all  -DNGPT=224 -DNLAY=60
 # export FCFLAGS =  -g -acc=gpu -gpu=cuda11.2  -Mcuda -Mcudalib=cublas  -Minfo=all -traceback #-Mchkfpstk -Mchkstk -Mdalign  -Mdclchk  -Mdepchk 
@@ -17,14 +17,20 @@ export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.2  -Mcuda -Mcudalib=cublas -Minfo=a
 # export FCFLAGS = -g -ta=tesla:lineinfo  -traceback  -Mcuda -Mcudalib=cublas
 # export FCFLAGS = -g   -acc=gpu -gpu=cuda11.0  -Minfo=all -traceback -Mchkfpstk -Mchkstk -Mdalign -Mchkptr  -Mdclchk -Mstandard -Mdepchk -Mrecursive  -Kieee -Ktrap=fp -Mallocatable=03 -Mpreprocess -Mcuda -Mcudalib=cublas
 
-# CPU
 
-
-# ------------------------------------------------------------------------------------------
-# -------  (REQUIRED) NetCDF C and Fortran libraries ----------------------------------------
-# ------------------------------------------------------------------------------------------
-
+# ---------------------------------------------------------------------------
+# -------  (REQUIRED) NetCDF C and Fortran libraries ------------------------
+# --------------------------------------------------------------------------
 export NCHOME = /home/peter/netcdf-nvc/netcdf
 export NFHOME = /home/peter/netcdf-nvc/netcdf
 
+# --------------------------------------------------------------------------
+# -------  (REQUIRED) BLAS library for neural network computations ---------
+# --------------------------------------------------------------------------
+export BLASLIB  = blis
+export BLAS_DIR = $(HOME)/blis-amd-3.0
+
+# --------------------------------------------------------------------------
+# -------  (OPTIONAL) GPTL library for timing ------------------------------
+# --------------------------------------------------------------------------
 export TIME_DIR = /home/peter/gptl-nvfort
