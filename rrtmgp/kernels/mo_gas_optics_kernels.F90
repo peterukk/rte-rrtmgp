@@ -364,7 +364,7 @@ contains
     real(wp),    dimension(ngpt,nlay,ncol),      intent(inout) :: tau
     ! -----------------
     ! local variables
-    real(wp), parameter :: PaTohPa = 0.01
+    real(wp), parameter :: PaTohPa = 0.01_wp
     real(wp) :: vmr_fact, dry_fact             ! conversion from column abundance to dry vol. mixing ratio;
     real(wp) :: scaling, kminor_loc            ! minor species absorption coefficient, optical depth
     integer  :: icol, ilay, iflav, igpt, imnr
@@ -403,7 +403,7 @@ contains
                   if (scale_by_complement(imnr)) then ! scale by densities of all gases but the special one
                     scaling = scaling * (1._wp - col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
                   else
-                    scaling = scaling *          (col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
+                    scaling = scaling *         (col_gas(icol,ilay,idx_minor_scaling(imnr)) * vmr_fact * dry_fact)
                   endif
                 endif
               endif
@@ -542,7 +542,7 @@ contains
     !
     do icol = 1, ncol
       planck_function(1:nbnd,1,icol) = interpolate1D(tsfc(icol)              , temp_ref_min, totplnk_delta, totplnk)
-      planck_function(1:nbnd,2,icol) = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk) 
+      planck_function(1:nbnd,2,icol) = interpolate1D(tsfc(icol) + delta_Tsurf, temp_ref_min, totplnk_delta, totplnk)
       !
       ! Map to g-points
       !

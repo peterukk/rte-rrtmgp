@@ -47,6 +47,13 @@ else ifeq ($(GPTL_TIMING),2)
 endif
 
 
+ifeq ($(USE_OPENMP),yes)
+	# OMPFLAG = -fopenmp
+	FCFLAGS += -DUSE_OPENMP
+endif
+OMPFLAG = -fopenmp
+
+
 VPATH = ../
 
 # Compilation rules

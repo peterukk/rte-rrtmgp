@@ -39,6 +39,9 @@ end subroutine stop_on_err
 ! -------------------------------------------------------------------------------------------------
 program rrtmgp_rfmip_sw
   ! --------------------------------------------------
+#ifdef USE_OPENMP
+  use omp_lib
+#endif
   !
   ! Modules for working with rte and rrtmgp
   !
@@ -81,11 +84,15 @@ program rrtmgp_rfmip_sw
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
                                    read_and_block_sw_bc, determine_gas_names
+#ifdef USE_OPENACC  
+  use cublas
+  use openacc
+#endif                          
 #ifdef USE_TIMING
   !
   ! Timing library
   !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead
 #endif
   implicit none
@@ -99,10 +106,10 @@ program rrtmgp_rfmip_sw
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flxdn_file, flxup_file, timing_file
+  character(len=132) :: flxdn_file, flxup_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical            :: top_at_1
-  integer            :: b, icol, ibnd, igpt
+  integer            :: b, icol, ibnd, igpt,  count_rate, iTime1, iTime2, iTime3, istat, ret, i
   character(len=4)   :: block_size_char, forcing_index_char = '1'
 
   character(len=32 ), &
@@ -120,7 +127,7 @@ program rrtmgp_rfmip_sw
   type(ty_fluxes_broadband)                      :: fluxes
 
   real(wp), dimension(:,:), allocatable          :: toa_flux ! block_size, ngpt
-  real(wp), dimension(:  ), allocatable          :: def_tsi, mu0    ! block_size
+  real(wp), dimension(:  ), allocatable          :: def_tsi, mu0, temparray    ! block_size
   logical , dimension(:,:), allocatable          :: usecol ! block_size, nblocks
   !
   ! ty_gas_concentration holds multiple columns; we make an array of these objects to
@@ -128,9 +135,13 @@ program rrtmgp_rfmip_sw
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
   real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
-#ifdef USE_TIMING
-  integer :: ret, i
+  ! Initialize GPU kernel
+#ifdef USE_OPENACC  
+  type(cublasHandle) :: h
+  istat = cublasCreate(h) 
+  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
 #endif
+
   ! -------------------------------------------------------------------------------------------------
   !
   ! Code starts
@@ -154,7 +165,9 @@ program rrtmgp_rfmip_sw
   !
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
-  if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_sw: number of columns doesn't fit evenly into blocks.")
+  call read_size(rfmip_file, ncol, nlay, nexp)
+
+  if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
   print *, "Doing ",  nblocks, "blocks of size ", block_size
 
@@ -233,9 +246,14 @@ program rrtmgp_rfmip_sw
   allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   call stop_on_err(optical_props%alloc_2str(block_size, nlay, k_dist))
   !$acc enter data create(optical_props, optical_props%tau, optical_props%ssa, optical_props%g)
+  !$omp target enter data map(alloc:optical_props%tau, optical_props%ssa, optical_props%g)
   !$acc enter data create (toa_flux, def_tsi)
+  !$omp target enter data map(alloc:toa_flux, def_tsi)
   !$acc enter data create (sfc_alb_spec, mu0)
+  !$omp target enter data map(alloc:sfc_alb_spec, mu0)
   ! --------------------------------------------------
+  call system_clock(count_rate=count_rate)
+  call system_clock(iTime1)
 #ifdef USE_TIMING
   !
   ! Initialize timers
@@ -243,19 +261,20 @@ program rrtmgp_rfmip_sw
   ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
   ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
 #ifdef USE_PAPI  
-#ifdef DOUBLE_PRECISION
-ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
-#else
-ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
-#endif
+  ret = GPTLsetoption (PAPI_SP_OPS, 1);
 #endif  
-  ret = gptlinitialize()
+  ret =  gptlinitialize()
 #endif
   !
   ! Loop over blocks
   !
 #ifdef USE_TIMING
-  do i = 1, 10
+  ret =  gptlstart('clear_sky_total (SW)')
+  do i = 1, 4
+#endif
+#ifdef USE_OPENMP
+  !$OMP PARALLEL shared(k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,optical_props)
+  !$OMP DO 
 #endif
   do b = 1, nblocks
     fluxes%flux_up => flux_up(:,:,b)
@@ -265,7 +284,6 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
     !    from pressures, temperatures, and gas concentrations...
     !
 #ifdef USE_TIMING
-    ret =  gptlstart('clear_sky_total (SW)')
     ret =  gptlstart('gas_optics (SW)')
 #endif
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
@@ -277,16 +295,19 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (SW)')
 #endif
+    call system_clock(iTime2)
     ! Boundary conditions
     !   (This is partly to show how to keep work on GPUs using OpenACC in a host application)
     ! What's the total solar irradiance assumed by RRTMGP?
     !
-#ifdef _OPENACC
+#if defined(_OPENACC) || defined(_OPENMP)
     call zero_array(block_size, def_tsi)
     !$acc parallel loop collapse(2) copy(def_tsi) copyin(toa_flux)
+    !$omp target teams distribute parallel do simd collapse(2) map(tofrom:def_tsi) map(to:toa_flux)
     do igpt = 1, ngpt
       do icol = 1, block_size
         !$acc atomic update
+        !$omp atomic update
         def_tsi(icol) = def_tsi(icol) + toa_flux(icol, igpt)
       end do
     end do
@@ -300,6 +321,7 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
     ! Normalize incoming solar flux to match RFMIP specification
     !
     !$acc parallel loop collapse(2) copyin(total_solar_irradiance, def_tsi) copy(toa_flux)
+    !$omp target teams distribute parallel do simd collapse(2) map(to:total_solar_irradiance, def_tsi) map(tofrom:toa_flux)
     do igpt = 1, ngpt
       do icol = 1, block_size
         toa_flux(icol,igpt) = toa_flux(icol,igpt) * total_solar_irradiance(icol,b)/def_tsi(icol)
@@ -309,6 +331,7 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
     ! Expand the spectrally-constant surface albedo to a per-band albedo for each column
     !
     !$acc parallel loop collapse(2) copyin(surface_albedo)
+    !$omp target teams distribute parallel do simd collapse(2) map(to:surface_albedo)
     do icol = 1, block_size
       do ibnd = 1, nbnd
         sfc_alb_spec(ibnd,icol) = surface_albedo(icol,b)
@@ -318,6 +341,7 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
     ! Cosine of the solar zenith angle
     !
     !$acc parallel loop copyin(solar_zenith_angle, usecol)
+    !$omp target teams distribute parallel do simd map(to:solar_zenith_angle, usecol)
     do icol = 1, block_size
       mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
     end do
@@ -338,7 +362,6 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
                             fluxes))
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
-    ret =  gptlstop('clear_sky_total (SW)')
 #endif
     !
     ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
@@ -349,20 +372,52 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
         flux_dn(icol,:,b)  = 0._wp
       end if
     end do
-  end do
-#ifdef USE_TIMING
-  end do
+
+  end do !blocks
+#ifdef USE_OPENMP
+  !$OMP END DO
+  !$OMP END PARALLEL
+  !$OMP barrier
+#endif
   !
   ! End timers
   !
-  timing_file = "timing.sw-" // adjustl(trim(block_size_char))
-  ret = gptlpr_file(trim(timing_file))
+#ifdef USE_TIMING
+  end do
+  ret =  gptlstop('clear_sky_total (SW)')
+  ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
+
   !$acc exit data delete(optical_props%tau, optical_props%ssa, optical_props%g, optical_props)
+  !$omp target exit data map(release:optical_props%tau, optical_props%ssa, optical_props%g)
   !$acc exit data delete(sfc_alb_spec, mu0)
+  !$omp target exit data map(release:sfc_alb_spec, mu0)
   !$acc exit data delete(toa_flux, def_tsi)
+  !$omp target exit data map(release:toa_flux, def_tsi)
   ! --------------------------------------------------
+  call system_clock(iTime3)
+  if (nblocks==1) then
+    print *, "-----------------------------------------------------------------------------------------"
+    print '(a,f11.4,/,a,f11.4,/,a,f11.4,a)', ' Time elapsed in gas optics:',real(iTime2-iTime1)/real(count_rate), &
+    ' Time elapsed in solver:    ', real(iTime3-iTime2)/real(count_rate), ' Time elapsed in total:     ', &
+    real(iTime3-iTime1)/real(count_rate)
+    print *, "-----------------------------------------------------------------------------------------"
+  else 
+    print *,'Elapsed time on everything ',real(iTime3-iTime1)/real(count_rate)
+  end if
+
+  print *, "max flux up, flux dn", maxval(flux_up(:,:,:)), maxval(flux_dn(:,:,:))
+  allocate(temparray(   block_size*nlay*nblocks)) 
+  temparray = pack(flux_dn(:,:,:),.true.)
+  print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)
+  temparray = pack(flux_up(:,:,:),.true.)
+  print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
+  deallocate(temparray)
+
+  !-------------------------------
+
   call unblock_and_write(trim(flxup_file), 'rsu', flux_up)
   call unblock_and_write(trim(flxdn_file), 'rsd', flux_dn)
+  
 end program rrtmgp_rfmip_sw

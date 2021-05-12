@@ -2,6 +2,11 @@
 
 RTE_DIR = ../rte
 RRTMGP_DIR = ../rrtmgp
+
+#
+# Compiler variables FC, FCFLAGS can be set in the environment or in Makefile.conf
+#
+-include Makefile.conf
 #
 # Choose kernels depending on environment variable
 #
@@ -13,9 +18,7 @@ RTE_KERNEL_DIR += ../rte/kernels
 RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR)
 #
-# Compiler variables FC, FCFLAGS can be set in the environment or in Makefile.conf
-#
--include Makefile.conf
+# Compiler variables FC, FCFLAGS must be set in the environment
 
 # Use double precision instead of single precision?
 ifdef DOUBLE_PRECISION

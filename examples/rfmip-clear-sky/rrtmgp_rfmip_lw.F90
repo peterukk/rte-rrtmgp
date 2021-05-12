@@ -38,6 +38,9 @@ end subroutine stop_on_err
 !
 ! -------------------------------------------------------------------------------------------------
 program rrtmgp_rfmip_lw
+#ifdef USE_OPENMP
+  use omp_lib
+#endif
   ! --------------------------------------------------
   !
   ! Modules for working with rte and rrtmgp
@@ -81,29 +84,29 @@ program rrtmgp_rfmip_lw
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
                                    read_and_block_lw_bc, determine_gas_names
+#ifdef USE_OPENACC  
+  use cublas
+  use openacc
+#endif                             
 #ifdef USE_TIMING
   !
   ! Timing library
   !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead
 #endif
   implicit none
-
-#ifdef USE_PAPI  
-#include "f90papi.h"
-#endif 
   ! --------------------------------------------------
   !
   ! Local variables
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_lw.nc'
-  character(len=132) :: flxdn_file, flxup_file, timing_file
+  character(len=132) :: flxdn_file, flxup_file
   integer            :: nargs, ncol, nlay, nbnd, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
-  integer            :: b, icol, ibnd
-  character(len=4)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
+  integer            :: b, icol, ibnd, count_rate, iTime1, iTime2, iTime3, istat, i
+  character(len=5)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
 
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_games
@@ -111,6 +114,7 @@ program rrtmgp_rfmip_lw
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis_spec    ! nbands, block_size (spectrally-resolved emissivity)
+  real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
 
   !
   ! Classes used by rte+rrtmgp
@@ -125,8 +129,21 @@ program rrtmgp_rfmip_lw
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
 
+  ! Initialize GPU kernel
+#ifdef USE_OPENACC  
+  type(cublasHandle) :: h
+  istat = cublasCreate(h) 
+  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
+#endif
+
 #ifdef USE_TIMING
-  integer :: ret, i
+  integer :: ret
+  !
+  ! Initialize timers
+  !
+  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
+  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+  ret = gptlinitialize()
 #endif
   ! -------------------------------------------------------------------------------------------------
   !
@@ -135,20 +152,28 @@ program rrtmgp_rfmip_lw
   !
   print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]"
   nargs = command_argument_count()
-  call read_size(rfmip_file, ncol, nlay, nexp)
-  if(nargs >= 1) then
-    call get_command_argument(1, block_size_char)
-    read(block_size_char, '(i4)') block_size
-  else
-    block_size = ncol
-  end if
+
+  call get_command_argument(1, block_size_char)
+  read(block_size_char, '(i5)') block_size
   if(nargs >= 2) call get_command_argument(2, rfmip_file)
   if(nargs >= 3) call get_command_argument(3, kdist_file)
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
   if(nargs >= 5) call get_command_argument(5, physics_index_char)
+
+  ! block_size = 450
+  ! rfmip_file = "inputs_RFMIP.nc"
+  ! kdist_file = "../../rrtmgp/data/rrtmgp-data-lw-g256-2018-12-04.nc"
+  ! forcing_index_char = "1"
+  ! physics_index_char = "1"
   !
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
+  call read_size(rfmip_file, ncol, nlay, nexp)
+  print *, "input file:", rfmip_file
+  print *, "ncol:", ncol
+  print *, "nexp:", nexp
+  print *, "nlay:", nlay
+
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
   print *, "Doing ",  nblocks, "blocks of size ", block_size
@@ -162,6 +187,9 @@ program rrtmgp_rfmip_lw
     stop "Physics index is invalid (must be 1 or 2)"
   if(physics_index == 2) n_quad_angles = 3
 
+  n_quad_angles = 1
+
+  
   flxdn_file = 'rld_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p' //  &
                trim(physics_index_char) // 'f' // trim(forcing_index_char) // '_gn.nc'
   flxup_file = 'rlu_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p' // &
@@ -230,29 +258,25 @@ program rrtmgp_rfmip_lw
   ! bug related to the use of Fortran classes on the GPU.
   !
   !$acc enter data create(sfc_emis_spec)
+  !$omp target enter data map(alloc:sfc_emis_spec)
   !$acc enter data create(optical_props, optical_props%tau)
+  !$omp target enter data map(alloc:optical_props%tau)
   !$acc enter data create(source, source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
+  !$omp target enter data map(alloc:source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
   ! --------------------------------------------------
-#ifdef USE_TIMING
-  !
-  ! Initialize timers
-  !
-  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
-  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
-#ifdef USE_PAPI  
-#ifdef DOUBLE_PRECISION
-ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
-#else
-ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
-#endif
-#endif  
-  ret = gptlinitialize()
-#endif
+
   !
   ! Loop over blocks
   !
+  call system_clock(count_rate=count_rate)
+  call system_clock(iTime1)
 #ifdef USE_TIMING
-  do i = 1, 10
+  ret =  gptlstart('clear_sky_total (LW)')
+do i = 1, 4
+#endif
+#ifdef USE_OPENMP
+  !$OMP PARALLEL shared(k_dist) firstprivate(sfc_emis_spec,fluxes,optical_props,source)
+  !$OMP DO 
 #endif
   do b = 1, nblocks
     fluxes%flux_up => flux_up(:,:,b)
@@ -272,7 +296,6 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
     !    from pressures, temperatures, and gas concentrations...
     !
 #ifdef USE_TIMING
-    ret =  gptlstart('clear_sky_total (LW)')
     ret =  gptlstart('gas_optics (LW)')
 #endif
     call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
@@ -283,6 +306,10 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
                                        optical_props,      &
                                        source,             &
                                        tlev = t_lev(:,:,b)))
+    !  !$acc update self(optical_props%tau)
+    ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)     
+    call system_clock(iTime2)
+                                        
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics (LW)')
 #endif
@@ -293,6 +320,8 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
 #ifdef USE_TIMING
     ret =  gptlstart('rte_lw')
 #endif
+ !  !$acc enter data create(fluxes)
+ !  !$acc enter data create(fluxes%flux_up,fluxes%flux_dn)
     call stop_on_err(rte_lw(optical_props,   &
                             top_at_1,        &
                             source,          &
@@ -300,23 +329,43 @@ ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
                             fluxes, n_gauss_angles = n_quad_angles))
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
-    ret =  gptlstop('clear_sky_total (LW)')
 #endif
   end do
+#ifdef USE_OPENMP
+  !$OMP END DO
+  !$OMP END PARALLEL
+  !$OMP barrier
+#endif
 #ifdef USE_TIMING
   end do
-  !
   ! End timers
-  !
-  timing_file = "timing.lw-" // adjustl(trim(block_size_char))
-  ret = gptlpr_file(trim(timing_file))
+  ret =  gptlstop('clear_sky_total (LW)')
+  ret = gptlpr(block_size)
   ret = gptlfinalize()
 #endif
-  !$acc exit data delete(sfc_emis_spec)
-  !$acc exit data delete(optical_props%tau, optical_props)
-  !$acc exit data delete(source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
-  !$acc exit data delete(source)
-  ! --------------------------------------------------m
-  call unblock_and_write(trim(flxup_file), 'rlu', flux_up)
-  call unblock_and_write(trim(flxdn_file), 'rld', flux_dn)
+  call system_clock(iTime3)
+  if (nblocks==1) then
+    print *, "-----------------------------------------------------------------------------------------"
+    print '(a,f11.4,/,a,f11.4,/,a,f11.4,a)', ' Time elapsed in gas optics:',real(iTime2-iTime1)/real(count_rate), &
+    ' Time elapsed in solver:    ', real(iTime3-iTime2)/real(count_rate), ' Time elapsed in total:     ', &
+    real(iTime3-iTime1)/real(count_rate)
+    print *, "-----------------------------------------------------------------------------------------"
+  else 
+    print *,'Elapsed time on everything ',real(iTime3-iTime1)/real(count_rate)
+  end if
+
+  allocate(temparray(   block_size*nlay*nblocks)) 
+  temparray = pack(flux_dn(:,:,:),.true.)
+  print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)
+  temparray = pack(flux_up(:,:,:),.true.)
+  print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
+  deallocate(temparray)
+  ! $acc exit data delete(sfc_emis_spec)
+  ! $acc exit data delete(optical_props%tau, optical_props)
+  ! $acc exit data delete(source%lay_source, source%lev_source_inc, source%lev_source_dec, source%sfc_source)
+  ! $acc exit data delete(source)
+  ! --------------------------------------------------
+  ! call unblock_and_write(trim(flxup_file), 'rlu', flux_up)
+  ! call unblock_and_write(trim(flxdn_file), 'rld', flux_dn)
 end program rrtmgp_rfmip_lw
+
