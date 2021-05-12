@@ -49,7 +49,18 @@ program rte_rrtmgp_clouds
   use mo_load_cloud_coefficients, &
                              only: load_cld_lutcoeff, load_cld_padecoeff
   use mo_garand_atmos_io,    only: read_atmos, write_lw_fluxes, write_sw_fluxes
+#ifdef USE_TIMING
+  !
+  ! Timing library
+  !
+  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
+                                   gptlpercent, gptloverhead, gptlsetutr
+#endif
   implicit none
+
+#ifdef USE_PAPI  
+#include "f90papi.h"
+#endif  
   ! ----------------------------------------------------------------------------------
   ! Variables
   ! ----------------------------------------------------------------------------------
@@ -112,11 +123,11 @@ program rte_rrtmgp_clouds
   character(len=3), dimension(ngas) &
                      :: gas_names = ['h2o', 'co2', 'o3 ', 'n2o', 'co ', 'ch4', 'o2 ', 'n2 ']
 
-  character(len=256) :: input_file, k_dist_file, cloud_optics_file
+  character(len=256) :: input_file, k_dist_file, cloud_optics_file, timing_file
   !
   ! Timing variables
   !
-  integer(kind=i8)              :: start, finish, start_all, finish_all, clock_rate
+  integer(kind=i8)              :: start, finish, start_all, finish_all, clock_rate, ret
   real(wp)                      :: avg
   integer(kind=i8), allocatable :: elapsed(:)
   ! NAR OpenMP CPU directives in compatible with OpenMP GPU directives
@@ -334,13 +345,31 @@ program rte_rrtmgp_clouds
   !
   allocate(elapsed(nloops))
   !
+#ifdef USE_TIMING
+  !
+  ! Initialize timers
+  !
+  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
+  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+#ifdef USE_PAPI  
+  ret = GPTLsetoption (PAPI_SP_OPS, 1);
+#endif  
+  ret =  gptlinitialize()
+  ret =  gptlstart('cloudy_sky_total')
+#endif
   call system_clock(start_all)
   !
   !!$omp parallel do firstprivate(fluxes)
   do iloop = 1, nloops
     call system_clock(start)
+#ifdef USE_TIMING
+    ret =  gptlstart('cloud_optics')
+#endif
     call stop_on_err(                                      &
       cloud_optics%cloud_optics(lwp, iwp, rel, rei, clouds))
+#ifdef USE_TIMING
+    ret =  gptlstop('cloud_optics')
+#endif
     !
     ! Solvers
     !
@@ -349,35 +378,62 @@ program rte_rrtmgp_clouds
     if(is_lw) then
       !$acc enter data create(lw_sources, lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
       !$omp target enter data map(alloc:lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
+#ifdef USE_TIMING
+    ret =  gptlstart('gas_optics_lw')
+#endif
       call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                          t_lay, t_sfc, &
                                          gas_concs,    &
                                          atmos,        &
                                          lw_sources,   &
                                          tlev = t_lev))
+#ifdef USE_TIMING
+    ret =  gptlstop('gas_optics_lw')
+    ret =  gptlstart('clouds_increment')
+#endif
       call stop_on_err(clouds%increment(atmos))
+#ifdef USE_TIMING
+    ret =  gptlstop('clouds_increment')
+    ret =  gptlstart('rte_lw')
+#endif
       call stop_on_err(rte_lw(atmos, top_at_1, &
                               lw_sources,      &
                               emis_sfc,        &
                               fluxes))
+#ifdef USE_TIMING
+    ret =  gptlstop('rte_lw')
+#endif
       !$acc exit data delete(lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source, lw_sources)
       !$omp target exit data map(release:lw_sources%lay_source, lw_sources%lev_source_inc, lw_sources%lev_source_dec, lw_sources%sfc_source)
     else
       !$acc enter data create(toa_flux)
       !$omp target enter data map(alloc:toa_flux)
       fluxes%flux_dn_dir => flux_dir(:,:)
-
+#ifdef USE_TIMING
+    ret =  gptlstart('gas_optics_sw')
+#endif
       call stop_on_err(k_dist%gas_optics(p_lay, p_lev, &
                                          t_lay,        &
                                          gas_concs,    &
                                          atmos,        &
                                          toa_flux))
+#ifdef USE_TIMING
+    ret =  gptlstop('gas_optics_sw')
+    ret =  gptlstart('clouds_deltascale_increment')
+#endif       
       call stop_on_err(clouds%delta_scale())
       call stop_on_err(clouds%increment(atmos))
+#ifdef USE_TIMING
+    ret =  gptlstop('clouds_deltascale_increment')
+    ret =  gptlstart('rte_sw')
+#endif
       call stop_on_err(rte_sw(atmos, top_at_1, &
                               mu0,   toa_flux, &
                               sfc_alb_dir, sfc_alb_dif, &
                               fluxes))
+#ifdef USE_TIMING
+    ret =  gptlstop('rte_sw')
+#endif
       !$acc exit data delete(toa_flux)
       !$omp target exit data map(release:toa_flux)
     end if
@@ -385,6 +441,17 @@ program rte_rrtmgp_clouds
     call system_clock(finish, clock_rate)
     elapsed(iloop) = finish - start
   end do
+
+if(is_lw) then
+  timing_file  = "timing.cloudy_lw"
+else
+  timing_file  = "timing.cloudy_sw"
+end if
+#ifdef USE_TIMING
+  ret =  gptlstop('cloudy_sky_total')
+  ret = gptlpr_file(trim(timing_file))
+  ret = gptlfinalize()
+#endif
   !
   call system_clock(finish_all, clock_rate)
   !

@@ -1,7 +1,12 @@
-#
 # Location of RTE+RRTMGP libraries, module files.
-#
+RRTMGP_ROOT=../../
 RRTMGP_BUILD = $(RRTMGP_ROOT)/build
+# Sets macros FC, FCFLAGS consistent with RTE+RRTMGP
+-include $(RRTMGP_BUILD)/Makefile.conf
+
+# Location of netcdf C and Fortran libraries. Could specify with environment variables if file doesn't exist
+# specified in $(RRTMGP_BUILD)/Makefile.conf
+# -include $(RRTMGP_ROOT)/examples/rfmip-clear-sky/Makefile.libs
 #
 # RRTMGP library, module files
 #
@@ -16,6 +21,33 @@ FCINCLUDE += -I$(RRTMGP_BUILD)
 FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
+
+#
+# Setting variable USE_TIMING uses routines from the General Purpose Timing Library
+#  https://jmrosinski.github.io/GPTL/
+#
+
+# Compiler specific - LDFLAGS may need to be changed
+ifeq ($(GPTL_TIMING),1)
+	#
+	# Timing library
+	#
+	FCINCLUDE += -I$(TIME_DIR)/include
+	# Compiler specific
+	FCFLAGS += -DUSE_TIMING
+	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
+	LIBS      += -lgptl
+else ifeq ($(GPTL_TIMING),2)
+	#
+	# Timing library
+	#
+	FCINCLUDE += -I$(TIME_DIR)/include
+	# Compiler specific
+	FCFLAGS += -DUSE_TIMING -DUSE_PAPI
+	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
+	LIBS      += -lgptl  -lpapi
+endif
+
 
 VPATH = ../:$(RRTMGP_ROOT)/extensions/cloud_optics
 

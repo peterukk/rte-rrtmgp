@@ -5,6 +5,11 @@ examples/garand
 examples/ckdmip
 examples/rfmip-clear-sky/input
 
+# all-sky output
+examples/all-sky/ref/
+examples/all-sky/rrtmgp-allsky.nc
+
+
 # timing files
 timing.*
 # Module files

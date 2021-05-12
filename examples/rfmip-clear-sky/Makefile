@@ -2,6 +2,7 @@
 # Here set variables RRTMGP_DIR, NCHOME, NFHOME, TIME_DIR (for GPTL)
 #   or have those variables set in the environment
 #
+RRTMGP_ROOT=../../
 RRTMGP_BUILD=$(RRTMGP_ROOT)/build
 -include Makefile.libs
 -include $(RRTMGP_DIR)/Makefile.conf
@@ -43,7 +44,7 @@ else ifeq ($(GPTL_TIMING),2)
 	# Compiler specific
 	FCFLAGS += -DUSE_TIMING -DUSE_PAPI
 	LDFLAGS   += -L$(TIME_DIR)/lib -Wl,-rpath=$(TIME_DIR)/lib
-	LIBS      += -lgptl  -rdynamic  -lpapi
+	LIBS      += -lgptl  -lpapi
 endif
 
 
