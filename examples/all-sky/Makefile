@@ -11,7 +11,7 @@ RRTMGP_BUILD = $(RRTMGP_ROOT)/build
 # RRTMGP library, module files
 #
 LDFLAGS   += -L$(RRTMGP_BUILD)
-LIBS      += -lrrtmgp -lrte
+LIBS      += -lrrtmgp -lrte -lneural
 FCINCLUDE += -I$(RRTMGP_BUILD)
 
 #

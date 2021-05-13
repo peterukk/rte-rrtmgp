@@ -56,6 +56,7 @@ contains
     character(len=3), dimension(ngas) &
                        :: gas_names = ['h2o', 'co2', 'o3 ', 'n2o', 'co ', 'ch4', 'o2 ', 'n2 ']
     character(len=7) :: vmr_name
+    real(wp), dimension(:,:), allocatable :: temp_arr
     ! -------------------
 
     if(nf90_open(trim(fileName), NF90_NOWRITE, ncid) /= NF90_NOERR) &
@@ -71,21 +72,22 @@ contains
     !   allocating on assignment. This may require explicit compiler support
     !   e.g. -assume realloc_lhs flag for Intel
     !
-    p_lay = read_field(ncid, 'p_lay', ncol, nlay)
-    t_lay = read_field(ncid, 't_lay', ncol, nlay)
-    p_lev = read_field(ncid, 'p_lev', ncol, nlev)
-    t_lev = read_field(ncid, 't_lev', ncol, nlev)
+    p_lay = transpose(read_field(ncid, 'p_lay', ncol, nlay))
+    t_lay = transpose(read_field(ncid, 't_lay', ncol, nlay))
+    p_lev = transpose(read_field(ncid, 'p_lev', ncol, nlev))
+    t_lev = transpose(read_field(ncid, 't_lev', ncol, nlev))
 
     call stop_on_err(gas_concs%init(gas_names))
     do igas = 1, ngas
       vmr_name = 'vmr_' // trim(gas_names(igas))
       if(.not. var_exists(ncid, trim(vmr_name))) &
         call stop_on_err("read_atmos: can't read concentration of " // trim(gas_names(igas)))
-      call stop_on_err(gas_concs%set_vmr(trim(gas_names(igas)), read_field(ncid, trim(vmr_name), ncol, nlay)))
+      temp_arr = transpose(read_field(ncid, trim(vmr_name), ncol, nlay))
+      call stop_on_err(gas_concs%set_vmr(trim(gas_names(igas)), temp_arr))
     end do
 
     ! col_dry has unchanged allocation status on return if the variable isn't present in the netCDF file
-    if(var_exists(ncid, 'col_dry')) col_dry = read_field(ncid, 'col_dry', ncol, nlay)
+    if(var_exists(ncid, 'col_dry')) col_dry = transpose(read_field(ncid, 'col_dry', ncol, nlay))
 
     ncid = nf90_close(ncid)
 
