@@ -130,6 +130,17 @@ program rte_rrtmgp_clouds
   integer(kind=i8)              :: start, finish, start_all, finish_all, clock_rate, ret
   real(wp)                      :: avg
   integer(kind=i8), allocatable :: elapsed(:)
+#ifdef USE_TIMING
+  !
+  ! Initialize timers
+  !
+  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
+  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+#ifdef USE_PAPI  
+  ret = GPTLsetoption (PAPI_SP_OPS, 1);
+#endif  
+  ret =  gptlinitialize()
+#endif
   ! NAR OpenMP CPU directives in compatible with OpenMP GPU directives
   !!$omp threadprivate( lw_sources, toa_flux, flux_up, flux_dn, flux_dir )
   ! ----------------------------------------------------------------------------------
@@ -174,7 +185,6 @@ program rte_rrtmgp_clouds
   do igas = 1, ngas
     call vmr_2d_to_1d(gas_concs, gas_concs_garand, gas_names(igas), size(p_lay, 1), size(p_lay, 2))
   end do
-  print *, "gas conc2 ncol, nlay", gas_concs%ncol, gas_concs%nlay
 
   !  If we trusted in Fortran allocate-on-assign we could skip the temp_array here
   allocate(temp_array(nlay, ncol))
@@ -348,15 +358,6 @@ program rte_rrtmgp_clouds
   allocate(elapsed(nloops))
   !
 #ifdef USE_TIMING
-  !
-  ! Initialize timers
-  !
-  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
-  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
-#ifdef USE_PAPI  
-  ret = GPTLsetoption (PAPI_SP_OPS, 1);
-#endif  
-  ret =  gptlinitialize()
   ret =  gptlstart('cloudy_sky_total')
 #endif
   call system_clock(start_all)
@@ -475,6 +476,7 @@ end if
 
   if(is_lw) then
     print *, "mean LW flux dn", mean2(flux_dn), "mean LW flux up", mean2(flux_up)
+    !  mean LW flux dn   144.144470     mean LW flux up   269.762390    
     !$acc exit data copyout(flux_up, flux_dn)
     !!$omp target exit data map(from:flux_up, flux_dn)
     if(write_fluxes) call write_lw_fluxes(input_file, transpose(flux_up), transpose(flux_dn))
@@ -482,6 +484,7 @@ end if
     !!$omp target exit data map(release:t_sfc, emis_sfc)
   else
     print *, "mean SW flux dn", mean2(flux_dn), "mean SW flux up", mean2(flux_up)
+    !  mean SW flux dn   946.975098     mean SW flux up   325.290985 
     !$acc exit data copyout(flux_up, flux_dn, flux_dir)
     !!$omp target exit data map(from:flux_up, flux_dn, flux_dir)
     if(write_fluxes) call write_sw_fluxes(input_file, transpose(flux_up), transpose(flux_dn), transpose(flux_dir))

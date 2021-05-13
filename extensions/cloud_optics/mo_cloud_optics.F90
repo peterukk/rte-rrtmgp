@@ -367,7 +367,7 @@ contains
     character(len=128)      :: error_msg
     ! ------- Local -------
     logical(wl), dimension(size(clwp,1), size(clwp,2)) :: liqmsk, icemsk
-    real(wp),    dimension(size(clwp,1), size(clwp,2), this%get_nband()) :: &
+    real(wp),    dimension(this%get_nband(), size(clwp,1), size(clwp,2)) :: &
                 ltau, ltaussa, ltaussag, itau, itaussa, itaussag
                 ! Optical properties: tau, tau*ssa, tau*ssa*g
                 ! liquid and ice separately
@@ -441,8 +441,9 @@ contains
         error_msg = 'cloud optics: ice effective radius is out of bounds'
       if(any_vals_less_than(clwp, liqmsk, 0._wp) .or. any_vals_less_than(ciwp, icemsk, 0._wp)) &
         error_msg = 'cloud optics: negative clwp or ciwp where clouds are supposed to be'
-      if(error_msg == "") then
     end if
+    if(error_msg == "") then
+
       !
       !
       ! ----------------------------------------
