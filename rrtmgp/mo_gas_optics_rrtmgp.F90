@@ -262,7 +262,7 @@ contains
     ! Local variables
     real(sp), dimension(:,:,:), allocatable           :: nn_inputs
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
-                                              target  :: col_dry_arr
+                                              target  :: col_dry_arr, vmr_h2o
     real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
     ! ----------------------------------------------------------
     real(wp), dimension(size(play,dim=1)+1, size(play,dim=2)), &
@@ -344,26 +344,17 @@ contains
     else
       !$acc enter data create(col_dry_arr)
 
-      ! idx_h2o needs to be obtained from gas_desc%gas_names and NOT this%gas_names, since these 
-      ! can be in different order.
-      ! It's confusing that the gas optics class and gas concentration class both have their own
-      ! gas name array. Probably a good reason for it? If not, the gas optics name array should be removed.
-
-      !idx_h2o = string_loc_in_array('h2o', this%gas_names)
-      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
+      ! idx_h2o from gas_desc%gas_names or this%gas_names? It's confusing that the gas optics class and 
+      ! gas concentration class both have their own gas name array
+      ! idx_h2o = string_loc_in_array('h2o', this%gas_names)
+      ! idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
       ! print *, "GAS NAMES, this-gas-names:" ,this%gas_names
       ! print *, "GAS NAMES, gas_desc%gas_name ", gas_desc%gas_name
-      ! print *, "idx_h2o", idx_h2o
+      ! call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
 
-      ! NOTE: The above change was necessary since in the NN code gas concentrations are accessed directly from gas_conc 
-      ! like below, instead of the original method filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
-      ! This is much faster (previously input preprocessing became expensive at small block sizes)
-            
-      ! if (any (lower_case(this%gas_names(igas)) == gas_desc%gas_name(:))) then
-      !   error_msg = gas_desc%get_vmr(this%gas_names(igas), vmr(:,:,igas))
-      !   if (error_msg /= '') return
-      ! endif
-      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
+      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      call get_col_dry(vmr_h2o, plev, col_dry_arr)
+      
       col_dry_wk => col_dry_arr
 
     end if
@@ -455,9 +446,8 @@ contains
     type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Absorption model, Rayleigh model     
     ! ----------------------------------------------------------
     ! Local variables
-    ! real(wp), dimension(:,:),   allocatable, target   :: col_dry_arr
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
-                                                target  :: col_dry_arr
+                                                target  :: col_dry_arr, vmr_h2o
     real(wp), dimension(:,:),   pointer, contiguous     :: col_dry_wk => NULL()
     real(sp), dimension(:,:,:), allocatable             :: nn_inputs
 
@@ -500,17 +490,18 @@ contains
     ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
     !
     if (present(col_dry)) then
-      col_dry_wk => col_dry
       !$acc enter data copyin(col_dry)
+      col_dry_wk => col_dry
     else
       !$acc enter data create(col_dry_arr)
-      !idx_h2o = string_loc_in_array('h2o', this%gas_names)
-      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
-      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
+
+      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      call get_col_dry(vmr_h2o, plev, col_dry_arr)
+      
       col_dry_wk => col_dry_arr
+
     end if
     !$acc enter data attach(col_dry_wk)
-
     !
     ! Gas optics
     !
@@ -659,6 +650,11 @@ contains
     ret =  gptlstart('compute_nn_inputs')
 #endif
     !$acc enter data copyin(nn_gas_names, input_maxvals, input_minvals)
+
+    ! Start writing NN inputs from the gas concentrations
+    ! Here the gas concentrations are accessed directly from gas_conc, instead of the original method 
+    ! of filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
+    ! This is much faster (previously input preprocessing became expensive at small block sizes)
 
     ! First lets write temperature, log-pressure, water vapor and ozone into the inputs
     ! These are assumed to always be present!
@@ -913,8 +909,8 @@ contains
             jeta,jpress)
     !$acc exit data delete(this%flavor,this%press_ref_log,this%temp_ref,this%vmr_ref) 
 
-    !idx_h2o = string_loc_in_array('h2o', this%gas_names)
-    idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
+    idx_h2o = string_loc_in_array('h2o', this%gas_names)
+    ! idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
 
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_kernel')
