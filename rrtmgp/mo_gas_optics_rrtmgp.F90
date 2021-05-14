@@ -238,7 +238,7 @@ contains
                           play, plev, tlay, tsfc, gas_desc, &
                           optical_props, sources,          &
                           tlev, neural_nets,       &              ! optional inputs
-                          nn_inputs, col_dry_inout, planck_frac & ! optional outputs
+                          nn_inputs_inout, col_dry_inout, planck_frac & ! optional outputs
                           ) result(error_msg)
     ! inputs
     class(ty_gas_optics_rrtmgp), intent(in) :: this
@@ -264,16 +264,17 @@ contains
     !                                          2) planck fraction
     ! NN longwave inputs are pressure, temperature, and gas concentrations, but they need to be 
     ! at same grid as output, and are also preprocessed. For convenience, both inputs and outputs are given here.
-    real(sp), dimension(:,:,:), optional, intent(inout)         :: nn_inputs
+    real(sp), dimension(:,:,:), optional, intent(inout),target  :: nn_inputs_inout
     real(wp), dimension(:,:),   optional, intent(inout),target  :: col_dry_inout ! Column dry amount; dim(nlay,ncol)
     real(wp), dimension(:,:,:), optional, intent(inout)         :: planck_frac
 
     ! ----------------------------------------------------------                              
     ! Local variables
-    ! real(sp), dimension(:,:,:), allocatable           :: nn_inputs
+    real(sp), dimension(:,:,:), allocatable,target    :: nn_inputs_arr
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
-                                              target  :: col_dry_arr
+                                              target  :: col_dry_arr, vmr_h2o
     real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
+    real(sp), dimension(:,:,:),  contiguous, pointer  :: nn_inputs
     ! ----------------------------------------------------------
     real(wp), dimension(size(play,dim=1)+1, size(play,dim=2)), &
                                target         :: tlev_arr
@@ -350,13 +351,14 @@ contains
     !
     if (present(col_dry_inout)) then ! empty array provided as output for NN model development
       !$acc enter data create(col_dry_inout)
-      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
-      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_inout)
+      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      call get_col_dry(vmr_h2o, plev, col_dry_inout)
       col_dry_wk => col_dry_inout
     else
       !$acc enter data create(col_dry_arr)
-      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
-      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
+
+      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      call get_col_dry(vmr_h2o, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
     end if
     !$acc enter data attach(col_dry_wk)
@@ -368,10 +370,14 @@ contains
       ! ----------------------------------------------------------------------------------
       ! Use neural network for gas optics
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
-      ! allocate(nn_inputs(ninputs,nlay,ncol))
-      if (.not.(present(nn_inputs))) stop "NN kernel called but nn_input array not provided"
 
-      !$acc enter data create(nn_inputs)
+      if(.not.(present(nn_inputs_inout))) then 
+        allocate(nn_inputs_arr(ninputs,nlay,ncol))
+        !$acc enter data create(nn_inputs_arr)
+        nn_inputs => nn_inputs_arr
+      else 
+        nn_inputs => nn_inputs_inout
+      end if
 
       error_msg = compute_nn_inputs(                  &
                           ncol, nlay, ngas, ninputs,  &
@@ -387,9 +393,10 @@ contains
               neural_nets,                  &  ! NN models (input)
               optical_props%tau, sources%lay_source)    ! outputs : the second variable is actually Planck fraction, 
                                                         ! but for this temporary variable we can utilize an already allocated variable
-      !$acc exit data delete(nn_inputs) 
-      ! deallocate(nn_inputs)
-
+      if(.not.(present(nn_inputs_inout))) then 
+        !$acc exit data delete(nn_inputs_arr) 
+        deallocate(nn_inputs_arr)
+      end if
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw_blas')
     ret =  gptlstart('compute_source')
@@ -415,10 +422,10 @@ contains
                                    play, plev, tlay, gas_desc, col_dry_wk,  &
                                    optical_props,                           &
                                    sources, tlev_wk, tsfc, planck_frac)
-      if (present(nn_inputs))  then                           
+      if (present(nn_inputs_inout))  then                           
         error_msg = compute_nn_inputs(                &
-                ncol, nlay, ngas, size(nn_inputs,dim=1),    &
-                play, tlay, gas_desc,  nn_inputs)      
+                ncol, nlay, ngas, size(nn_inputs_inout,dim=1),    &
+                play, tlay, gas_desc,  nn_inputs_inout)      
 
       end if                       
       if(error_msg  /= '') return
@@ -436,7 +443,7 @@ contains
                           play, plev, tlay, gas_desc,   & ! mandatory inputs
                           optical_props, toa_src,       & ! mandatory outputs
                           neural_nets,         &         ! optional input
-                          nn_inputs, col_dry_inout &     !  optional output
+                          nn_inputs_inout, col_dry_inout &     !  optional output
                           ) result(error_msg)      
 
     class(ty_gas_optics_rrtmgp),  intent(in) :: this
@@ -455,18 +462,19 @@ contains
     ! optional outputs    
         ! --- FOR NN MODEL DEVELOPMENT (generating inputs and outputs)
     ! NN shortwave output in Ukkonen (2020) are 1) absorption cross section = optical_props%tau / col_dry
-    !                                           2) rayleigh cross section    = (optical_props%ssa / optical_props%tau) / col_dry
+    !                                           2) rayleigh cross section    = (optical_props%ssa * optical_props%tau) / col_dry
     ! NN shortwave inputs are pressure, temperature, and gas concentrations, but they need to be 
     ! at same grid as output, and are also preprocessed. For convenience, both inputs and outputs are given here.
-    real(sp), dimension(:,:,:), optional, intent(inout)         :: nn_inputs
+    real(sp), dimension(:,:,:), optional, intent(inout),target  :: nn_inputs_inout
     real(wp), dimension(:,:),   optional, intent(inout),target  :: col_dry_inout ! Column dry amount; dim(nlay,ncol)
 
     ! ----------------------------------------------------------
     ! Local variables
+    real(sp), dimension(:,:,:), allocatable,target    :: nn_inputs_arr
     real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
-                                                target  :: col_dry_arr
-    real(wp), dimension(:,:),   pointer, contiguous     :: col_dry_wk => NULL()
-    ! real(sp), dimension(:,:,:), allocatable             :: nn_inputs
+                                              target  :: col_dry_arr, vmr_h2o
+    real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
+    real(sp), dimension(:,:,:),  contiguous, pointer  :: nn_inputs
 
     integer :: ncol, nlay, ngpt, nband, ngas, idx_h2o, ninputs
     integer :: igpt, icol, ilay
@@ -508,28 +516,32 @@ contains
     !
     if (present(col_dry_inout)) then ! empty array provided as output for NN model development
       !$acc enter data create(col_dry_inout)
-      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
-      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_inout)
+      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      call get_col_dry(vmr_h2o, plev, col_dry_inout)
       col_dry_wk => col_dry_inout
     else
       !$acc enter data create(col_dry_arr)
-      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
-      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
+
+      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      call get_col_dry(vmr_h2o, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
     end if
     !$acc enter data attach(col_dry_wk)
-
-
     !
     ! Gas optics
     !
     if (present(neural_nets)) then
-    ! ----------------------------------------------------------------------------------
-    ! Use neural network for gas optics
+      ! ----------------------------------------------------------------------------------
+      ! Use neural network for gas optics
       ninputs =  size(neural_nets(1) % layers(1) % w_transposed, 2)
-      if (.not.(present(nn_inputs))) stop "NN kernel called but nn_input array not provided"
-      ! allocate(nn_inputs(ninputs,nlay,ncol))
-      !$acc enter data create(nn_inputs)
+
+      if(.not.(present(nn_inputs_inout))) then 
+        allocate(nn_inputs_arr(ninputs,nlay,ncol))
+        !$acc enter data create(nn_inputs_arr)
+        nn_inputs => nn_inputs_arr
+      else 
+        nn_inputs => nn_inputs_inout
+      end if
 
       error_msg = compute_nn_inputs(                  &
                           ncol, nlay, ngas, ninputs,  &
@@ -562,12 +574,13 @@ contains
             end do
           end do
         
-          
       end select
       
-      !$acc exit data delete(nn_inputs) 
-      ! deallocate(nn_inputs)
-     
+      if(.not.(present(nn_inputs_inout))) then 
+        !$acc exit data delete(nn_inputs_arr) 
+        deallocate(nn_inputs_arr)
+      end if
+
     else
     ! ----------------------------------------------------------------------------------
     ! Use interpolation routine for gas optics, NOT neural networks
@@ -576,10 +589,10 @@ contains
                                   ncol, nlay, ngpt, nband,             &
                                   play, plev, tlay, gas_desc, col_dry_wk, &
                                   optical_props)
-      if (present(nn_inputs))  then                           
+      if (present(nn_inputs_inout))  then                           
         error_msg = compute_nn_inputs(                &
-                ncol, nlay, ngas, size(nn_inputs,dim=1),    &
-                play, tlay, gas_desc,  nn_inputs)      
+                ncol, nlay, ngas, size(nn_inputs_inout,dim=1),    &
+                play, tlay, gas_desc,  nn_inputs_inout)      
 
       end if       
     end if
@@ -675,6 +688,11 @@ contains
     ret =  gptlstart('compute_nn_inputs')
 #endif
     !$acc enter data copyin(nn_gas_names, input_maxvals, input_minvals)
+
+    ! Start writing NN inputs from the gas concentrations
+    ! Here the gas concentrations are accessed directly from gas_conc, instead of the original method 
+    ! of filling a 2D vmr array for each gas like gas_array(idx_gas,:,:) = get_vmr
+    ! This is much faster (previously input preprocessing became expensive at small block sizes)
 
     ! First lets write temperature, log-pressure, water vapor and ozone into the inputs
     ! These are assumed to always be present!

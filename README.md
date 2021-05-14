@@ -1,6 +1,8 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE+RRTMGP using neural networks for the gas optics, and a refactored radiative transfer solver 
 
 ## Recent changes
+May 2021: Cloud extension and all-sky example now working! Furthermore, cleanup of RTE - no longer separate functions for "broadline fluxes only", instead a logical is passed to indicate whether only broadband fluxes are needed. Some further GPU optimizations for RTE kernels.
+
 January 2021: Use of two source functions (one for layers and one for levels) instead of three (one for layers and two for levels) like in RRTMGP. This had no significant accuracy loss and is faster. RRTMGP(-NN) also now computes the full spectral source functions instead of band-wise sources and finishing the computations in RTE (this was about as fast as the current source implementation, but clunky)
 
 December 2020: A paper on RTE-RRTMGP-NN has been [published in JAMES](https://agupubs.onlinelibrary.wiley.com/doi/full/10.1029/2020MS002226). 
@@ -36,7 +38,7 @@ The code should work very similarly to the end-user as the original, but a BLAS 
 - [x] GPU kernels - should be easy and very fast with openacc_cublas **done, but note that host CUDA call overhead (such as CudaFree) was very large for small problem sizes on one tested platform (Kepler). Probably normal behaviour**
 - [x] "missing gases" -how to handle these? Assume some default concentrations but what? **assumed zero by default, also present-day and pre-industrial scalar concentrations available in table, toggled in gas_optics_rrtmgp. 
 - [x] offer user choice regarding speed/accuracy? (simpler, faster models which are less accurate) **tested, but as described in paper, the minor gases can be accounted for with negligible cost with NNs. The currently implemented models support CKDMIP-style gases with CFC11-eq)**
-- [ ] fix cloud optics extension
+- [x] fix cloud optics extension
 - [ ] post-processing (scaling) coefficients should perhaps be integrated into neural-fortran and loaded from the same files as the model weights
 
 ------------
