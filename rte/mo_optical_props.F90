@@ -869,7 +869,7 @@ contains
         if(err_message /= "") return
         call extract_subset(      ngpt, nlay, ncol, full%tau, start, start+n-1, subset%tau)
         call extract_subset(      ngpt, nlay, ncol, full%ssa, start, start+n-1, subset%ssa)
-        call extract_subset(nmom, ngpt, nlay, ncol, full%p  , start, start+n-1, subset%p  )
+        ! call extract_subset(nmom, ngpt, nlay, ncol, full%p  , start, start+n-1, subset%p  )
     end select
   end function subset_nstr_range
 

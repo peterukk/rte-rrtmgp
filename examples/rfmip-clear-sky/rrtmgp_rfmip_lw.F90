@@ -110,7 +110,7 @@ program rrtmgp_rfmip_lw
   ! Local variables
   !
   character(len=132) :: rfmip_file,kdist_file
-  character(len=132) :: flxdn_file, flxup_file, flx_file, flx_file_ref, flx_file_lbl, timing_file
+  character(len=132) :: flxdn_file, flxup_file, flx_file, flx_file_ref, flx_file_lbl, timing_file, inp_outp_file
   integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
   integer            :: b, icol, ilay, ibnd, igpt, count_rate, iTime1, iTime2, iTime3, ncid, ninputs, istat, igas, ret, i
@@ -119,14 +119,16 @@ program rrtmgp_rfmip_lw
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
-  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn, rlu_lbl, rld_lbl, rldu_ref, rldu_nn, rldu_lbl
+  real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn, rlu_lbl, rld_lbl, rldu_ref, rldu_nn, rldu_lbl, col_dry
+  real(wp), dimension(:,:,:,:),       allocatable :: tau_lw, planck_frac
+  real(sp), dimension(:,:,:,:),       allocatable :: nn_input
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis_spec    ! nbands, block_size (spectrally-resolved emissivity)
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
   real(wp) :: bb_flux_up
   character (len = 80)                :: modelfile_tau, modelfile_source
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting absorption cross section, second for Planck fraction
-  logical 		                        :: use_nn, compare_flux, save_flux
+  logical 		                        :: use_nn, compare_flux, save_flux, save_input_output
   !
   ! Classes used by rte+rrtmgp
   !
@@ -177,6 +179,10 @@ program rrtmgp_rfmip_lw
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
+  ! Save neural network inputs and target outputs
+  save_input_output  = .true.
+
+  if (save_input_output) use_nn = .false.
 
   ! ------------ Neural network model weights -----------------
   ! Model for predicting longwave absorption cross-section
@@ -184,15 +190,14 @@ program rrtmgp_rfmip_lw
   ! Model for predicting Planck fraction
   modelfile_source        = "../../neural/data/BEST_pfrac-18-16-16.txt"
 
-  if (use_nn) then
+  if (use_nn .or. save_input_output) then
 	  print *, 'loading longwave absorption model from ', modelfile_tau
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading Planck fraction model from ', modelfile_source
     call neural_nets(2) % load(modelfile_source)
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
   end if  
-
-  ! The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90
+  ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90
 
   ! Save upwelling and downwelling fluxes in the same file
   flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'
@@ -209,6 +214,13 @@ program rrtmgp_rfmip_lw
   if(nargs >= 3) call get_command_argument(3, kdist_file)
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
   if(nargs >= 5) call get_command_argument(5, physics_index_char)
+  if(nargs >= 6) then 
+    call get_command_argument(6, inp_outp_file)
+    save_input_output   = .true.
+    use_nn              = .false.
+    save_flux           = .false.
+    compare_flux        = .false.
+  end if 
 
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
@@ -217,6 +229,7 @@ program rrtmgp_rfmip_lw
   print *, "ncol:", ncol
   print *, "nexp:", nexp
   print *, "nlay:", nlay
+  if (use_nn .or. save_input_output) print *, "ninputs:", ninputs
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
@@ -240,7 +253,6 @@ program rrtmgp_rfmip_lw
   ! print *, "Calculation uses RFMIP gases 1:", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
   ! print *, "Calculation uses RFMIP gases 2:", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
 
-
   ! --------------------------------------------------
   !
   ! Prepare data for use in rte+rrtmgp
@@ -258,7 +270,6 @@ program rrtmgp_rfmip_lw
   !
   ! Read the gas concentrations and surface properties
   !
-
   call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_names, gas_conc_array)
   ! print *, "These gases provided: ", (trim(gas_conc_array(1)%gas_name(b)) // " ", b = 1, size(gas_conc_array(1)%gas_name))
 
@@ -306,6 +317,13 @@ program rrtmgp_rfmip_lw
   ! OpenACC: Arrays are allocated on device inside constructor
   call stop_on_err(source%alloc            (block_size, nlay, k_dist))   
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
+
+  if (save_input_output) then
+    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
+    allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
+    allocate(tau_lw(    	ngpt, nlay, block_size, nblocks))
+    allocate(planck_frac(	ngpt, nlay, block_size, nblocks))
+  end if
   ! --------------------------------------------------
 
 
@@ -368,23 +386,41 @@ program rrtmgp_rfmip_lw
                                           optical_props,        &
                                           source,               &
                                           tlev = t_lev(:,:,b),  &
-                                          neural_nets = neural_nets))
+                                          neural_nets = neural_nets &
+                                          ))
     else        
-      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
-                                        p_lev(:,:,b),       &
-                                        t_lay(:,:,b),       &
-                                        sfc_t(:  ,b),       &
-                                        gas_conc_array(b),  &
-                                        optical_props,      &
-                                        source,            &
-                                        tlev = t_lev(:,:,b) &
-                                        )) 
+      if (save_input_output) then
+        call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
+                                          p_lev(:,:,b),       &
+                                          t_lay(:,:,b),       &
+                                          sfc_t(:  ,b),       &
+                                          gas_conc_array(b),  &
+                                          optical_props,      &
+                                          source,            &
+                                          tlev = t_lev(:,:,b), &
+                                          nn_inputs_inout=nn_input(:,:,:,b), col_dry_inout=col_dry(:,:,b), planck_frac=planck_frac(:,:,:,b) &
+                                          ))
+        tau_lw(:,:,:,b)      = optical_props%tau(:,:,:)
+        ! print *, "mean of coldry is:", mean_2d(col_dry(:,:,b))
+        ! print *, "mean of tau is:", mean_3d(tau_lw(:,:,:,b))   
+        ! print *, "mean of pfrac is:", mean_3d(planck_frac(:,:,:,b))   
+        ! print *, "max-min of nn input is", maxval(nn_input(:,:,:,b)), minval(nn_input(:,:,:,b))
+
+      else 
+        call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
+                                          p_lev(:,:,b),       &
+                                          t_lay(:,:,b),       &
+                                          sfc_t(:  ,b),       &
+                                          gas_conc_array(b),  &
+                                          optical_props,      &
+                                          source,            &
+                                          tlev = t_lev(:,:,b) ))
+      end if
     end if
     ! !$acc update host(optical_props%tau)
     ! print *, "max of tau is:", maxval(optical_props%tau)
     ! print *, "mean of tau is:", mean_3d(optical_props%tau)
     ! print *, "mean of lay_source is:", mean_3d(source%lay_source)
-    ! print *, "mean of lev_source is:", mean_3d(source%lev_source)
 
     call system_clock(iTime2)
 
@@ -444,12 +480,23 @@ end if
 
   print *, "-----------------------------------------------------------------------------------------"
 
-  allocate(temparray(   block_size*(nlay+1)*nblocks)) 
-  temparray = pack(flux_dn(:,:,:),.true.)
-  print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)  !  mean of flux_down is:   103.2458
-  temparray = pack(flux_up(:,:,:),.true.)
-  print *, "mean of flux_up is:", sum(temparray, dim=1)/size(temparray, dim=1)
-  deallocate(temparray)
+  print *, "mean of flux_down is:", mean_3d(flux_dn)  !  mean of flux_down is:   103.2458
+  print *, "mean of flux_up is:", mean_3d(flux_up)
+
+  ! Save inputs and outputs for neural network gas optics development?
+  if(nargs >= 6) then 
+    print *, "-----------------------------------------------------------------------------------------"
+    print *, "Attempting to save neural network inputs to ", inp_outp_file
+    ! This function also deallocates its input 
+    call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
+    call unblock_and_write2(trim(inp_outp_file),      'col_dry', col_dry)
+    print *, "Inputs were saved to ", inp_outp_file
+
+    print *, "Attempting to save outputs to" , inp_outp_file
+    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_lw', tau_lw)
+    call unblock_and_write_3D_sp(trim(inp_outp_file), 'planck_frac', planck_frac)
+    print *, "Outputs were saved to ", inp_outp_file
+  end if
 
   ! Save fluxes ?
   if (save_flux) then
@@ -459,7 +506,7 @@ end if
     print *, "Fluxes saved to ", flx_file
   end if 
 
-  ! Compare fluxes to benchmark result, alongside reference RTE+RRTMGP computations?
+  ! Compare fluxes to benchmark line-by-line results, alongside reference RTE+RRTMGP computations?
   if (compare_flux) then
       print *, "-----------------------------------------------------------------------------------------------------"
     if (use_nn) then
@@ -704,9 +751,18 @@ end if
     real(wp), dimension(:,:,:), intent(in) :: x3
     real(wp) :: mean3
     
-    mean3 = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3, dim=1)*size(x3,dim=2)*size(x3,dim=3))
+    mean3 = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3))
 
   end function mean_3d
+
+  function mean_2d(x2) result(mean2)
+    implicit none 
+    real(wp), dimension(:,:), intent(in) :: x2
+    real(wp) :: mean2
+    
+    mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
+
+  end function mean_2d
 
 end program rrtmgp_rfmip_lw
 

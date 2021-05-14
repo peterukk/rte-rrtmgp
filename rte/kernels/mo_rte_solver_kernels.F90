@@ -325,8 +325,8 @@ contains
     logical(wl),                            intent(in   ) :: do_rescaling
     real(wp), dimension(:,:,:),             intent(in   ) :: ssa, g    ! single-scattering albedo, asymmetry parameter] (ngpt,nlay,ncol)
     logical(wl),                            intent(in   ) :: save_gpt_flux
-    real(wp), dimension(:,:,:),             intent(out  ) :: flux_up_gpt, flux_dn_gpt, flux_up_gpt_Jac 
-    ! Local variables
+    real(wp), dimension(:,:,:), contiguous, target,    &
+                                            intent(out  ) :: flux_up_gpt, flux_dn_gpt, flux_up_gpt_Jac    ! Local variables
     real(wp), dimension(ngpt, ncol)             :: Ds_ngpt
     real(wp), dimension(:,:,:),  allocatable      :: radn_up, radn_dn ! Fluxes per quad angle  (nlay+1, ncol)
     real(wp), dimension(:,:,:),  allocatable      :: radn_up_Jac      ! perturbed Fluxes per quad angle

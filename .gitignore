@@ -24,6 +24,10 @@ examples/rfmip-clear-sky/timing*
 examples/rfmip-clear-sky/*.pgprof
 examples/rfmip-clear-sky/*.qdrep
 examples/rfmip-clear-sky/stop_on_err__genmod.f90
+
+examples/all-sky/ref
+examples/all-sky/rrtmgp-allsky.nc
+
 *.pgprof
 *.gprof
 gprof*

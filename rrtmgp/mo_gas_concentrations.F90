@@ -330,9 +330,6 @@ contains
     integer :: ilay, icol, igas
     ! ---------------------
     error_msg = ''
-#ifdef USE_TIMING
-    ret =  gptlstart('find_gas')
-#endif
     igas = this%find_gas(gas)
     if (igas == GAS_NOT_IN_LIST) then
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' not found'
@@ -349,13 +346,10 @@ contains
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // ' array is wrong size (ncol)'
     end if
     if(error_msg /= "") return
-#ifdef USE_TIMING
-    ret =  gptlstop('find_gas')
-#endif
     !$acc data copyout (array) present(this, this%concs)
-#ifdef USE_TIMING
-    ret =  gptlstart('get_vmr_loops')
-#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('get_vmr_loops')
+! #endif
     if(size(this%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
       !$acc parallel loop collapse(2) default(none)
       do icol = 1, size(array,2)
@@ -379,9 +373,9 @@ contains
         end do
       end do
     end if
-#ifdef USE_TIMING
-    ret =  gptlstop('get_vmr_loops')
-#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstop('get_vmr_loops')
+! #endif
     !$acc end data
 
   end function get_vmr_2d
