@@ -75,7 +75,7 @@ program rrtmgp_rfmip_sw
   ! RTE driver uses a derived type to reduce spectral fluxes to whatever the user wants
   !   Here we're just reporting broadband fluxes
   !
-  use mo_fluxes,             only: ty_fluxes_broadband
+  use mo_fluxes,             only: ty_fluxes_broadband, ty_fluxes_flexible
   ! --------------------------------------------------
   !
   ! modules for reading and writing files
@@ -124,6 +124,7 @@ program rrtmgp_rfmip_sw
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
+  real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir
   real(wp), dimension(:,:,:),         allocatable :: rsu_ref, rsd_ref, rsu_nn, rsd_nn, rsu_lbl, rsd_lbl, rsdu_ref, rsdu_nn, rsdu_lbl, col_dry
   real(wp), dimension(:,:,:,:),       allocatable :: tau_sw, tau_sw_ray
   real(sp), dimension(:,:,:,:),       allocatable :: nn_input
@@ -131,18 +132,18 @@ program rrtmgp_rfmip_sw
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
   real(wp), dimension(:),             allocatable :: temparray
-  logical 		                        :: use_nn, compare_flux, save_flux, save_input_output
+  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux, save_rrtmgp_inout, save_rte_inout
   !
   ! Classes used by rte+rrtmgp
   !
-  type(ty_gas_optics_rrtmgp)                     :: k_dist
+  type(ty_gas_optics_rrtmgp)                    :: k_dist
   ! class(ty_optical_props_arry), allocatable      :: optical_props
-  type(ty_optical_props_2str)                    :: optical_props
-  type(ty_fluxes_broadband)                      :: fluxes
+  type(ty_optical_props_2str)                   :: optical_props
+  type(ty_fluxes_flexible)                      :: fluxes
 
-  real(wp), dimension(:,:), allocatable          :: toa_flux ! block_size, ngpt
-  real(wp), dimension(:  ), allocatable          :: def_tsi, mu0    ! block_size
-  logical , dimension(:,:), allocatable          :: usecol ! block_size, nblocks
+  real(wp), dimension(:,:), allocatable         :: toa_flux ! block_size, ngpt
+  real(wp), dimension(:  ), allocatable         :: def_tsi, mu0    ! block_size
+  logical , dimension(:,:), allocatable         :: usecol ! block_size, nblocks
   !
   ! ty_gas_concentration holds multiple columns; we make an array of these objects to
   !   leverage what we know about the input file
@@ -163,21 +164,26 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_nn      = .false.
+  use_rrtmgp_nn      = .true.
+  ! Save RRTMGP inputs and outputs for NN development
+  save_rrtmgp_inout  = .false.
+  ! Save RTE inputs and outputs for NN development
+  save_rte_inout = .false.
+
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
-  ! Save neural network inputs and target outputs
-  save_input_output  = .true.
+  ! Compute fluxes per g-point?
+  do_gpt_flux = .false.
 
-  if (save_input_output) use_nn = .false.
+  if (save_rrtmgp_inout) use_rrtmgp_nn = .false.
 
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
 
-  if (use_nn .or. save_input_output) then
+  if (use_rrtmgp_nn .or. save_rrtmgp_inout) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading rayleigh model from ', modelfile_ray
@@ -196,8 +202,8 @@ program rrtmgp_rfmip_sw
   if(nargs >= 5) call get_command_argument(4, forcing_index_char)
   if(nargs >= 6) then 
     call get_command_argument(6, inp_outp_file)
-    save_input_output   = .true.
-    use_nn              = .false.
+    save_rrtmgp_inout   = .true.
+    use_rrtmgp_nn              = .false.
     save_flux           = .false.
     compare_flux        = .false.
   end if 
@@ -209,7 +215,7 @@ program rrtmgp_rfmip_sw
   print *, "ncol:", ncol
   print *, "nexp:", nexp
   print *, "nlay:", nlay
-  if (use_nn .or. save_input_output) print *, "ninputs:", ninputs
+  if (use_rrtmgp_nn .or. save_rrtmgp_inout) print *, "ninputs:", ninputs
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
@@ -219,7 +225,7 @@ program rrtmgp_rfmip_sw
   if(forcing_index < 1 .or. forcing_index > 4) &
     stop "Forcing index is invalid (must be 1,2 or 3)"
 
-  if (use_nn) then
+  if (use_rrtmgp_nn) then
     flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
   else
     flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
@@ -295,6 +301,14 @@ program rrtmgp_rfmip_sw
   allocate(flux_up(    	nlay+1, block_size, nblocks), &
            flux_dn(    	nlay+1, block_size, nblocks))
   allocate(flux_dn_dir(    	nlay+1, block_size, nblocks))
+
+  ! Allocate g-point fluxes if desired
+  if (do_gpt_flux) then
+    allocate(gpt_flux_up(ngpt, nlay+1, block_size, nblocks), &
+    gpt_flux_dn(ngpt, nlay+1, block_size, nblocks))
+    allocate(gpt_flux_dn_dir(ngpt, nlay+1, block_size, nblocks))
+  end if
+
   ! allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   allocate(mu0(block_size), sfc_alb_spec(ngpt,block_size))
 
@@ -318,7 +332,7 @@ program rrtmgp_rfmip_sw
   !$acc enter data create (sfc_alb_spec, mu0) 
   !$acc enter data copyin(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
 
-  if (save_input_output) then
+  if (save_rrtmgp_inout) then
     allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
     allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
     allocate(tau_sw(    	ngpt, nlay, block_size, nblocks))
@@ -343,7 +357,7 @@ program rrtmgp_rfmip_sw
 
   ! --------------------------------------------------
 
-  if (use_nn) then
+  if (use_rrtmgp_nn) then
     print *, "starting clear-sky shortwave computations, using neural networks as RRTMGP kernel"
   else
     print *, "starting clear-sky shortwave computations, using lookup-table as RRTMGP kernel"
@@ -355,7 +369,7 @@ program rrtmgp_rfmip_sw
   !
 #ifdef USE_TIMING
   ret =  gptlstart('clear_sky_total (SW)')
-do i = 1, 32
+do i = 1, 4
 #endif
 #ifdef USE_OPENMP
   !$OMP PARALLEL shared(neural_nets, k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,optical_props)
@@ -366,6 +380,11 @@ do i = 1, 32
     fluxes%flux_up => flux_up(:,:,b)
     fluxes%flux_dn => flux_dn(:,:,b)
     fluxes%flux_dn_dir => flux_dn_dir(:,:,b)
+    if (do_gpt_flux) then
+      fluxes%gpt_flux_up => gpt_flux_up(:,:,:,b)
+      fluxes%gpt_flux_dn => gpt_flux_dn(:,:,:,b)
+      fluxes%gpt_flux_dn_dir => gpt_flux_dn_dir(:,:,:,b)
+    end if
     !
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
@@ -374,7 +393,7 @@ do i = 1, 32
     ret =  gptlstart('gas_optics (SW)')
 #endif
     
-    if (use_nn) then
+    if (use_rrtmgp_nn) then
       call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                         p_lev(:,:,b),       &
                                         t_lay(:,:,b),       &
@@ -382,7 +401,7 @@ do i = 1, 32
                                         optical_props,      &
                                         toa_flux, neural_nets=neural_nets))
     else
-      if (save_input_output) then
+      if (save_rrtmgp_inout) then
         call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                           p_lev(:,:,b),       &
                                           t_lay(:,:,b),       &
@@ -465,7 +484,7 @@ do i = 1, 32
                             toa_flux,        &
                             sfc_alb_spec,    &
                             sfc_alb_spec,    &
-                            fluxes, save_gpt_flux = .false.))
+                            fluxes))
                        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
@@ -552,7 +571,7 @@ do i = 1, 32
   ! Compare fluxes to benchmark line-by-line results, alongside reference RTE+RRTMGP computations?
   if (compare_flux) then
     print *, "-----------------------------------------------------------------------------------------------------"
-    if (use_nn) then
+    if (use_rrtmgp_nn) then
       print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (using NNs) AND ORIGINAL CODE IN DP -------"
     else
       print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (not using NNs) AND ORIGINAL CODE IN DP ---"

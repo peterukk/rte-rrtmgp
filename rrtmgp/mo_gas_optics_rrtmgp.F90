@@ -349,19 +349,20 @@ contains
     !
     ! Compute dry air column amounts (number of molecule per cm^2)
     !
+    !$acc enter data create(vmr_h2o)
     if (present(col_dry_inout)) then ! empty array provided as output for NN model development
-      !$acc enter data create(col_dry_inout)
+      !$acc enter data copyin(col_dry_inout)
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_inout)
       col_dry_wk => col_dry_inout
     else
       !$acc enter data create(col_dry_arr)
-
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
     end if
-    !$acc enter data attach(col_dry_wk)
+    !$acc exit data delete(vmr_h2o)
+    !$acc enter data attach(col_dry_wk) 
 
     !
     ! Gas optics
@@ -378,6 +379,7 @@ contains
       else 
         nn_inputs => nn_inputs_inout
       end if
+      !$acc enter data attach(nn_inputs)
 
       error_msg = compute_nn_inputs(                  &
                           ncol, nlay, ngas, ninputs,  &
@@ -432,7 +434,7 @@ contains
       ! ----------------------------------------------------------------------------------
     end if
 
-    !$acc exit data delete(col_dry, col_dry_arr, tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk)
+    !$acc exit data delete(col_dry_inout, col_dry_arr, tlay, tlev, tlev_arr, tsfc, plev, play) detach(tlev_wk, col_dry_wk, nn_inputs_arr)
 
   end function gas_optics_int
   !------------------------------------------------------------------------------------------
@@ -514,19 +516,20 @@ contains
     !
     ! Compute dry air column amounts (number of molecule per cm^2)
     !
+    !$acc enter data create(vmr_h2o)
     if (present(col_dry_inout)) then ! empty array provided as output for NN model development
-      !$acc enter data create(col_dry_inout)
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_inout)
       col_dry_wk => col_dry_inout
     else
       !$acc enter data create(col_dry_arr)
-
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
     end if
-    !$acc enter data attach(col_dry_wk)
+    !$acc exit data delete(vmr_h2o)
+    !$acc enter data attach(col_dry_wk) 
+
     !
     ! Gas optics
     !
@@ -542,6 +545,7 @@ contains
       else 
         nn_inputs => nn_inputs_inout
       end if
+      !$acc enter data attach(nn_inputs)
 
       error_msg = compute_nn_inputs(                  &
                           ncol, nlay, ngas, ninputs,  &
@@ -613,7 +617,7 @@ contains
           toa_src(igpt,icol) = this%solar_source(igpt)
        end do
     end do
-    !$acc exit data delete(col_dry, col_dry_arr, tlay, play, plev) detach(col_dry_wk)
+    !$acc exit data delete(col_dry_arr, tlay, play, plev) detach(col_dry_wk, nn_inputs)
 
   end function gas_optics_ext
 
