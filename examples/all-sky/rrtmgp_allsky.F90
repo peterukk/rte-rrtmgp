@@ -42,7 +42,7 @@ program rte_rrtmgp_clouds
   use mo_cloud_optics,       only: ty_cloud_optics
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_source_functions,   only: ty_source_func_lw
-  use mo_fluxes,             only: ty_fluxes_broadband
+  use mo_fluxes,             only: ty_fluxes_broadband, ty_fluxes_flexible
   use mo_rte_lw,             only: rte_lw
   use mo_rte_sw,             only: rte_sw
   use mo_load_coefficients,  only: load_and_init
@@ -105,7 +105,8 @@ program rte_rrtmgp_clouds
   type(ty_gas_concs)         :: gas_concs, gas_concs_garand, gas_concs_1col
   class(ty_optical_props_arry), &
                  allocatable :: atmos, clouds
-  type(ty_fluxes_broadband)  :: fluxes
+  ! type(ty_fluxes_broadband)  :: fluxes
+  type(ty_fluxes_flexible)  :: fluxes
 
   !
   ! Inputs to RRTMGP
