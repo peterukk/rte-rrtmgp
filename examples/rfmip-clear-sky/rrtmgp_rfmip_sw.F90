@@ -199,11 +199,12 @@ program rrtmgp_rfmip_sw
   read(block_size_char, '(i4)') block_size
   if(nargs >= 2) call get_command_argument(2, rfmip_file)
   if(nargs >= 3) call get_command_argument(3, kdist_file)
+  ! if(nargs >= 4) call get_command_argument(4, physics index_char)
   if(nargs >= 5) call get_command_argument(4, forcing_index_char)
   if(nargs >= 6) then 
     call get_command_argument(6, inp_outp_file)
     save_rrtmgp_inout   = .true.
-    use_rrtmgp_nn              = .false.
+    use_rrtmgp_nn       = .false.
     save_flux           = .false.
     compare_flux        = .false.
   end if 
@@ -551,12 +552,12 @@ do i = 1, 4
     print *, "Attempting to save neural network inputs to ", inp_outp_file
     ! This function also deallocates its input 
     call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
-    call unblock_and_write2(trim(inp_outp_file),      'col_dry', col_dry)
+    call unblock_and_write(trim(inp_outp_file),      'col_dry', col_dry)
     print *, "Inputs were saved to ", inp_outp_file
 
     print *, "Attempting to save outputs to" , inp_outp_file
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_sw', tau_sw)
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_sw_ray', tau_sw_ray)
+    call unblock_and_write_3D(trim(inp_outp_file), 'tau_sw', tau_sw)
+    call unblock_and_write_3D(trim(inp_outp_file), 'tau_sw_ray', tau_sw_ray)
     print *, "Outputs were saved to ", inp_outp_file
   end if
 

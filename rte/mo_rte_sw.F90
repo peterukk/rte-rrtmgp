@@ -149,8 +149,6 @@ contains
       return
     end if
 
-    if(len_trim(error_msg) > 0) return
-
     !
     ! Ensure values of tau, ssa, and g are reasonable
     !

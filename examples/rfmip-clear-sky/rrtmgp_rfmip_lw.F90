@@ -193,6 +193,8 @@ program rrtmgp_rfmip_lw
   ! ------------ Neural network model weights -----------------
   ! Model for predicting longwave absorption cross-section
   modelfile_tau           = "../../neural/data/BEST_tau-lw-18-58-58.txt" 
+  modelfile_tau           = "../../neural/data/tau-lw-18-58-58_testckdmip3.txt" 
+
   ! Model for predicting Planck fraction
   modelfile_source        = "../../neural/data/BEST_pfrac-18-16-16.txt"
 
@@ -288,6 +290,8 @@ program rrtmgp_rfmip_lw
   call load_and_init(k_dist, trim(kdist_file), gas_conc_array(1))
 
   ! print *, "min of play", minval(p_lay), "p_lay = k_dist%get_press_min()", k_dist%get_press_min() 
+  ! print *," press min max", k_dist%get_press_min(), k_dist%get_press_max()
+  ! print *," temp min max", k_dist%get_temp_min(), k_dist%get_temp_max()
 
   where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
 
@@ -309,6 +313,8 @@ program rrtmgp_rfmip_lw
     p_lev(nlay+1,:,:) &
                  = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
+  print *," shape play", shape(p_lay)
+  print *, "play sfc", maxval(p_lay(nlay,:,:)), "tlay sfc", maxval(t_lay(nlay,:,:))
 
   !
   ! Allocate space for output fluxes (accessed via pointers in ty_fluxes_broadband),
@@ -508,8 +514,8 @@ end if
     print *, "Inputs were saved to ", inp_outp_file
 
     print *, "Attempting to save outputs to" , inp_outp_file
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'tau_lw', tau_lw)
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'planck_frac', planck_frac)
+    call unblock_and_write_3D(trim(inp_outp_file), 'tau_lw', tau_lw)
+    call unblock_and_write_3D(trim(inp_outp_file), 'planck_frac', planck_frac)
     print *, "Outputs were saved to ", inp_outp_file
   end if
 
@@ -643,37 +649,45 @@ end if
     !  rmse(reshape(rldu_lbl(1,:,1), shape = [1*ncol]),    reshape(rldu_nn(1,:,1), shape = [1*ncol])), &
     !  rmse(reshape(rldu_lbl(1,:,1), shape = [1*ncol]),    reshape(rldu_ref(1,:,1), shape = [1*ncol]))
 
-    print *, "RMSE in net fluxes of new result and RRTMGP, future-all, SURFACE:     ", &
-     rmse(reshape(rldu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,17), shape = [1*ncol])), &
-     rmse(reshape(rldu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,17), shape = [1*ncol]))
+    ! print *, "RMSE in net fluxes of new result and RRTMGP, future-all, SURFACE:     ", &
+    !  rmse(reshape(rldu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,17), shape = [1*ncol])), &
+    !  rmse(reshape(rldu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,17), shape = [1*ncol]))
 
-    print *, "RMSE in net fluxes of new result and RRTMGP, pre-industrial, SURFACE: ", &
-     rmse(reshape(rldu_lbl(nlay+1,:,2), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,2), shape = [1*ncol])), &
-     rmse(reshape(rldu_lbl(nlay+1,:,2), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,2), shape = [1*ncol]))
+    ! print *, "RMSE in net fluxes of new result and RRTMGP, pre-industrial, SURFACE: ", &
+    !  rmse(reshape(rldu_lbl(nlay+1,:,2), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,2), shape = [1*ncol])), &
+    !  rmse(reshape(rldu_lbl(nlay+1,:,2), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,2), shape = [1*ncol]))
 
     print *, "---------"
 
-    print *, "bias in net fluxes of new result and RRTMGP, present-day:              ", &
-     bias(reshape(rldu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rldu_nn(:,:,1), shape = [1*ncol*(nlay+1)])), &
-     bias(reshape(rldu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rldu_ref(:,:,1), shape = [1*ncol*(nlay+1)])) 
+    ! print *, "bias in net fluxes of new result and RRTMGP, present-day:              ", &
+    !  bias(reshape(rldu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rldu_nn(:,:,1), shape = [1*ncol*(nlay+1)])), &
+    !  bias(reshape(rldu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rldu_ref(:,:,1), shape = [1*ncol*(nlay+1)])) 
 
-    print *, "bias in net fluxes of new result and RRTMGP, present-day, SURFACE:     ", &
-     bias(reshape(rldu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,1), shape = [1*ncol])), &
-     bias(reshape(rldu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,1), shape = [1*ncol])) 
+    ! print *, "bias in net fluxes of new result and RRTMGP, present-day, SURFACE:     ", &
+    !  bias(reshape(rldu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,1), shape = [1*ncol])), &
+    !  bias(reshape(rldu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,1), shape = [1*ncol])) 
 
     ! print *, "bias in net fluxes of new result and RRTMGP, future:                   ", &
     !  bias(reshape(rldu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rldu_nn(:,:,4), shape = [1*ncol*(nlay+1)])), &
     !  bias(reshape(rldu_lbl(:,:,4), shape = [1*ncol*(nlay+1)]), reshape(rldu_ref(:,:,4), shape = [1*ncol*(nlay+1)]))
 
-    print *, "bias in net fluxes of new result and RRTMGP, future-all:               ", &
-     bias(reshape(rldu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rldu_nn(:,:,17), shape = [1*ncol*(nlay+1)])), &
-     bias(reshape(rldu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rldu_ref(:,:,17), shape = [1*ncol*(nlay+1)]))
+    ! print *, "bias in net fluxes of new result and RRTMGP, future-all:               ", &
+    !  bias(reshape(rldu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rldu_nn(:,:,17), shape = [1*ncol*(nlay+1)])), &
+    !  bias(reshape(rldu_lbl(:,:,17), shape = [1*ncol*(nlay+1)]), reshape(rldu_ref(:,:,17), shape = [1*ncol*(nlay+1)]))
 
     print *, "bias in net fluxes of new result and RRTMGP, future-all, SURFACE:      ", &
      bias(reshape(rldu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rldu_nn(nlay+1,:,17), shape = [1*ncol])), &
      bias(reshape(rldu_lbl(nlay+1,:,17), shape = [1*ncol]),    reshape(rldu_ref(nlay+1,:,17), shape = [1*ncol])) 
 
     print *, "---------"
+
+    print *, "radiative forcing error at surface, pre-industrial N2O to present-day: ", &
+    mean(rld_lbl(nlay+1,:,11) - rld_lbl(nlay+1,:,1)) -   mean(rld_nn(nlay+1,:,11) - rld_nn(nlay+1,:,1)), &
+    mean(rld_lbl(nlay+1,:,11) - rld_lbl(nlay+1,:,1)) -   mean(rld_ref(nlay+1,:,11) - rld_ref(nlay+1,:,1))
+
+    print *, "radiative forcing error at TOA, pre-industrial N2O to present-day:     ", &
+    mean(rlu_lbl(1,:,11) - rlu_lbl(1,:,1)) -   mean(rlu_nn(1,:,11)  - rlu_nn(1,:,1)), &
+    mean(rlu_lbl(1,:,11) - rlu_lbl(1,:,1)) -   mean(rlu_ref(1,:,11) - rlu_ref(1,:,1))
 
     ! print *, "MAE in upwelling fluxes of new result w.r.t RRTMGP, present-day:       ", &
     !  mae(reshape(rlu_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rlu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
@@ -686,6 +700,8 @@ end if
 
     ! print *, "MAE in downwelling fluxes of new result w.r.t RRTMGP, present-day:     ", &
     !  mae(reshape(rld_ref(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rld_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+
+    print *, "---------"
 
     print *, "MAE in net flux w.r.t RRTMGP       ", &
     mae(reshape(rldu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rldu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
