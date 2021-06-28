@@ -493,13 +493,13 @@ contains
       !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
-      !$acc enter data create(col_dry_arr)
+      !$acc enter data create(col_dry_arr, vmr_h2o)
 
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_arr)
       
       col_dry_wk => col_dry_arr
-
+      !$acc exit data delete(vmr_h2o)
     end if
     !$acc enter data attach(col_dry_wk)
     !
