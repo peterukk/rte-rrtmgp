@@ -253,6 +253,8 @@ contains
       error_msg = 'ty_gas_concs%set_vmr(): trying to set ' // trim(gas) // 'but name not provided at initialization'
       return
     end if
+
+    ! print *," setting vmr for gas", gas, "with igas", igas, "and max conc", maxval(w)
     !
     ! Deallocate anything existing -- could be more efficient to test if it's already the correct size
     !

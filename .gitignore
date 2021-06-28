@@ -28,6 +28,8 @@ examples/rfmip-clear-sky/stop_on_err__genmod.f90
 examples/all-sky/ref
 examples/all-sky/rrtmgp-allsky.nc
 
+examples/emulator-training/input_output/
+
 *.pgprof
 *.gprof
 gprof*

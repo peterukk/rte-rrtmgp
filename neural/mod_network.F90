@@ -184,6 +184,124 @@ contains
   end subroutine
 
 
+  ! subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, ymeans, ysigma, output)
+  !   ! Optimized inference function for optical depth, using BLAS/cuBLAS and includes post-processing of outputs.
+  !   ! This routine takes a 2D input data array for batched predictions with a feed-forward network.
+  !   ! Assuming "flat model" i.e. the hidden layers have the same number of neurons
+  !   ! always in single-precision (sgemm) because why not
+  !   !
+  !   !                                   Layer Weights            Layer Inputs                Layer Outputs
+  !   ! First layer :                      (Nneurons x Nx)       * (Nx x nbatch )          = (Nneurons x nbatch) 
+  !   ! Intermediate layers :              (Nneurons x Nneurons) * (Nneurons x nbatch )    = (Nneurons x nbatch) 
+  !   ! Final layer:                       (Ngpoints x Nneurons) * (Nneurons x nbatch )    = (Ngpoints x nbatch)  
+  !   ! in GEMM terms:                         A                 *         B                = C
+  !   !                                     (m x k)              *      (k * N )            = (m  * N)  
+  !   use, intrinsic :: iso_c_binding
+  !   class(network_type),              intent(in), target  :: self
+  !   integer, intent(in)                           :: nx, ngpt, nbatch
+  !   real(sp), dimension(nx, nbatch), intent(in)  :: x      ! (features, nbatch)
+  !   real(sp), dimension(nbatch),     intent(in)  :: coldry 
+  !   real(sp), dimension(ngpt),          intent(in)  :: ymeans
+  !   real(sp),                         intent(in)  :: ysigma
+  !   real(sp), dimension(ngpt, nbatch), intent(out) :: output ! (outputs, nbatch) 
+  !   real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
+  !                                         target  :: a1, a2  
+  !   real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
+  !   real(sp), dimension(:,:), contiguous, pointer :: wt
+  !   real(sp), dimension(:),   contiguous, pointer :: b
+  !   integer                       :: n, j, neurons, nlayers, i
+
+  !   neurons = size(self % layers(1) % w_transposed, 1)
+  !   nlayers = size(self % layers)
+
+  !   !$acc enter data create(a1, a2) copyin(ymeans)
+  !   associate(layers=>self%layers)
+      
+  !     ! Assign pointers to layer weights, input-output arrays and biases
+  !     wt      => layers(1) % w_transposed
+  !     a       => a1
+  !     a_next  => a2
+  !     b       => layers(2) % b
+      
+  !     ! 1. Multiply inputs with weights of first layer
+
+  !     !$acc host_data use_device(wt, x, a)
+  !     call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
+  !     !$acc end host_data
+
+  !     ! 2. Add biases and activation
+
+  !     !$acc parallel loop collapse(2) default(present)
+  !     do j = 1, nbatch
+  !       do i = 1, neurons
+  !         a(i, j) = a(i, j ) + b(i)
+  !         call activation_softsign(a(i, j))
+  !       end do
+  !     end do
+
+  !     ! 3. Repeat steps 1-2 until final layer reached
+      
+  !     do n = 3, nlayers-1
+
+  !       wt => layers(n-1) % w_transposed
+  !       b => layers(n) % b
+
+  !       !$acc host_data use_device(wt, a, a_next)
+  !       call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
+  !       !$acc end host_data
+
+  !       !$acc parallel loop collapse(2) default(present)
+  !       do j = 1, nbatch
+  !         do i = 1 , neurons 
+  !           a_next(i, j) = a_next(i, j ) + b(i)
+  !           call activation_softsign(a_next(i, j))
+  !         end do
+  !       end do 
+
+  !       ! Swap pointers, the previous output is the next input
+  !       if(mod(n,2) .EQ. 1) then
+  !         a       => a2
+  !         a_next  => a1  
+  !       else
+  !         a       => a1
+  !         a_next  => a2
+  !       end if
+
+  !     end do
+
+  !     wt => layers(n-1) % w_transposed
+  !     b  => layers(n) % b
+
+  !     !$acc host_data use_device(wt, a, output)
+  !     call sgemm("N","N", ngpt, nbatch, neurons, 1.0, wt, ngpt, a, neurons, 0.0, output, ngpt)
+  !     !$acc end host_data
+
+  !     n = nlayers
+
+  !     !$acc parallel loop gang default(present)
+  !     do j = 1, nbatch
+  !       !DIR$ SIMD
+  !       !DIR$ VECTOR ALIGNED
+  !       !$acc loop vector
+  !       do i = 1, ngpt
+  !         ! Compute outputs and scale them to obtain molecular absorption 
+  !         ! output(i, j) = (ysigma*(output(i, j) + b(i)) + ymeans_lw_tau(i))**8
+
+  !         ! Scale with number of dry air molecules to obtain optical depth
+  !         ! output(i, j) =  output(i, j) * coldry(j)
+
+  !         ! One-line solution
+  !         output(i, j) = ((ysigma* (output(i, j) + b(i)) + ymeans(i))**8) * coldry(j)
+
+  !       end do
+  !     end do
+
+  !   end associate
+  !   !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
+
+                                              
+  ! end subroutine
+
   subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, ymeans, ysigma, output)
     ! Optimized inference function for optical depth, using BLAS/cuBLAS and includes post-processing of outputs.
     ! This routine takes a 2D input data array for batched predictions with a feed-forward network.
@@ -209,7 +327,8 @@ contains
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
     real(sp), dimension(:,:), contiguous, pointer :: wt
     real(sp), dimension(:),   contiguous, pointer :: b
-    integer                       :: n, j, neurons, nlayers, i
+    integer                       :: n, j, neurons, nlayers, i, ng, nneur
+    real(sp), allocatable :: output2(:,:), wt2(:,:), inp2(:,:), output3(:,:), wt3(:,:), inp3(:,:)
 
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
@@ -272,9 +391,65 @@ contains
       wt => layers(n-1) % w_transposed
       b  => layers(n) % b
 
+#ifdef USE_TIMING
+    ret =  gptlstart('(256,58) X (58,nobs)')
+#endif
+
       !$acc host_data use_device(wt, a, output)
       call sgemm("N","N", ngpt, nbatch, neurons, 1.0, wt, ngpt, a, neurons, 0.0, output, ngpt)
       !$acc end host_data
+
+#ifdef USE_TIMING
+    ret =  gptlstop('(256,58) X (58,nobs)')
+#endif
+
+       !(Ngpoints x Nneurons) * (Nneurons x nbatch )    = (Ngpoints x nbatch)  
+
+      ng = 672
+      nneur = 58
+    
+      allocate(wt2(ng,nneur), inp2(nneur,nbatch), output2(ng,nbatch))
+      !$acc enter data create(output2, wt2,inp2)
+      !$acc kernels
+      wt2 = 0.5_sp
+      inp2 = 0.5_sp
+      !$acc end kernels
+#ifdef USE_TIMING
+    ret =  gptlstart('(672,58) X (58,nobs)')
+#endif
+      !$acc host_data use_device(wt2, inp2, output2)
+      call sgemm("N","N", ng, nbatch, nneur, 1.0, wt2, ng, inp2, nneur, 0.0, output2, ng)
+      !$acc end host_data
+#ifdef USE_TIMING
+    ret =  gptlstop('(672,58) X (58,nobs)')
+#endif
+      !$acc exit data delete(output2,wt2,inp2)
+      deallocate(output2,wt2,inp2)
+
+      ng = 3
+      nneur = 3
+      allocate(wt2(ng,nneur), inp2(nneur,nbatch*ngpt), output2(ng,nbatch*ngpt))
+      !$acc enter data create(output2, wt2,inp2)
+      !$acc kernels
+      wt2 = 0.5_sp
+      inp2 = 0.5_sp
+      !$acc end kernels
+#ifdef USE_TIMING
+    ret =  gptlstart('(3,6) X (6,nobs*ngpt)')
+#endif
+      !$acc host_data use_device(wt2, inp2, output2)
+      call sgemm("N","N", ng, nbatch*ngpt, nneur, 1.0, wt2, ng, inp2, nneur, 0.0, output2, ng)
+      !$acc end host_data
+#ifdef USE_TIMING
+    ret =  gptlstop('(3,6) X (6,nobs*ngpt)')
+#endif
+      !$acc exit data delete(output2,wt2,inp2)
+
+
+    ! RTE-NN1 + RRTMGP		rte			  ref		        3*224 --> (3*1)	bb flux                   nlay*ncol
+    ! RTE-NN2 + RRTMGP		rte			  ref		        3*224 --> (3*224) gpt flux	              nlay*ncol
+    ! RTE-NN3 + RRTMGP		rte			  ref		        3*1   --> (3*1)	gpt flux	                nlay*ncol*ngpt	  
+    ! RTE-NN4 + RRTMGP		rte			  ref		        3*1   --> (4*1) reftrans scalars	        nlay*ncol*ngpt
 
       n = nlayers
 
@@ -301,6 +476,8 @@ contains
 
                                               
   end subroutine
+
+  
 
   ! subroutine output_sgemm_tau(self, nx, ny, nbatch, x, coldry, ymeans, ysigma, output)
   !   ! Optimized inference function for optical depth, using BLAS/cuBLAS and includes post-processing of outputs.

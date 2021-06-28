@@ -317,9 +317,9 @@ contains
       if(present(tlev)) then
         if(any_vals_outside(tlev, this%temp_ref_min, this%temp_ref_max)) error_msg = "gas_optics(): array tlev has values outside range"
       end if
-      if(present(col_dry_inout)) then
-        if(any_vals_less_than(col_dry_inout, 0._wp)) error_msg = "gas_optics(): array col_dry has values outside range"
-      end if
+      ! if(present(col_dry_inout)) then
+      !   if(any_vals_less_than(col_dry_inout, 0._wp)) error_msg = "gas_optics(): array col_dry has values outside range"
+      ! end if
     end if
     if(error_msg  /= '') return
 
@@ -507,9 +507,9 @@ contains
       if(any_vals_outside(play, this%press_ref_min,this%press_ref_max))  error_msg = "gas_optics(): array play has values outside range"
       if(any_vals_outside(plev, this%press_ref_min,this%press_ref_max))  error_msg = "gas_optics(): array plev has values outside range"
       if(any_vals_outside(tlay, this%temp_ref_min,  this%temp_ref_max))  error_msg = "gas_optics(): array tlay has values outside range"
-      if(present(col_dry_inout)) then
-        if(any_vals_less_than(col_dry_inout, 0._wp)) error_msg = "gas_optics(): array col_dry has values outside range"
-      end if
+      ! if(present(col_dry_inout)) then
+      !   if(any_vals_less_than(col_dry_inout, 0._wp)) error_msg = "gas_optics(): array col_dry has values outside range"
+      ! end if
     end if
     if(error_msg  /= '') return
 
@@ -798,8 +798,14 @@ contains
      !$acc exit data delete(nn_gas_names, input_maxvals, input_minvals)
 
     ! do igas = 1, ninputs
-    !   print *, 'Neural network inputs: min, max, mean', igas, ":",  &
-    !     minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:)), mean2(nn_inputs(igas,:,:))
+    !   if (igas==1) then
+    !     print '(A25,I2,A10,F6.3,F6.3)', "Min,max of NN-input ", igas, " =tlay    ", minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
+    !   else if (igas==2) then
+    !     print '(A25,I2,A10,F6.3,F6.3)', "Min,max of NN-input ", igas, " =play    ", minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
+    !   else 
+    !     print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", nn_gas_names(igas-2), &
+    !                 minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
+    !   end if
     ! end do
 
 #ifdef USE_TIMING
