@@ -22,25 +22,18 @@
 !
 ! the software will support the following methods for radiation computations:
 !
-!                     emulate   cloud optics 	NN output 			                  # NN models
-! RTE + RRTMGP        none      ref		        -						                        0
-! RTE + RRTMGP-NN			rrtmgp	  ref		        spectral opt. prop. vector (224) 	  2 (abs,scat)
-! RTE-NN1 + RRTMGP		rte			  ref		        broadband flux (3*1)	              1
-! RTE-NN2 + RRTMGP		rte			  ref		        spectral flux vector (3*224)	      1
-! RTE-NN3 + RRTMGP		rte			  ref		        spectral flux scalars (3*1)				  1
-! RTE-NN4 + RRTMGP		rte			  ref		        spectral REF-TRANS scalars (4*1)	  1
-! (RTE+RRTMGP)-NN			both			NN		        broadband flux (3*1)			          1
-
-!                     emulate   cloud optics 	NN mapping  			                        repeated 
-! RTE + RRTMGP        none      ref		        -						                        
-! RTE + RRTMGP-NN			rrtmgp	  ref		        7 --> 224                        	        ~2*nlay*ncol
-! RTE-NN1 + RRTMGP		rte			  ref		        3*224 --> (3*1)	bb flux                   nlay*ncol
-! RTE-NN2 + RRTMGP		rte			  ref		        3*224 --> (3*224) gpt flux	              nlay*ncol
-! RTE-NN3 + RRTMGP		rte			  ref		        3*1   --> (3*1)	gpt flux	                nlay*ncol*ngpt	  
-! RTE-NN4 + RRTMGP		rte			  ref		        3*1   --> (4*1) reftrans scalars	        nlay*ncol*ngpt
-! (RTE+RRTMGP)-NN			both			NN		        broadband flux (3*1)			                nlay*ncol
-
-
+!                     emulate       cloud   NN output (shape)		        NN iterations   NN models
+!                                   optics                              
+! RTE + RRTMGP        none          orig.		-						                                0
+! (RTE+RRTMGP)-NN			both			    NN		  bb fluxes (3*1)			        nlay*ncol       1
+! RTE + RRTMGP-NN			rrtmgp	      orig.		opt. prop. gpt vector (ng) 	~2*nlay*ncol    2 (abs,scat)
+! RTE-NN1 + RRTMGP		rte			      orig.		bb fluxes (3*1)	            nlay*ncol       1
+! RTE-NN2 + RRTMGP		rte-gptvec		orig.		gpt flux vectors (3*ng)	    nlay*ncol       1
+! RTE-NN3 + RRTMGP		rte-gptscal		orig.	  gpt flux scalars (3*1)			nlay*ncol*ng	  1
+! RTE-NN4 + RRTMGP		rte-reftrans  orig.	  gpt REFTRANS scalars (4*1)	nlay*ncol*ng    1
+! 
+! bb = broadband, gpt = g-point, ng = number of g-points (e.g. 224), 
+!
 ! Fortran program arguments (k_distribution file and cloud_optics file are fixed):
 ! nn_allsky_sw [block_size] [input file] [emulate] [NN model files] [optional file to save NN inputs/outputs]"
 !
@@ -148,17 +141,19 @@ program rrtmgp_rfmip_sw
   ! Local variables
   !
   character(len=132) :: input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
-                        kdist_file = 'coefficients_sw.nc', cloud_optics_file='../..//extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
+                        kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc', &
+                        cloud_optics_file='../..//extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
   character(len=132) :: flx_file, flx_file_ref, timing_file, nndev_inout_file='rrtmgp_inout.nc'
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, do_scattering
   integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, iTime3, ret, i, istat
   character(len=4)   :: block_size_char, forcing_index_char = '1'
+  character(len=6)   :: nn_emulated_code
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
   ! Neural network variables  
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
-  character (len = 80)                :: modelfile_tau, modelfile_ray
+  character (len = 80)                :: nn_modelfile_1, nn_modelfile_2
   real(sp), dimension(:,:,:,:),         allocatable :: nn_input ! (nfeatures,nlay,block_size,nblocks)
   ! Output fluxes
   real(wp), dimension(:,:,:),   target, allocatable :: flux_up, flux_dn, flux_dn_dir
@@ -180,7 +175,8 @@ program rrtmgp_rfmip_sw
   logical,  allocatable, dimension(:,:) :: cloud_mask
   !
   ! various logical to control program
-  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux, save_rrtmgp_inout, save_rte_inout
+  logical 		                        :: use_rrtmgp_nn, use_rte_nn
+  logical 		                        :: do_gpt_flux, compare_flux, save_flux, save_rrtmgp_inout, save_rte_inout
   !
   ! Classes used by rte+rrtmgp
   !
@@ -212,8 +208,9 @@ program rrtmgp_rfmip_sw
   !   all arguments are optional
   !
   !  ------------ I/O and settings -----------------
-  ! Use neural networks for gas optics? 
-  use_rrtmgp_nn      = .true.
+  ! Use neural networks for gas optics or RTE? 
+  use_rrtmgp_nn       = .false.
+  use_rte_nn          = .false.
   ! Save RRTMGP inputs and outputs for NN development
   ! save_rrtmgp_inout  = .false.
   ! ! Save RTE inputs and outputs for NN development
@@ -229,41 +226,61 @@ program rrtmgp_rfmip_sw
   if (save_rte_inout) save_rrtmgp_inout = .true.
   if (save_rrtmgp_inout) use_rrtmgp_nn = .false.
 
-  ! Neural network models
-  modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
-  modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
+   ! print *, "Usage: nn_allsky_sw [block_size] [input file] [k-distribution_file] [cloud_optics file] [optional file to save NN inputs/outputs]"
+  print *, "Usage: nn_allsky_sw [block_size] [input file] (OPTIONAL:) [emulated component] [NN model files]"
 
-  if (use_rrtmgp_nn .or. save_rrtmgp_inout) then
+  nargs = command_argument_count()
+  if (nargs <  2) call stop_on_err("Need to supply at least block_size input_file")
+  if (nargs == 3) call stop_on_err("Need to supply NN model file(s) for emulated code")
+
+  call get_command_argument(1, block_size_char)
+  read(block_size_char, '(i4)') block_size
+
+  call get_command_argument(2, input_file)
+
+  if(nargs > 3) call get_command_argument(3, nn_emulated_code) 
+  if (nn_emulated_code == 'rrtmgp') then
+    use_rrtmgp_nn      = .true.
+    if (nargs < 5) call stop_on_err("Need to supply two model files to emulate RRTMGP (absorption and Rayleigh cross-section models, respectively")
+  else if (nn_emulated_code == 'rte') then
+    use_rte_nn         = .true.
+  else
+    call stop_on_err("Third argument specifies which code to replace with NNs and must be one of the following: & 
+    &'both', 'rrtmgp', 'rte',' 'rte-gptvec', 'rte-gptscal', 'rte-reftrans'")
+  end if
+
+  if(nargs >= 4) call get_command_argument(4, nn_modelfile_1)
+  if(nargs >= 5) call get_command_argument(5, nn_modelfile_2)
+
+
+  ! if(nargs >= 3) call get_command_argument(3, kdist_file)
+  ! if(nargs >= 4) call get_command_argument(4, cloud_optics_file)
+  ! if(nargs >= 5) then 
+  !   call get_command_argument(5, nndev_inout_file)
+  !   save_rrtmgp_inout   = .true.
+  !   save_rte_inout      = .true.
+  !   use_rrtmgp_nn       = .false.
+  ! else 
+  !   save_rrtmgp_inout   = .false.
+  !   save_rte_inout      = .false.
+  ! end if 
+
+
+  ! Neural network models
+  ! nn_modelfile_1           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
+  ! nn_modelfile_2           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
+
+  if (use_rrtmgp_nn) then
     print *, "-------- Loading gas optics neural networks ---------"
-	  print *, 'loading shortwave absorption model from ', modelfile_tau
-    call neural_nets(1) % load(modelfile_tau)
-    print *, 'loading rayleigh model from ', modelfile_ray
-    call neural_nets(2) % load(modelfile_ray)
+	  print *, 'loading shortwave absorption model from ', nn_modelfile_1
+    call neural_nets(1) % load(nn_modelfile_1)
+    print *, 'loading rayleigh model from ', nn_modelfile_2
+    call neural_nets(2) % load(nn_modelfile_2)
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
     if (use_rrtmgp_nn .or. save_rrtmgp_inout) print *, "Number of NN inputs: ", ninputs
   end if  
   ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90
 
-  print *, "Usage: nn_allsky_sw [block_size] [input file] [k-distribution_file] [cloud_optics file] [optional file to save NN inputs/outputs]"
-  nargs = command_argument_count()
-  if (nargs <  3) call stop_on_err("Need to supply at least block_size input_file k_distribution_file")
-
-  call get_command_argument(1, block_size_char)
-  read(block_size_char, '(i4)') block_size
-  if(nargs >= 2) call get_command_argument(2, input_file)
-  if(nargs >= 3) call get_command_argument(3, kdist_file)
-  if(nargs >= 4) call get_command_argument(4, cloud_optics_file)
-  if(nargs >= 5) then 
-    call get_command_argument(5, nndev_inout_file)
-    save_rrtmgp_inout   = .true.
-    save_rte_inout      = .true.
-    use_rrtmgp_nn       = .false.
-    !save_flux           = .false.
-    !compare_flux        = .false.
-  else 
-    save_rrtmgp_inout   = .false.
-    save_rte_inout      = .false.
-  end if 
 
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
