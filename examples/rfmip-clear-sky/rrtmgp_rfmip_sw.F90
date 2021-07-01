@@ -112,27 +112,25 @@ program rrtmgp_rfmip_sw
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file, inp_outp_file
+  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, do_scattering
   integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, iTime3, ret, i, istat
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
-    character (len = 80)                :: modelfile_tau, modelfile_ray
-  
+  character (len = 80)                :: modelfile_tau, modelfile_ray
+
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
   real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir
   real(wp), dimension(:,:,:),         allocatable :: rsu_ref, rsd_ref, rsu_nn, rsd_nn, rsu_lbl, rsd_lbl, rsdu_ref, rsdu_nn, rsdu_lbl, col_dry
-  real(wp), dimension(:,:,:,:),       allocatable :: tau_sw, tau_sw_ray
-  real(sp), dimension(:,:,:,:),       allocatable :: nn_input
   real(wp), dimension(:,:  ),         allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
   real(wp), dimension(:),             allocatable :: temparray
-  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux, save_rrtmgp_inout, save_rte_inout
+  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux
   !
   ! Classes used by rte+rrtmgp
   !
@@ -165,11 +163,6 @@ program rrtmgp_rfmip_sw
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
   use_rrtmgp_nn      = .true.
-  ! Save RRTMGP inputs and outputs for NN development
-  save_rrtmgp_inout  = .false.
-  ! Save RTE inputs and outputs for NN development
-  save_rte_inout = .false.
-
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -177,13 +170,11 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
-  if (save_rrtmgp_inout) use_rrtmgp_nn = .false.
-
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
 
-  if (use_rrtmgp_nn .or. save_rrtmgp_inout) then
+  if (use_rrtmgp_nn) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau
     call neural_nets(1) % load(modelfile_tau)
     print *, 'loading rayleigh model from ', modelfile_ray
@@ -201,13 +192,6 @@ program rrtmgp_rfmip_sw
   if(nargs >= 3) call get_command_argument(3, kdist_file)
   ! if(nargs >= 4) call get_command_argument(4, physics index_char)
   if(nargs >= 5) call get_command_argument(4, forcing_index_char)
-  if(nargs >= 6) then 
-    call get_command_argument(6, inp_outp_file)
-    save_rrtmgp_inout   = .true.
-    use_rrtmgp_nn       = .false.
-    save_flux           = .false.
-    compare_flux        = .false.
-  end if 
 
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
@@ -216,7 +200,7 @@ program rrtmgp_rfmip_sw
   print *, "ncol:", ncol
   print *, "nexp:", nexp
   print *, "nlay:", nlay
-  if (use_rrtmgp_nn .or. save_rrtmgp_inout) print *, "ninputs:", ninputs
+  if (use_rrtmgp_nn) print *, "ninputs:", ninputs
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
@@ -333,12 +317,6 @@ program rrtmgp_rfmip_sw
   !$acc enter data create (sfc_alb_spec, mu0) 
   !$acc enter data copyin(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
 
-  if (save_rrtmgp_inout) then
-    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
-    allocate(col_dry(            nlay, block_size, nblocks)) ! number of dry air molecules
-    allocate(tau_sw(    	ngpt, nlay, block_size, nblocks))
-    allocate(tau_sw_ray(    	ngpt, nlay, block_size, nblocks))
-  end if
 
 #ifdef USE_TIMING
   !
@@ -402,30 +380,12 @@ do i = 1, 4
                                         optical_props,      &
                                         toa_flux, neural_nets=neural_nets))
     else
-      if (save_rrtmgp_inout) then
-        call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
-                                          p_lev(:,:,b),       &
-                                          t_lay(:,:,b),       &
-                                          gas_conc_array(b),  &
-                                          optical_props,      &
-                                          toa_flux, &
-                                          nn_inputs_inout=nn_input(:,:,:,b), col_dry_inout=col_dry(:,:,b) &
-                                          ))
-        tau_sw(:,:,:,b)      = optical_props%tau
-        tau_sw_ray(:,:,:,b)  = (optical_props%ssa * optical_props%tau) 
-        ! print *, "mean of coldry is:", mean_2d(col_dry(:,:,b))
-        ! print *, "mean of tau is:", mean_3d(tau_sw(:,:,:,b))   
-        ! print *, "mean of tau_ray is:", mean_3d(tau_sw_ray(:,:,:,b))   
-        ! print *, "max-min of nn input is", maxval(nn_input(:,:,:,b)), minval(nn_input(:,:,:,b))
-                                 
-      else 
-        call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
-                                          p_lev(:,:,b),       &
-                                          t_lay(:,:,b),       &
-                                          gas_conc_array(b),  &
-                                          optical_props,      &
-                                          toa_flux))
-      end if
+      call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
+                                        p_lev(:,:,b),       &
+                                        t_lay(:,:,b),       &
+                                        gas_conc_array(b),  &
+                                        optical_props,      &
+                                        toa_flux))
     end if
     ! !$acc update host(optical_props%tau, optical_props%ssa, optical_props%g)
     ! print *, "mean tau", mean_3d(optical_props%tau)
@@ -545,21 +505,6 @@ do i = 1, 4
   ! mean of flux_up is:   41.835381782065106 
 
   ! --------------------------------------------------
-
-  ! Save inputs and outputs for neural network gas optics development?
-  if(nargs >= 6) then 
-    print *, "-----------------------------------------------------------------------------------------"
-    print *, "Attempting to save neural network inputs to ", inp_outp_file
-    ! This function also deallocates its input 
-    call unblock_and_write_3D_sp(trim(inp_outp_file), 'nn_input',nn_input)
-    call unblock_and_write(trim(inp_outp_file),      'col_dry', col_dry)
-    print *, "Inputs were saved to ", inp_outp_file
-
-    print *, "Attempting to save outputs to" , inp_outp_file
-    call unblock_and_write_3D(trim(inp_outp_file), 'tau_sw', tau_sw)
-    call unblock_and_write_3D(trim(inp_outp_file), 'tau_sw_ray', tau_sw_ray)
-    print *, "Outputs were saved to ", inp_outp_file
-  end if
 
   ! Save fluxes ?
   if (save_flux) then

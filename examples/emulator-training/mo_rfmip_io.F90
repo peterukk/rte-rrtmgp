@@ -351,6 +351,7 @@ contains
     select case (forcing_index)
     case (1)
       call read_kdist_gas_names(kdistFile, names_in_kdist)
+
       allocate(names_in_file(size(names_in_kdist)))
       do i = 1, size(names_in_kdist)
         names_in_file(i) = trim(lower_case(names_in_kdist(i)))
@@ -408,6 +409,18 @@ contains
                         'nitrogen      ', &
                         'cfc11         ', &
                         'cfc12         ']
+    case (5) ! ALL SHORTWAVE GASES
+      num_gases = 8
+      allocate(names_in_kdist(num_gases), names_in_file(num_gases))            
+      names_in_kdist = ["h2o  ","co2  ","ch4  ","o2   ","o3   ", "n2o  ", "n2   ","no2  "]
+      names_in_file =  ['water_vapor   ', &
+                        'carbon_dioxide', &
+                        'methane       ', &
+                        'oxygen        ', &
+                        'ozone         ', &
+                        'nitrous_oxide ', &
+                        'nitrogen      ', &
+                        'no2           ']                    
     case default
       call stop_on_err("determine_gas_names: unknown value of forcing_index")
     end select

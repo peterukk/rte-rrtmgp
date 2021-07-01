@@ -27,7 +27,8 @@ module mo_source_functions
     real(wp), allocatable, dimension(:,:,:) :: lev_source, lay_source
     real(wp), allocatable, dimension(:,:  ) :: sfc_source
     real(wp), allocatable, dimension(:,:  ) :: sfc_source_Jac ! surface source Jacobian 
-
+    ! Optional output used for generating training data for neural networks
+    real(wp), allocatable, dimension(:,:,:) :: planck_frac
 
   contains
     generic,   public :: alloc => alloc_lw, copy_and_alloc_lw
@@ -75,9 +76,10 @@ contains
                       allocated(this%sfc_source)
   end function is_allocated_lw
   ! --------------------------------------------------------------
-  function alloc_lw(this, ncol, nlay) result(err_message)
+  function alloc_lw(this, ncol, nlay, save_pfrac) result(err_message)
     class(ty_source_func_lw),    intent(inout) :: this
     integer,                     intent(in   ) :: ncol, nlay
+    logical,     optional,       intent(in   ) :: save_pfrac
     character(len = 128)                       :: err_message
 
     integer :: ngpt
@@ -89,6 +91,8 @@ contains
       err_message = "source_func_lw%alloc: must provide positive extents for ncol, nlay"
     if (err_message /= "") return
 
+    !$acc enter data create(this)
+
     if(allocated(this%sfc_source)) deallocate(this%sfc_source)
     if(allocated(this%sfc_source_Jac)) deallocate(this%sfc_source_Jac)
     if(allocated(this%lev_source)) deallocate(this%lev_source)
@@ -97,10 +101,16 @@ contains
     ngpt = this%get_ngpt()
     allocate(this%sfc_source(ngpt , ncol), this%lev_source(ngpt,nlay+1,ncol))
     allocate(this%sfc_source_Jac(ngpt, ncol), this%lay_source(ngpt,nlay,ncol))
-    
-    !$acc enter data create(this)
-    !$acc enter data create(this%sfc_source, this%sfc_source_Jac, this%lev_source, this%lay_source)
 
+    if(present(save_pfrac)) then
+      if(save_pfrac) then
+        if(allocated(this%planck_frac)) deallocate(this%planck_frac)
+        allocate(this%planck_frac(ngpt,nlay,ncol))
+        !$acc enter data create(this%planck_frac)
+      end if
+    end if
+    
+    !$acc enter data create(this%sfc_source, this%sfc_source_Jac, this%lev_source, this%lay_source)
   end function alloc_lw
   ! --------------------------------------------------------------
   function copy_and_alloc_lw(this, ncol, nlay, spectral_desc) result(err_message)
@@ -191,6 +201,11 @@ contains
     if(allocated(this%sfc_source_Jac    )) then
       !$acc exit data delete(this%sfc_source_Jac)
       deallocate(this%sfc_source_Jac)
+    end if 
+
+    if(allocated(this%planck_frac    )) then
+      !$acc exit data delete(this%planck_frac)
+      deallocate(this%planck_frac)
     end if 
     
     !$acc exit data delete(this)
