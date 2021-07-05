@@ -29,6 +29,7 @@ examples/all-sky/ref
 examples/all-sky/rrtmgp-allsky.nc
 
 examples/emulator-training/data_ml_input_output/
+examples/emulator-training/nn_allsky_sw
 
 *.pgprof
 *.gprof
