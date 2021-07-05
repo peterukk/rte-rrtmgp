@@ -30,11 +30,6 @@ module mo_rte_rrtmgp_config
   logical(wl), parameter, public :: use_Pade_source = .false.
 
   ! ------------------------ FOR RRTMGP-NN ------------------------ 
-  ! The NN models use ALL RRTMGP gases as input. In the shortwave, these are: h2o, o3, co2, n2o, ch4 
-  ! In the longwave: h2o, o3, co2, n2o, ch4, cfc11, cfc12, co, ccl4, cfc22, hfc143a, hfc125, hfc23, hfc32, hfc134a, cf4
-  ! Are all of these gases provided in the gas concentrations (ty_gas_concs)? 
-  ! If so, we can use a faster kernel for computing NN inputs
-  logical(wl), protected, public :: nn_all_gases_exist  = .false.
   !
   ! How to handle a required gas species if nn_all_gases_exist = .false. and a gas is missing?
   ! We can either use a concentration of zero, or a reference gas concentration. These reference values

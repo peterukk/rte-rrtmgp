@@ -87,6 +87,11 @@ program rrtmgp_rfmip_sw
   !
   use mo_gas_concentrations, only: ty_gas_concs
   !
+  ! Coefficients used to scale NN inputs
+  !
+  use mo_rrtmgp_nn_constants,only: nn_input_names, nn_input_maxvals, nn_input_minvals
+  !
+  !
   ! Cloud optics extension
   use mo_cloud_optics,       only: ty_cloud_optics
   !
@@ -143,13 +148,14 @@ program rrtmgp_rfmip_sw
                         kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc', &
                         cloud_optics_file='../..//extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
   character(len=132) :: flx_file, flx_file_ref, timing_file, nndev_inout_file=''
-  integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
+  character(len=180) :: nn_input_str
+  integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
   logical 		       :: top_at_1, do_scattering
-  integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, num_gases, ret, i, istat
-  character(len=4)   :: block_size_char, forcing_index_char = '1'
+  integer            :: b, icol, ilay, igpt, igas, ncid, ngas, ninputs, num_gases, ret, i, istat
+  character(len=4)   :: block_size_char
   character(len=6)   :: nn_emulated_code
   character(len=32 ), &
-            dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
+            dimension(:),             allocatable :: kdist_gas_names, input_file_gas_names, input_names
   ! Neural network variables  
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
   character (len = 80)                :: nn_modelfile_1, nn_modelfile_2
@@ -213,8 +219,8 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
-  print *, "Usage: nn_allsky_sw [block_size] [input file]                                         (2 args: reference code) "
-  print *, "OR   : nn_allsky_sw [block_size] [input file] [input/output file for NN development]  (3 args: ref, save input and output)"
+  print *, "Usage: nn_allsky_sw [block_size] [input file]                                         (2 args: use reference code) "
+  print *, "OR   : nn_allsky_sw [block_size] [input file] [input/output file for NN development]  (3 args: use ref. code, save input and output)"
   print *, "OR   : nn_allsky_sw [block_size] [input file] [emulated component] [NN model file(s)] (4-5 args, replace a component with NN)"
 
   nargs = command_argument_count()
@@ -222,7 +228,6 @@ program rrtmgp_rfmip_sw
   if (nargs == 3) then
     call get_command_argument(3, nndev_inout_file)
     save_all_input_output   = .true.
-    ninputs = 7
   end if
 
   call get_command_argument(1, block_size_char)
@@ -270,7 +275,7 @@ program rrtmgp_rfmip_sw
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
     print *, "Number of NN inputs: ", ninputs
   end if  
-  ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90
+  ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_rrtmgp_nn_constants.F90
 
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
@@ -290,15 +295,15 @@ program rrtmgp_rfmip_sw
     flx_file = 'output_fluxes/rsud_RTE-RRTMGP.nc'
   end if
   !
-  ! Identify the set of gases used in the calculation based on the forcing index
-  !   A gas might have a different name in the k-distribution than in the files
-  !   provided by RFMIP (e.g. 'co2' and 'carbon_dioxide')
+  ! Identify the set of gases used in the calculation 
+  ! A gas might have a different name in the k-distribution than in the files
+  ! provided (e.g. 'co2' and 'carbon_dioxide')
   !
   ! ALL SHORTWAVE GASES
   num_gases = 8
-  allocate(kdist_gas_names(num_gases), rfmip_gas_names(num_gases))            
+  allocate(kdist_gas_names(num_gases), input_file_gas_names(num_gases))            
   kdist_gas_names = ["h2o  ","co2  ","ch4  ","o2   ","o3   ", "n2o  ", "n2   ","no2  "]
-  rfmip_gas_names =  ['water_vapor   ', &
+  input_file_gas_names =  ['water_vapor   ', &
                     'carbon_dioxide', &
                     'methane       ', &
                     'oxygen        ', &
@@ -306,9 +311,14 @@ program rrtmgp_rfmip_sw
                     'nitrous_oxide ', &
                     'nitrogen      ', &
                     'no2           ']   
-  ! call determine_gas_names(input_file, kdist_file, 5, kdist_gas_names, rfmip_gas_names)
-  print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  ! print *, "Calculation uses K-DIST gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
+  ! call determine_gas_names(input_file, kdist_file, 5, kdist_gas_names, input_file_gas_names)
+  print *, "Calculation uses RFMIP gases: ", (trim(input_file_gas_names(b)) // " ", b = 1, size(input_file_gas_names))
+
+  ninputs = 2 ! NN inputs consist of temperature, pressure and..
+  do b = 1, num_gases
+    if (trim(kdist_gas_names(b))=='o2' .or. trim(kdist_gas_names(b))=='n2') cycle
+    ninputs = ninputs + 1 ! ..mixing ratios of all selected gases except N2 and O2 (constants)
+  end do
   ! --------------------------------------------------
   !
   ! Prepare data for use in rte+rrtmgp
@@ -325,7 +335,7 @@ program rrtmgp_rfmip_sw
   !
   ! Read the gas concentrations and surface properties
   !
-  call read_and_block_gases_ty(input_file, block_size, kdist_gas_names, rfmip_gas_names, gas_conc_array)
+  call read_and_block_gases_ty(input_file, block_size, kdist_gas_names, input_file_gas_names, gas_conc_array)
   ! do b = 1, size(gas_conc_array(1)%concs)
   !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
   ! end do
@@ -395,7 +405,8 @@ program rrtmgp_rfmip_sw
   ! Device allocation happens inside procedures
 
   if (save_all_input_output) then
-    allocate(nn_input( 	ninputs, nlay, block_size, nblocks)) ! temperature + pressure + gases
+    allocate(input_names(ninputs)) ! temperature + pressure + gases
+    allocate(nn_input(   ninputs, nlay, block_size, nblocks))
     ! number of dry air molecules
     allocate(col_dry(nlay, block_size, nblocks), vmr_h2o(nlay, block_size, nblocks)) 
     allocate(tau_sw(    	ngpt, nlay, block_size, nblocks))
@@ -491,17 +502,17 @@ program rrtmgp_rfmip_sw
     if (save_all_input_output) then
       tau_sw(:,:,:,b)      = atmos%tau
       tau_sw_ray(:,:,:,b)  = (atmos%ssa * atmos%tau)
-        ! Compute NN inputs: this is just a 3D array (ninputs,nlay,ncol),
+      ! Compute NN inputs: this is just a 3D array (ninputs,nlay,ncol),
       ! where the inner dimension vector consists of (tlay, play, vmr_h2o, vmr_o3, vmr_co2...)
       ! and all of these inputs have been scaled to 0...1 (play, H2O and O3 additionally power-scaled)
-      ! ninputs = 7 is for a shortwave NN model which uses all RRTMGP SW gases except NO2
-      ! we don't need and probably don't want to construct the input array within Fortran, and 
-      ! have the scaling coefficients hard-coded within compute_nn_inputs, but for now it is convenient
-      ! to make sure inputs correspond to outputs 
-      call stop_on_err(compute_nn_inputs(                  &
-                    block_size, nlay, ninputs,  &
-                    p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),     &
-                    nn_input(:,:,:,b)))
+      ! For convenience the NN inputs are computed here using a procedure 
+      ! This is not strictly speaking necessary, as T, p and gases are loaded from an existing
+      ! file, but it ensures that the outputs corresponds to inputs, and allows the user to specify which 
+      ! gases are used for generating training data
+      call stop_on_err(compute_nn_inputs_for_training(                  &
+                    block_size, nlay, ninputs,                        &
+                    p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),      &
+                    nn_input(:,:,:,b), input_names))
       ! column dry amount, needed to normalize outputs (could also be computed within Python)
       call stop_on_err(gas_conc_array(b)%get_vmr('h2o', vmr_h2o(:,:,b)))
       call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
@@ -604,6 +615,8 @@ program rrtmgp_rfmip_sw
 #ifdef USE_OPENACC  
   istat = cublasDestroy(h) 
 #endif
+  print *, "Finished with computations!"
+  print *, "-------------------------------------------------------------------------"
 
   ! Save inputs and outputs for neural network gas optics development?
   if(save_all_input_output) then 
@@ -619,10 +632,15 @@ program rrtmgp_rfmip_sw
     call nndev_inout_netcdf%define_dimension("feature", ninputs)
     call nndev_inout_netcdf%define_dimension("ngpt", ngpt)
 
-    call nndev_inout_netcdf%define_variable("nn_input", &
+    nn_input_str = 'Features:'
+    do b  = 1, size(input_names)
+      nn_input_str = trim(nn_input_str) // " " // trim(input_names(b)) 
+    end do
+
+    call nndev_inout_netcdf%define_variable("rrtmgp_nn_input", &
     &   dim4_name="expt", dim3_name="site", &
     &   dim2_name="layer", dim1_name="feature", &
-    &   long_name="RRTMGP-NN input", &
+    &   long_name ="RRTMGP-NN input", comment_str=nn_input_str, &
     &   data_type_name="float")
 
     call nndev_inout_netcdf%define_variable("tau_sw", &
@@ -644,7 +662,7 @@ program rrtmgp_rfmip_sw
     call nndev_inout_netcdf%end_define_mode()
 
     ! This function also deallocates its input 
-    call unblock_and_write(trim(nndev_inout_file), 'nn_input',nn_input)
+    call unblock_and_write(trim(nndev_inout_file), 'rrtmgp_nn_input',nn_input)
     ! print *," min max col dry", minval(col_dry), maxval(col_dry)
     call unblock_and_write(trim(nndev_inout_file), 'col_dry', col_dry)
     print *, "RRTMGP inputs were successfully saved"
@@ -725,7 +743,7 @@ program rrtmgp_rfmip_sw
     print *, "RTE outputs were successfully saved"
     call nndev_inout_netcdf%close()
 
-    print *, "-----------------------------------------------------------------------------------------"
+    print *, "-------------------------------------------------------------------------"
 
   end if
 
@@ -754,11 +772,115 @@ program rrtmgp_rfmip_sw
   end if 
 
   deallocate(flux_up, flux_dn)
-  print *, "SUCCESS!"
 
   contains
 
   ! -------------------------------------------------------------------------------------------------
+  ! Routine for preparing neural network inputs from the gas concentrations, temperature and pressure
+  ! This routine, used for generating training data, differs from the compute_nn_inputs in gas_optics_rrtmgp
+  ! because "operationally" the loaded NN model specifies which gases are used, and if a gas is missing
+  ! from available gases (gas_desc) it needs to be set to zero or a reference concentration is used.
+  ! Here we just use the available gases
+  function compute_nn_inputs_for_training(ncol, nlay, ninputs, &
+                              play, tlay, gas_desc,           &
+                              nn_inputs, input_names) result(error_msg)
+
+    integer,                                  intent(in   ) ::  ncol, nlay, ninputs
+    real(wp), dimension(nlay,ncol),           intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
+                                                                tlay
+    type(ty_gas_concs),                       intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
+    real(sp), dimension(ninputs, nlay, ncol),  intent(inout) ::  nn_inputs !
+    character(len=32 ), dimension(ninputs),    intent(inout) ::  input_names 
+    character(len=128)                                  :: error_msg
+    ! ----------------------------------------------------------
+    ! Local variables
+    integer :: igas, ilay, icol, ndims, idx_h2o, idx_o3, idx_gas, i
+    character(len=32)                           :: gas_name    
+    real(sp),       dimension(:), allocatable   :: xmin, xmax
+
+    !  Neural network inputs are a vector consisting of temperature and pressure followed by gas concentrations
+    ! These inputs are scaled to a range of (0-1), additionally some are power or log scaled: 
+    ! The inputs are:   tlay,    log(play),   h2o**(1/4), o3**(1/4), co2, ..
+    xmin = nn_input_minvals
+    xmax = nn_input_maxvals
+
+    ! First lets write temperature, pressure, water vapor and ozone into the inputs
+    ! These are assumed to always be present!
+    error_msg = gas_desc%get_conc_dims_and_igas('h2o', ndims, idx_h2o)
+    error_msg = gas_desc%get_conc_dims_and_igas('o3',  ndims, idx_o3)
+    if(error_msg  /= '') return
+
+    input_names(1) = 'tlay'
+    input_names(2) = 'log(play)'
+    input_names(3) = 'h2o**(1/4)'
+    input_names(4) = 'o3**(1/4)'
+
+    do icol = 1, ncol
+      do ilay = 1, nlay
+          nn_inputs(1,ilay,icol)    =  (tlay(ilay,icol)     - xmin(1)) / (xmax(1) - xmin(1))
+          nn_inputs(2,ilay,icol)    = (log(play(ilay,icol)) - xmin(2)) / (xmax(2) - xmin(2))
+          nn_inputs(3,ilay,icol)    = ( sqrt(sqrt(gas_desc%concs(idx_h2o)%conc(ilay,icol))) - xmin(3)) / (xmax(3) - xmin(3))
+          nn_inputs(4,ilay,icol)    = ( sqrt(sqrt(gas_desc%concs(idx_o3) %conc(ilay,icol))) - xmin(4)) / (xmax(4) - xmin(4))
+      end do
+    end do
+
+    ! Write the remaining gases
+    ! The scaling coefficients are tied to a string specifying the gas names, these are all loaded from rrtmgp_constants.F90
+    ! Lets find the indices which map the available gases to the scaling coefficients of each gas, 
+    ! and also the dimensions of the concentration array
+    i = 5
+    do igas = 1, size(gas_desc%gas_name)
+    
+      gas_name = gas_desc%gas_name(igas)
+      if(gas_name=='h2o' .or. gas_name=='o3' .or. gas_name=='o2' .or. gas_name=='n2') cycle
+
+      if(size(gas_desc%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
+        ndims = 2
+      else if(size(gas_desc%concs(igas)%conc, 1) > 1) then ! Concentration stored as 1D
+        ndims = 1
+      else                              ! Concentration stored as scalar
+        ndims = 0
+      end if
+      ! which index in nn_input_names
+      idx_gas = findloc(nn_input_names,trim(gas_name),dim=1)
+      if (idx_gas == 0) then
+        error_msg = 'compute_nn_inputs: trying to write ' // trim(gas_name) // ' but name not found in nn_input_names'
+        return
+      else
+        ! Write to nn_inputs
+        if (ndims == 0) then
+          !$acc parallel loop collapse(2) default(present)
+          do icol = 1, ncol
+            do ilay = 1, nlay
+                nn_inputs(i,ilay,icol)    =  (gas_desc%concs(igas)%conc(1,1)  - xmin(idx_gas)) / (xmax(idx_gas) - xmin(idx_gas))
+            end do
+          end do
+        else if (ndims == 1) then
+          !$acc parallel loop collapse(2) default(present)
+          do icol = 1, ncol
+            do ilay = 1, nlay
+                nn_inputs(i,ilay,icol)    =  (gas_desc%concs(igas)%conc(ilay,1)  - xmin(idx_gas)) / (xmax(idx_gas) - xmin(idx_gas))
+            end do
+          end do
+        else 
+          !$acc parallel loop collapse(2) default(present)
+          do icol = 1, ncol
+            do ilay = 1, nlay
+                nn_inputs(i,ilay,icol)    =  (gas_desc%concs(igas)%conc(ilay,icol)  - xmin(idx_gas)) / (xmax(idx_gas) - xmin(idx_gas))
+            end do
+          end do
+        end if 
+
+        input_names(i) = gas_name
+        i = i + 1
+      end if
+      ! print *, "gas ", gas_name, "dims ", ndims, "idx gas ", idx_gas
+
+    end do
+
+
+  end function compute_nn_inputs_for_training
+
   function rmse(x1,x2) result(res)
     implicit none 
     real(wp), dimension(:), intent(in) :: x1,x2
