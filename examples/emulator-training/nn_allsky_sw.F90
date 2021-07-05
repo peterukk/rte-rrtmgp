@@ -1,10 +1,10 @@
 ! This program is for generating training data for neural network emulators of RRTMGP and RTE,
 ! as well as demonstrating their use.
 ! Three general machine learning approaches are compared:
-!    1) emulation of gas optics=RRTMGP only (as in the paper by Ukkonen et al. 2020);
+!    1) emulation of gas optics=RRTMGP only (as done in Ukkonen et al. 2020, Menno et al. 2021),
 !       mapping atmospheric conditions to gas optical properties
-!    2) emulation of radiative solver=RTE; mapping optical properties to fluxes
-!    3) emulation of RTE+RRTMGP;. mapping atmospheric conditions to fluxes
+!    2) emulation of radiative solver=RTE, mapping optical properties to fluxes
+!    3) emulation of RTE+RRTMGP, mapping atmospheric conditions to fluxes (as done in several ML papers)
 ! 
 ! Since we are interested in the trade-off of accuracy and speedup of these methods for realistic use cases, 
 ! clouds will be included when generating training data for 2-3, and in the evaluation of 1-3.
@@ -144,16 +144,15 @@ program rrtmgp_rfmip_sw
   !
   ! Local variables
   !
-  character(len=132) :: input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
-                        kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc', &
-                        cloud_optics_file='../..//extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
-  character(len=132) :: flx_file, flx_file_ref, timing_file, nndev_inout_file=''
-  character(len=180) :: nn_input_str
-  integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
-  logical 		       :: top_at_1, do_scattering
-  integer            :: b, icol, ilay, igpt, igas, ncid, ngas, ninputs, num_gases, ret, i, istat
-  character(len=4)   :: block_size_char
-  character(len=6)   :: nn_emulated_code
+  character(len=132)  ::  input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
+                          kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc', &
+                          cloud_optics_file='../..//extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
+  character(len=132)  ::  flx_file, flx_file_ref, timing_file, nndev_inout_file='', nn_input_str
+  integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
+  logical             ::  top_at_1, do_scattering
+  integer             ::  b, icol, ilay, igpt, igas, ncid, ngas, ninputs, num_gases, ret, i, istat
+  character(len=4)    ::  block_size_char
+  character(len=6)    ::  emulated_component
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, input_file_gas_names, input_names
   ! Neural network variables  
@@ -236,19 +235,19 @@ program rrtmgp_rfmip_sw
   call get_command_argument(2, input_file)
 
   if(nargs > 3) then
-    call get_command_argument(3, nn_emulated_code) 
-    if (nn_emulated_code == 'rrtmgp') then
+    call get_command_argument(3, emulated_component) 
+    if (emulated_component == 'rrtmgp') then
       use_rrtmgp_nn      = .true.
       if (nargs < 5) call stop_on_err("Need to supply two model files to emulate RRTMGP (absorption and Rayleigh cross-section models, respectively")
-    else if (nn_emulated_code == 'both') then
+    else if (emulated_component == 'both') then
       use_rte_rrtmgp_nn  = .true.
-    else if (nn_emulated_code == 'rte') then
+    else if (emulated_component == 'rte') then
       use_rte_nn         = .true.
-    ! else if (nn_emulated_code == 'rte-gptvec') then
+    ! else if (emulated_component == 'rte-gptvec') then
     !   use_rte_nn         = .true.
-    else if (nn_emulated_code == 'rte-gptscal') then
+    else if (emulated_component == 'rte-gptscal') then
       use_rtegpt_nn         = .true.
-    else if (nn_emulated_code == 'rte-reftrans') then
+    else if (emulated_component == 'rte-reftrans') then
       use_reftrans_nn         = .true.
     else
       call stop_on_err("If nargs>3, third argument specifies which code to replace with NNs and must be one of the following: & 
@@ -258,10 +257,6 @@ program rrtmgp_rfmip_sw
 
   if(nargs >= 4) call get_command_argument(4, nn_modelfile_1)
   if(nargs >= 5) call get_command_argument(5, nn_modelfile_2)
-
-  ! if (len_trim(nndev_inout_file) > 0) then
-  !   save_all_input_output   = .true.
-  ! end if
 
   ! Neural network models
   ! nn_modelfile_1           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
@@ -395,14 +390,13 @@ program rrtmgp_rfmip_sw
 
   ! allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   allocate(mu0(block_size), sfc_alb_spec(ngpt,block_size))
-  !$acc enter data create (sfc_alb_spec, mu0) 
 
-  !$acc enter data copyin(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
+  !$acc enter data create (sfc_alb_spec, mu0) copyin(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle) 
 
   ! Allocate derived types - optical properties of both gaseous atmosphere and clouds
+  ! Device allocation happens inside procedures
   call stop_on_err(atmos%alloc_2str(block_size, nlay, k_dist))
   call stop_on_err(clouds%alloc_2str(block_size, nlay, k_dist))
-  ! Device allocation happens inside procedures
 
   if (save_all_input_output) then
     allocate(input_names(ninputs)) ! temperature + pressure + gases
@@ -412,7 +406,7 @@ program rrtmgp_rfmip_sw
     allocate(tau_sw(    	ngpt, nlay, block_size, nblocks))
     allocate(tau_sw_ray(  ngpt, nlay, block_size, nblocks))
   end if
-
+  ! Additional RTE input
   if (save_all_input_output) then
     allocate(toa_flux_save(k_dist%get_ngpt(), block_size, nblocks))
     allocate(mu0_save(block_size,nblocks), sfc_alb_spec_save(ngpt,block_size,nblocks))
@@ -458,6 +452,8 @@ program rrtmgp_rfmip_sw
     fluxes%flux_dn => flux_dn(:,:,b)
     fluxes%flux_dn_dir => flux_dn_dir(:,:,b)
     if (do_gpt_flux) then
+      ! If g-point fluxes are allocated, the RTE kernels write to 3D arrays, otherwise broadband
+      ! computation is inlined
       fluxes%gpt_flux_up => gpt_flux_up(:,:,:,b)
       fluxes%gpt_flux_dn => gpt_flux_dn(:,:,:,b)
       fluxes%gpt_flux_dn_dir => gpt_flux_dn_dir(:,:,:,b)
@@ -508,7 +504,7 @@ program rrtmgp_rfmip_sw
       ! For convenience the NN inputs are computed here using a procedure 
       ! This is not strictly speaking necessary, as T, p and gases are loaded from an existing
       ! file, but it ensures that the outputs corresponds to inputs, and allows the user to specify which 
-      ! gases are used for generating training data
+      ! gases are used for generating training data (kdist_gas_names)
       call stop_on_err(compute_nn_inputs_for_training(                  &
                     block_size, nlay, ninputs,                        &
                     p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),      &
@@ -524,6 +520,8 @@ program rrtmgp_rfmip_sw
     ret =  gptlstop('gas_optics_sw')
     ret =  gptlstart('clouds_deltascale_increment')
 #endif       
+    ! TO-DO: compute cloud optical properties from CAMS cloud description
+
     ! call stop_on_err(clouds%delta_scale())
     ! call stop_on_err(clouds%increment(atmos))
 
