@@ -1,6 +1,6 @@
 ! This program is for generating training data for neural network emulators of RRTMGP and RTE,
 ! as well as demonstrating their use.
-! Three general machine learning approaches are possible:
+! Three general machine learning approaches are compared:
 !    1) emulation of gas optics=RRTMGP only (as in the paper by Ukkonen et al. 2020);
 !       mapping atmospheric conditions to gas optical properties
 !    2) emulation of radiative solver=RTE; mapping optical properties to fluxes
@@ -16,20 +16,20 @@
 !  -- generate training data for 1), 2), or 3)
 !  -- evaluate 1), 2), or 3) by loading NNs and replacing the appropriate computations by NN predictions.
 ! 
-! The evaluation data comes from CAMS which has been extended into RFMIP-style "experiments" where gas
+! The data comes from CAMS which has been extended into RFMIP-style experiments where gas
 ! concentrations are varied. The large problem is divided into blocks
 !
 ! the software will support the following methods for radiation computations:
 !
-!                     emulate       cloud   NN output (shape)		        NN iterations   NN models
+!                     emulate       cloud   NN output (shape)           NN iterations   NN models
 !                                   optics                              
-! RTE + RRTMGP        none          orig.		-						                                0
-! (RTE+RRTMGP)-NN			both			    NN		  bb fluxes (3*1)			        nlay*ncol       1
-! RTE + RRTMGP-NN			rrtmgp	      orig.		opt. prop. gpt vector (ng) 	~2*nlay*ncol    2 (abs,scat)
-! RTE-NN1 + RRTMGP		rte			      orig.		bb fluxes (3*1)	            nlay*ncol       1
-!(RTE-NN2 + RRTMGP		rte-gptvec		orig.		gpt flux vectors (3*ng)	    nlay*ncol       1)
-! RTE-NN3 + RRTMGP		rte-gptscal		orig.	  gpt flux scalars (3*1)			nlay*ncol*ng	  1
-! RTE-NN4 + RRTMGP		rte-reftrans  orig.	  gpt REFTRANS scalars (4*1)	nlay*ncol*ng    1
+! RTE + RRTMGP        none          orig.                                               0
+! (RTE+RRTMGP)-NN     both          NN      bb fluxes (3*1)             nlay*ncol       1
+! RTE + RRTMGP-NN     rrtmgp        orig.   opt. prop. gpt vector (ng)  ~2*nlay*ncol    2 (abs,scat)
+! RTE-NN1 + RRTMGP    rte           orig.   bb fluxes (3*1)             nlay*ncol       1
+!(RTE-NN2 + RRTMGP    rte-gptvec    orig.   gpt flux vectors (3*ng)     nlay*ncol       1)
+! RTE-NN3 + RRTMGP    rte-gptscal   orig.   gpt flux scalars (3*1)      nlay*ncol*ng    1
+! RTE-NN4 + RRTMGP    rte-reftrans  orig.   gpt REFTRANS scalars (4*1)  nlay*ncol*ng    1
 ! 
 ! bb = broadband, gpt = g-point, ng = number of g-points (e.g. 224), 
 !
@@ -353,8 +353,7 @@ program rrtmgp_rfmip_sw
   if(top_at_1) then
     p_lev(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   else
-    p_lev(nlay+1,:,:) &
-                 = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+    p_lev(nlay+1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
 
   !
@@ -487,16 +486,25 @@ program rrtmgp_rfmip_sw
                                         atmos,      &
                                         toa_flux))
     end if
+
+    ! Save RRTMGP inputs and outputs for NN training?
     if (save_all_input_output) then
-        call stop_on_err(compute_nn_inputs(                  &
-                      block_size, nlay, ninputs,  &
-                      p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),     &
-                      nn_input(:,:,:,b)))
-        ! column dry amount
-        call stop_on_err(gas_conc_array(b)%get_vmr('h2o', vmr_h2o(:,:,b)))
-        call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
-        tau_sw(:,:,:,b)      = atmos%tau
-        tau_sw_ray(:,:,:,b)  = (atmos%ssa * atmos%tau)
+      tau_sw(:,:,:,b)      = atmos%tau
+      tau_sw_ray(:,:,:,b)  = (atmos%ssa * atmos%tau)
+        ! Compute NN inputs: this is just a 3D array (ninputs,nlay,ncol),
+      ! where the inner dimension vector consists of (tlay, play, vmr_h2o, vmr_o3, vmr_co2...)
+      ! and all of these inputs have been scaled to 0...1 (play, H2O and O3 additionally power-scaled)
+      ! ninputs = 7 is for a shortwave NN model which uses all RRTMGP SW gases except NO2
+      ! we don't need and probably don't want to construct the input array within Fortran, and 
+      ! have the scaling coefficients hard-coded within compute_nn_inputs, but for now it is convenient
+      ! to make sure inputs correspond to outputs 
+      call stop_on_err(compute_nn_inputs(                  &
+                    block_size, nlay, ninputs,  &
+                    p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),     &
+                    nn_input(:,:,:,b)))
+      ! column dry amount, needed to normalize outputs (could also be computed within Python)
+      call stop_on_err(gas_conc_array(b)%get_vmr('h2o', vmr_h2o(:,:,b)))
+      call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
     end if
 
     ! !$acc update host(atmos%tau, atmos%ssa, atmos%g)
@@ -505,8 +513,9 @@ program rrtmgp_rfmip_sw
     ret =  gptlstop('gas_optics_sw')
     ret =  gptlstart('clouds_deltascale_increment')
 #endif       
-      ! call stop_on_err(clouds%delta_scale())
-      ! call stop_on_err(clouds%increment(atmos))
+    ! call stop_on_err(clouds%delta_scale())
+    ! call stop_on_err(clouds%increment(atmos))
+
     ! !$acc update host(atmos%tau, atmos%ssa, atmos%g)
     ! print *, "mean tau after adding cloud optics", mean_3d(atmos%tau)
 #ifdef USE_TIMING
@@ -589,8 +598,7 @@ program rrtmgp_rfmip_sw
 #endif
 
   !$acc exit data delete(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
-  !$acc exit data delete(sfc_alb_spec, mu0)
-  !$acc exit data delete(toa_flux, def_tsi)
+  !$acc exit data delete(sfc_alb_spec, mu0, toa_flux, def_tsi)
   call atmos%finalize() ! Also deallocates arrays on device
 
 #ifdef USE_OPENACC  
@@ -630,8 +638,7 @@ program rrtmgp_rfmip_sw
     &   data_type_name="float")
 
     call nndev_inout_netcdf%define_variable("col_dry", &
-    &   dim3_name="expt", dim2_name="site", &
-    &   dim1_name="layer", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
     &   long_name="layer number of dry air molecules")
 
     call nndev_inout_netcdf%end_define_mode()
@@ -641,7 +648,7 @@ program rrtmgp_rfmip_sw
     ! print *," min max col dry", minval(col_dry), maxval(col_dry)
     call unblock_and_write(trim(nndev_inout_file), 'col_dry', col_dry)
     print *, "RRTMGP inputs were successfully saved"
-    print *, "shape tau_sw, ray", shape(tau_sw_ray)
+
     call unblock_and_write(trim(nndev_inout_file), 'tau_sw', tau_sw)
     call unblock_and_write(trim(nndev_inout_file), 'tau_sw_ray', tau_sw_ray)
     print *, "RRTMGP outputs were successfully saved"
@@ -752,19 +759,6 @@ program rrtmgp_rfmip_sw
   contains
 
   ! -------------------------------------------------------------------------------------------------
-  subroutine standardscaler(x,means,stdevs)
-    implicit none
-    real(wp), dimension(:,:,:,:), intent(inout) :: x 
-    real(wp), dimension(:),       intent(in   ) :: means,stdevs
-
-    integer :: i
-
-    do i=1,ngas
-      x(:,:,i,:) = x(:,:,i,:) - means(i) 
-      x(:,:,i,:) = x(:,:,i,:) / stdevs(i)
-    end do
-  end subroutine standardscaler
-
   function rmse(x1,x2) result(res)
     implicit none 
     real(wp), dimension(:), intent(in) :: x1,x2
@@ -793,7 +787,6 @@ program rrtmgp_rfmip_sw
     mean1 = sum(x1, dim=1)/size(x1, dim=1)
     mean2 = sum(x2, dim=1)/size(x2, dim=1)
     res = mean1 - mean2
-
   end function bias
 
   function mean(x1) result(mean1)
@@ -802,17 +795,7 @@ program rrtmgp_rfmip_sw
     real(wp) :: mean1
     
     mean1 = sum(x1, dim=1)/size(x1, dim=1)
-
   end function mean
-
-  function mean_3d(x3) result(mean3)
-    implicit none 
-    real(wp), dimension(:,:,:), intent(in) :: x3
-    real(wp) :: mean3
-    
-    mean3 = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3))
-
-  end function mean_3d
 
   function mean_2d(x2) result(mean2)
     implicit none 
@@ -820,8 +803,14 @@ program rrtmgp_rfmip_sw
     real(wp) :: mean2
     
     mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
-
   end function mean_2d
 
+  function mean_3d(x3) result(mean3)
+    implicit none 
+    real(wp), dimension(:,:,:), intent(in) :: x3
+    real(wp) :: mean3
+    
+    mean3 = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3))
+  end function mean_3d
 
 end program rrtmgp_rfmip_sw
