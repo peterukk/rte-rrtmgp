@@ -349,6 +349,8 @@ program rte_rrtmgp_clouds
       rei(ilay,icol) = merge(rei_val, 0._wp, iwp(ilay,icol) > 0._wp)
     end do
   end do
+  print *, "min max lwp", minval(lwp), maxval(lwp)
+  print *, "min max iwp", minval(iwp), maxval(iwp)
   !$acc exit data delete(cloud_mask)
   !!$omp target exit data map(release:cloud_mask)
   ! ----------------------------------------------------------------------------
@@ -421,12 +423,14 @@ program rte_rrtmgp_clouds
                                          gas_concs,    &
                                          atmos,        &
                                          toa_flux))
+      print *, "mean tau after gas optics", mean3(atmos%tau)                                        
 #ifdef USE_TIMING
     ret =  gptlstop('gas_optics_sw')
     ret =  gptlstart('clouds_deltascale_increment')
 #endif       
       call stop_on_err(clouds%delta_scale())
       call stop_on_err(clouds%increment(atmos))
+      print *, "mean tau after cloud optics contribution", mean3(atmos%tau)
 #ifdef USE_TIMING
     ret =  gptlstop('clouds_deltascale_increment')
     ret =  gptlstart('rte_sw')
@@ -495,6 +499,7 @@ end if
   !$acc enter data create(lwp, iwp, rel, rei)
   !!$omp target enter data map(alloc:lwp, iwp, rel, rei)
   contains
+
   function mean2(x) result(mean)
     real(wp), dimension(:,:), intent(in) :: x
     real(wp) :: mean
@@ -502,4 +507,13 @@ end if
     mean = sum(sum(x, dim=1),dim=1) / size(x)
   
   end function mean2
+
+  function mean3(x3) result(mean)
+    implicit none 
+    real(wp), dimension(:,:,:), intent(in) :: x3
+    real(wp) :: mean
+    
+    mean = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3))
+  end function mean3
+
 end program rte_rrtmgp_clouds

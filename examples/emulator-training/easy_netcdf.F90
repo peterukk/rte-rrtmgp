@@ -292,7 +292,7 @@ contains
     integer            :: istatus
 
     ! if (this%iverbose >= 3) then
-      write(nulout,'(a,a)') 'Closing NetCDF file ', trim(this%file_name)
+    !  write(nulout,'(a,a)') 'Closing NetCDF file ', trim(this%file_name)
     ! end if
 
     istatus = nf90_close(this%ncid)
@@ -1992,14 +1992,14 @@ contains
 
   !---------------------------------------------------------------------
   ! Put CF-compliant global attributes into the file
-  subroutine put_global_attributes(this, title_str, inst_str, source_str, &
+  subroutine put_global_attributes(this, title_str, inst_str, input_str, &
        &  comment_str, references_str, creator_name, creator_email_str, &
        &  contributor_name, project_str, conventions_str, prior_history_str)
     class(netcdf_file)                     :: this
 
     character(len=*), intent(in), optional :: title_str
     character(len=*), intent(in), optional :: inst_str
-    character(len=*), intent(in), optional :: source_str
+    character(len=*), intent(in), optional :: input_str
     character(len=*), intent(in), optional :: creator_name, creator_email_str
     character(len=*), intent(in), optional :: contributor_name, project_str
     character(len=*), intent(in), optional :: comment_str, conventions_str
@@ -2027,7 +2027,7 @@ contains
 
     if (present(title_str))   i=nf90_put_att(this%ncid, NF90_GLOBAL, "title", title_str)
     if (present(inst_str))    i=nf90_put_att(this%ncid, NF90_GLOBAL, "institution", inst_str)
-    if (present(source_str))  i=nf90_put_att(this%ncid, NF90_GLOBAL, "source", source_str)
+    if (present(input_str))  i=nf90_put_att(this%ncid, NF90_GLOBAL, "input_data", input_str)
     if (present(creator_name))i=nf90_put_att(this%ncid, NF90_GLOBAL, "creator_name", creator_name)
     if (present(creator_email_str))i=nf90_put_att(this%ncid, NF90_GLOBAL, "creator_email", creator_email_str)
     if (present(contributor_name))i=nf90_put_att(this%ncid, NF90_GLOBAL, "contributor_name", contributor_name)

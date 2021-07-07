@@ -101,7 +101,7 @@ VPATH = ../:$(RRTMGP_ROOT)/extensions/cloud_optics
 #
 # Ancillary codes
 #
-ADDITIONS = mo_simple_netcdf.o easy_netcdf.o mo_rfmip_io.o mo_cloud_optics.o mo_load_coefficients.o
+ADDITIONS = mo_simple_netcdf.o easy_netcdf.o mo_io_rfmipstyle_generic.o mo_load_coefficients.o mo_cloud_optics.o mo_load_cloud_coefficients.o
 
 all: nn_allsky_sw
 
@@ -111,11 +111,14 @@ nn_allsky_sw.o: nn_allsky_sw.F90 $(ADDITIONS)
 
 easy_netcdf.o: easy_netcdf.F90
 
-mo_rfmip_io.o: mo_rfmip_io.F90 mo_simple_netcdf.o easy_netcdf.o
+mo_io_rfmipstyle_generic.o: mo_io_rfmipstyle_generic.F90 mo_simple_netcdf.o easy_netcdf.o
 
 mo_cloud_optics.o: mo_cloud_optics.F90
 
 mo_load_coefficients.o: mo_load_coefficients.F90 mo_simple_netcdf.o
+
+mo_load_cloud_coefficients.o: mo_simple_netcdf.o mo_cloud_optics.o mo_load_cloud_coefficients.F90
+
 
 clean:
 	-rm nn_allsky_sw *.o *.mod *.optrpt
