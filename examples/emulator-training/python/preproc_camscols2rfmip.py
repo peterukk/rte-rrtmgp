@@ -9,20 +9,66 @@ Created on Thu Jul  4 10:43:11 2019
 import os
 from netCDF4 import Dataset
 import numpy as np
-import matplotlib.pyplot as plt
+rootdir       = os.getcwd() + '/../'
+# rootdir = '/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/examples/emulator-training/'
+os.chdir(rootdir+'python/')
+from hum import esat, mixr2rh
 
 def moving_average(x, w):
     return np.convolve(x, np.ones(w), 'valid') / w
 
+def gfsCloudFraction(p,qc,rh,T):
+ # Code I found for computing cloud fraction
+ # https://atmos.uw.edu/~cjones/nobackup/gfsCloudFraction.html
+ # GFSCLOUDFRACTION diagnoses cloud fraction as in GFS
+ # Inputs:
+ #    p:  pressure [in Pa]
+ #    qc: cloud condensate mixing ratio [kg/kg]
+ #    rh: relative humidity [unitless fraction]
+ #    T:  temperature [K]
+ # Output:
+ #   cloudFraction: cloud fraction [unitless fraction]
+ # Notes:
+ #    (1) This script depends on ../thermo/ function qs
+    
+    cloudWaterThreshold = 1e-6 * p *1e-5 # original has p in hPa
+    
+    isCloud = (qc>cloudWaterThreshold);
+    qsat = qsatGFS(p,T)
+    
+    tem1 = ((1-rh[isCloud]) * qsat[isCloud])**(0.49) #suggests rh \in [0,1]
+    tem1 = 100 / (np.minimum(np.maximum(tem1,1e-4),1)); # bounded by 100 <= tem1 <= 1e6;
+    
+    val = np.maximum(tem1*qc[isCloud], 0); # no need to apply threshold of val<50
+    
+    tem2 = rh[isCloud]**(1/4)
+    cloudFraction = np.zeros(np.shape(qc))
+    cloudFraction[isCloud] = np.maximum(tem2*(1-np.exp(-val)),0)
+    return cloudFraction
 
-# rootdir       = os.getcwd() + '/'
-rootdir = '/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/examples/emulator-training/python/'
+def qsatGFS(p,T):
+    # QSATGFS returns saturation humidity for give pressure (p) and
+    # temperature (T).
+   
+    # NOTE: this is saturation _humidity_, not _mixing ratio_:
+    #   using q = humidity and w = mixing ratio, q = w/(1+w)
+    
+    Rd = 2.8705e2 # gas constant of dry air [J/kg/K]
+    Rv = 4.6150e2 # gas constant water [J/kg/K]
+    
+    ep = Rd/Rv
+    esatt = esat(T)
+    #esat = esGFS(T);
+    
+    esatt = np.minimum(esatt,p)
+    qs = ep*esatt / (p+(ep-1)*esatt)
+    return qs 
 
-fpath_rfmip = rootdir+'inputs_RFMIP.nc'
 
-fpath_cams = rootdir+'CAMS_2011.nc'
-fpath_new = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle.nc'
-
+fpath_rfmip = rootdir+'data_input/multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc'
+fpath_cams  = rootdir+'data_input/CAMS_2011.nc'
+fpath_new   = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle.nc'
+print("Saving new file to {}".format(fpath_new))
 dat = Dataset(fpath_cams)
 dat_rfmip = Dataset(fpath_rfmip)
 
@@ -78,14 +124,6 @@ hybm = dat_new.createVariable("hybm","f4",("nhym"))
 hyam[:] = dat.variables['hyam'][:]
 hybm[:] = dat.variables['hybm'][:]
 
-# Copy attributes for coordinate variables
-for varname in ['lon','lat','time','lev','hyam','hybm']:
-    varin = dat.variables[varname]
-    outVar = dat_new.variables[varname]
-    print(varname)    
-    # Copy variable attributes
-    outVar.setncatts({k: varin.getncattr(k) for k in varin.ncattrs()})
-    
 
 varlist = []
 for v in dat.variables:
@@ -159,6 +197,56 @@ var_tempsfc[:] = temp_sfc
 var_sfc_emis = dat_new.createVariable("surface_emissivity","f4",("site")); 
 var_sfc_emis[:] = 0.5
 
+#surface albedo
+var_albedo = dat_new.createVariable("surface_albedo","f4",("site"));
+var_albedo[:] = vars_reshaped['fal'][:]
+
+# cloud variables
+var_ciwc = dat_new.createVariable("ciwc","f4",("site","layer")); 
+var_clwc = dat_new.createVariable("clwc","f4",("site","layer")); 
+var_ciwc[:] = vars_reshaped['ciwc'][:]
+var_clwc[:] = vars_reshaped['clwc'][:]
+
+# solar irradiance in Joule
+var_tisr = dat_new.createVariable("tisr","f4",("site"));
+var_tisr[:] = vars_reshaped['tisr'][:]
+
+# # solar zenith angle: random between 0-90
+# var_sza = dat_new.createVariable("sza_rnd","f4",("site"));
+# var_sza[:] =  np.random.random_sample(size=nsite)
+# var_sza.long_name = "TOA incident solar radiation random value 0-90"
+# var_sza.standard_name = "solar_zenith_angle"
+# var_sza.units = "degree"
+
+# COMPUTE CLOUD FRACTION
+# First compute relative hum
+q_lay = vars_reshaped['q'].data # mixing ratio
+rh_lay = mixr2rh(q_lay,p_lay,temp_lay)
+
+# cloud condensate mixing ratio: is this ice and water content combined?
+qc = vars_reshaped['ciwc'][:] + vars_reshaped['clwc'][:]
+cloudfrac =  gfsCloudFraction(p_lay,qc,rh_lay,temp_lay)
+cloudfrac[cloudfrac>1.0] = 1.0 # some were slightly above 1
+# mean cloud fraction in ifs ecrad_meridian  4.7168146965032728E-002
+# here its just 1.9e-002
+
+# As sanity check, estimate cloud mask for columns 
+# If cloud frac is > 0.05 at any level, the mask will be 1
+# cloudmask = np.zeros(nsite)
+# for i in range(nsite):
+#     cloudmask[i] = np.any(cloudfrac[i,:]>0.05)
+# cloudmask.mean()
+# Out[63]: 0.7027083333333334
+# Sounds about right
+    
+var_cloudfrac =  dat_new.createVariable("cloud_fraction","f4",("site","layer")); 
+var_cloudfrac[:] = cloudfrac
+var_cloudfrac.long_name = 'Cloud fraction'
+var_cloudfrac.units = '1'
+comment = 'computed using function gfsCloudFraction, see ' \
+  'https://atmos.uw.edu/~cjones/nobackup/gfsCloudFraction.html'
+var_cloudfrac.comment = comment
+
 
 #EXISTING GASES
 # (site,layer                            FROM mass mixing ratio to mole fraction
@@ -186,17 +274,27 @@ var_ch4 = dat_new.createVariable("methane","f4",("site","layer")); var_ch4[:] = 
 var_co2 = dat_new.createVariable("carbon_dioxide","f4",("site","layer")); var_co2[:] = co2
 var_co =  dat_new.createVariable("carbon_monoxide","f4",("site","layer")); var_co[:] = co
 var_no2 = dat_new.createVariable("nitrogen_dioxide","f4",("site","layer")); var_no2[:] = no2
-var_n2o = dat_new.createVariable("nitrous_oxide","f4",("site","layer")); var_no2[:] = no2
+var_n2o = dat_new.createVariable("nitrous_oxide","f4",("site","layer")); var_n2o[:] = n2o
 # Oxygen and nitrogen (constants)
 var_o2      = dat_new.createVariable("oxygen_GM","f4",("expt"))
 var_o2[:]   = dat_rfmip.variables['oxygen_GM'][0]
 var_n2      = dat_new.createVariable("nitrogen_GM","f4",("expt"))
 var_n2[:]   = dat_rfmip.variables['nitrogen_GM'][0]
 
-# Attributes for selected variables from RFMIP
+# ------------- WRITE ATTRIBUTES ------------
+# Attributes for some variables are copied from the original file
+for varname in ['lon','lat','time','lev','hyam','hybm','tisr','clwc','ciwc']:
+    varin = dat.variables[varname]
+    outVar = dat_new.variables[varname]
+    print(varname)    
+    # Copy variable attributes
+    outVar.setncatts({k: varin.getncattr(k) for k in varin.ncattrs()})
+
+
+# Attributes  for some variables are copied from RFMIP
 varnames_copy = ['water_vapor','ozone','pres_layer','pres_level','temp_layer',
                  'temp_level','surface_temperature','surface_emissivity',
-                 'oxygen_GM','nitrogen_GM']
+                 'oxygen_GM','nitrogen_GM', 'surface_albedo']
 
 for var in varnames_copy:
     ncvar = dat_rfmip.variables[var]
@@ -230,6 +328,13 @@ var_no2.units = 1e-06
 var_expt = dat_new.createVariable("expt_label","str",("expt"));
 var_expt[0] = "Present-day global CAMS profiles, no modification, RFMIP values for O2 N2"
 
+
+# Sanity check
+for v in dat_new.variables:
+    print(v); 
+    datt = dat_new.variables[v][:]
+    print("MIN ",np.min(datt),"   MAX ",np.max(datt))  
+    
 
 dat.close()
 dat_rfmip.close()

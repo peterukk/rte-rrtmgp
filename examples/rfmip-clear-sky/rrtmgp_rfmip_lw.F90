@@ -421,10 +421,6 @@ program rrtmgp_rfmip_lw
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
 #endif
-  ! allocate(temparray(   block_size*(nlay+1))) 
-  ! temparray = pack(fluxes%flux_dn(:,:),.true.)
-  ! print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)  !  mean of flux_down is:   103.2458
-  ! deallocate(temparray)
 
   end do ! blocks
 #ifdef USE_OPENMP
