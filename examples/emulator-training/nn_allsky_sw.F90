@@ -216,7 +216,7 @@ program rrtmgp_rfmip_sw
   !   all arguments are optional
   !
   !  ------------ I/O and settings -----------------
-  include_clouds = .true.
+  include_clouds = .false.
   ! Save fluxes
   save_flux    = .false.
   ! Compute fluxes per g-point?

@@ -30,6 +30,7 @@ examples/all-sky/rrtmgp-allsky.nc
 
 examples/emulator-training/data_ml_input_output/
 examples/emulator-training/nn_allsky_sw
+examples/emulator-training/scripts/CAMS_download_and_preprocess/tmp/*
 
 *.pgprof
 *.gprof
