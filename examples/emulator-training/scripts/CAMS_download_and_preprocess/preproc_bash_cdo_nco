@@ -1,0 +1,28 @@
+year=$1
+cdo mergetime tmp/CAMS_eac4_ml_${year}*.grb tmp/CAMS_eac4_ml_${year}.grb 
+cdo mergetime tmp/CAMS_eac4_sfc_${year}*.grb tmp/CAMS_eac4_sfc_${year}.grb 
+cdo mergetime tmp/CAMS_egg4_ml_${year}*.grb tmp/CAMS_egg4_ml_${year}.grb 
+cdo mergetime tmp/CAMS_egg4_sfc_${year}*.grb tmp/CAMS_egg4_sfc_${year}.grb 
+ 
+#cp tmp/*${year}0* /media/peter/Transcend2/data/CAMS/
+ 
+cdo -f nc copy tmp/CAMS_eac4_ml_${year}.grb   tmp/tmp_CAMS_eac4_ml_${year}.nc
+cdo -f nc copy tmp/tmp/CAMS_eac4_sfc_${year}.grb tmp/tmp_CAMS_eac4_sfc_${year}.nc 
+cdo -f nc copy tmp/CAMS_egg4_ml_${year}.grb   tmp/tmp_CAMS_egg4_ml_${year}.nc
+cdo -f nc copy tmp/CAMS_egg4_sfc_${year}.grb tmp/tmp_CAMS_egg4_sfc_${year}.nc 
+
+ncks -A tmp/tmp_CAMS_eac4_sfc_${year}.nc tmp/tmp_CAMS_eac4_ml_${year}.nc
+ncks -A -v ch4,co2 tmp/tmp_CAMS_egg4_ml_${year}.nc tmp/tmp_CAMS_eac4_ml_${year}.nc
+ncks -A -v \2t,fal,tisr tmp/tmp_CAMS_egg4_sfc_${year}.nc tmp/tmp_CAMS_eac4_ml_${year}.nc
+
+ncrename -v \2t,t2m tmp/tmp_CAMS_eac4_ml_${year}.nc
+ncks -d lon,0,,20 -d lat,0,,10 tmp/tmp_CAMS_eac4_ml_${year}.nc tmp/CAMS_${year}.nc
+
+cdo -pressure_fl tmp/CAMS_${year}.nc tmp/tmp.nc
+ncks -A -v pressure tmp/tmp.nc tmp/CAMS_${year}.nc
+
+ncatted -h -a history,global,d,, tmp/CAMS_${year}.nc
+ncatted -h -a history_of_appended_files,global,d,, tmp/CAMS_${year}.nc
+
+rm tmp/*${year}*.grb
+rm tmp/tmp*.nc
