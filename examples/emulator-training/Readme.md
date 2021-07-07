@@ -2,6 +2,12 @@
 
 Code for generating training data to replace RRTMGP and/or RTE - for research purposes
 
+This example shortwave program loads atmospheric profiles from a netCDF file, computes gas optical properties with RRTMGP, optionally computes cloud optical properties, and then computes fluxes with RTE. The input and output from both RTE and RRTMGP can be saved to file (IO-mode). Alternatively existing neural network models can be used to replace RRTMGP (non-IO-mode).
+
+The input data files need to have similar dimensions  ("experiment", "site"...) and variable names as the RFMIP data used in examples/rfmip-clear-sky. An RFMIP-style input file using CAMS data has been constructed and can be used for cloudy radiation computations: set include_clouds = .true. and call with `data_input/CAMS_2011_RFMIPstyle.nc`.
+
+------
+
 The use and compilation of RTE+RRTMGP-NN is similar to the original code, but a BLAS library is required. If you're not using ifort+MKL then [BLIS](https://github.com/flame/blis) is recommended
 
 1. Build the RTE+RRTMGP libraries in `../../build/`. This will require setting
@@ -24,6 +30,8 @@ Additionally save input output data for developing machinel learning emulators:
 OR use existing ML emulator e.g. neural network to accelerate RRTMGP kernel:
 
 ` ./nn_allsky_sw 18 data_input/inputs_RFMIP.nc rrtmgp ../../neural/data/BEST_tau-sw-abs ../../neural/data/BEST_tau-sw-ray`
+
+-----
 
 # original instructions for rfmip-rrtmgp
 This directory contains programs and support infrastructure for running
