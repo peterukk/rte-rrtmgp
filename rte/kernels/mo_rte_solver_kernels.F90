@@ -1273,14 +1273,20 @@ contains
     ! Ancillary variables
     real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term, Tnoscat
     real(wp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv, Rdir, Tdir
+    real(wp), pointer, contiguous, dimension(:) :: dir_flux_inc, dir_flux_trans
+
     ! ---------------------------------
     mu0_inv = 1._wp/mu0
 
     do j = 1, nlay
       if(top_at_1) then
         ilev      =  j
+        dir_flux_inc   => flux_dn_dir(:,ilev  )
+        dir_flux_trans => flux_dn_dir(:,ilev+1)
       else
         ilev      =  nlay-j+1
+        dir_flux_inc   => flux_dn_dir(:,ilev+1)
+        dir_flux_trans => flux_dn_dir(:,ilev  )
       end if
 
       !$OMP SIMD
@@ -1341,11 +1347,6 @@ contains
                 (   (1._wp - k_mu) * (alpha2(igpt) + k_gamma3) -  &
                    (1._wp + k_mu) * (alpha2(igpt) - k_gamma3) * exp_minus2ktau(igpt) - &
              2.0_wp * (k_gamma3 - alpha2(igpt) * k_mu)  * exp_minusktau (igpt) * Tnoscat(igpt)  )
-
-        ! temp(igpt) =  (1._sp + k_mu) * (alpha2(igpt) - k_gamma3) * exp_minus2ktau(igpt)
-        ! this term must be in dp
-        ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
-
         !
         ! Equation 15, multiplying top and bottom by exp(-k*tau),
         !   multiplying through by exp(-tau/mu0) to
@@ -1357,23 +1358,14 @@ contains
                      (1._wp - k_mu) * (alpha1(igpt) - k_gamma4) * exp_minus2ktau(igpt) * Tnoscat(igpt) - &
                      2.0_wp * (k_gamma4 + alpha1(igpt) * k_mu)  * exp_minusktau (igpt))
 
-        if (top_at_1) then
-          source_up  (igpt,ilev) =   Rdir    *  flux_dn_dir(igpt,ilev)
-          source_dn  (igpt,ilev) =   Tdir    *  flux_dn_dir(igpt,ilev)
-          flux_dn_dir(igpt,ilev+1) =   Tnoscat(igpt) * flux_dn_dir(igpt,ilev)
-        else 
-          source_up  (igpt,ilev) =     Rdir    *  flux_dn_dir(igpt,ilev+1)
-          source_dn  (igpt,ilev) =     Tdir    *  flux_dn_dir(igpt,ilev+1)
-          flux_dn_dir(igpt,ilev  )  =   Tnoscat(igpt) * flux_dn_dir(igpt,ilev)
-        end if
+        source_up  (igpt,ilev) =   Rdir    *   dir_flux_inc(igpt) 
+        source_dn  (igpt,ilev) =   Tdir    *   dir_flux_inc(igpt)
+        dir_flux_trans(igpt) =   Tnoscat(igpt) * dir_flux_inc(igpt)
       end do
     end do
 
-    if (top_at_1) then
-      source_sfc(:) = flux_dn_dir(:,nlay+1)*sfc_albedo(:)
-    else
-      source_sfc(:) = flux_dn_dir(:,1)*sfc_albedo(:)
-    end if
+    source_sfc(:) = dir_flux_trans(:)*sfc_albedo(:)
+
 
   end subroutine sw_two_stream_source
 
