@@ -148,7 +148,7 @@ program rrtmgp_rfmip_sw
   character(len=132)  ::  input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                           kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc', &
                           cloud_optics_file='../..//extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
-  character(len=132)  ::  flx_file, flx_file_ref, timing_file, nndev_inout_file='', nn_input_str, cmt
+  character(len=132)  ::  flx_file, timing_file, nndev_file='', nn_input_str, cmt
   integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
   logical             ::  top_at_1, do_scattering
   integer             ::  b, icol, ilay, igpt, igas, ngas, ninputs, num_gases, ret, i, istat
@@ -183,7 +183,7 @@ program rrtmgp_rfmip_sw
   !
   ! various logical to control program
   logical 		                        :: use_rrtmgp_nn=.false., use_rte_nn=.false., use_rtegpt_nn=.false., use_reftrans_nn = .false., use_rte_rrtmgp_nn =.false.
-  logical 		                        :: do_gpt_flux=.false., compare_flux=.false., save_flux=.false., save_all_input_output=.false., include_clouds = .false.
+  logical 		                        :: do_gpt_flux=.false., compare_flux=.false., save_all_input_output=.false., include_clouds = .false.
   !
   ! Derived types from the RTE and RRTMGP libraries
   !
@@ -203,7 +203,7 @@ program rrtmgp_rfmip_sw
   real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
   real(wp) :: def_tsi_s, factor, rel_val, rei_val
   ! ecRAD type netCDF IO
-  type(netcdf_file)                      :: nndev_inout_netcdf
+  type(netcdf_file)                      :: nndev_file_netcdf, flux_file_netcdf
 
   ! Initialize GPU kernel - important not to include this substantial overhead in timing
 #ifdef USE_OPENACC  
@@ -217,32 +217,32 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   include_clouds = .false.
-  ! Save fluxes
-  save_flux    = .false.
   ! Compute fluxes per g-point?
   do_gpt_flux = .true.
 
-  print *, "Usage: nn_allsky_sw [block_size] [input file]                                         (2 args: use reference code) "
-  print *, "OR   : nn_allsky_sw [block_size] [input file] [input/output file for NN development]  (3 args: use ref. code, save input and output)"
-  print *, "OR   : nn_allsky_sw [block_size] [input file] [emulated component] [NN model file(s)] (4-5 args, replace a component with NN)"
+  print *, "Usage: nn_allsky_sw [block_size] [input file] [k-distribution file]                                         (3 args: use reference code) "
+  print *, "OR   : nn_allsky_sw [block_size] [input file] [k-distribution file] [input/output file for NN development]  (4 args: use ref. code, save input and output)"
+  print *, "OR   : nn_allsky_sw [block_size] [input file] [k-distribution file] [emulated component] [NN model file(s)] (5-6 args, replace a component with NN)"
 
   nargs = command_argument_count()
-  if (nargs <  2) call stop_on_err("Need to supply at least block_size input_file")
-  if (nargs == 3) then
-    call get_command_argument(3, nndev_inout_file)
-    save_all_input_output   = .true.
-  end if
+  if (nargs <  3) call stop_on_err("Need to provide at least block_size input_file k-distribution file")
 
   call get_command_argument(1, block_size_char)
   read(block_size_char, '(i4)') block_size
 
   call get_command_argument(2, input_file)
+  call get_command_argument(3, kdist_file)
 
-  if(nargs > 3) then
-    call get_command_argument(3, emulated_component) 
+  if (nargs == 4) then
+    call get_command_argument(4, nndev_file)
+    save_all_input_output   = .true.
+  end if
+  
+  if(nargs > 4) then
+    call get_command_argument(4, emulated_component) 
     if (emulated_component == 'rrtmgp') then
       use_rrtmgp_nn      = .true.
-      if (nargs < 5) call stop_on_err("Need to supply two model files to emulate RRTMGP (absorption and Rayleigh cross-section models, respectively")
+      if (nargs < 6) call stop_on_err("Need to supply two model files to emulate RRTMGP (absorption and Rayleigh cross-section models, respectively")
     else if (emulated_component == 'both') then
       use_rte_rrtmgp_nn  = .true.
     else if (emulated_component == 'rte') then
@@ -254,13 +254,13 @@ program rrtmgp_rfmip_sw
     else if (emulated_component == 'rte-reftrans') then
       use_reftrans_nn         = .true.
     else
-      call stop_on_err("If nargs>3, third argument specifies which code to replace with NNs and must be one of the following: & 
+      call stop_on_err("If nargs>4, third argument specifies which code to replace with NNs and must be one of the following: & 
       &'both', 'rrtmgp', 'rte',' 'rte-gptvec', 'rte-gptscal', 'rte-reftrans'")
     end if
   end if
 
-  if(nargs >= 4) call get_command_argument(4, nn_modelfile_1)
-  if(nargs >= 5) call get_command_argument(5, nn_modelfile_2)
+  if(nargs >= 5) call get_command_argument(5, nn_modelfile_1)
+  if(nargs >= 6) call get_command_argument(6, nn_modelfile_2)
 
   ! Neural network models
   ! nn_modelfile_1           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
@@ -289,11 +289,6 @@ program rrtmgp_rfmip_sw
   nblocks = (ncol*nexp)/block_size
   print *, "Doing ",  nblocks, "blocks of size ", block_size
 
-  if (use_rrtmgp_nn) then
-    flx_file = 'output_fluxes/rsud_RTE-RRTMGP-NN.nc'
-  else
-    flx_file = 'output_fluxes/rsud_RTE-RRTMGP.nc'
-  end if
   !
   ! Identify the set of gases used in the calculation 
   ! A gas might have a different name in the k-distribution than in the files
@@ -452,7 +447,7 @@ program rrtmgp_rfmip_sw
   !
   if (do_gpt_flux) then
     allocate(gpt_flux_up(ngpt, nlay+1, block_size, nblocks), &
-    gpt_flux_dn(ngpt, nlay+1, block_size, nblocks))
+             gpt_flux_dn(ngpt, nlay+1, block_size, nblocks))
     allocate(gpt_flux_dn_dir(ngpt, nlay+1, block_size, nblocks))
   end if
 
@@ -699,9 +694,9 @@ program rrtmgp_rfmip_sw
 
   ! Save inputs and outputs for neural network gas optics development?
   if(save_all_input_output) then 
-    print *, "Attempting to save full RTE and RRTMGP input/output to ", nndev_inout_file
+    print *, "Attempting to save full RTE and RRTMGP input/output to ", nndev_file
     ! Create file
-    call nndev_inout_netcdf%create(trim(nndev_inout_file))
+    call nndev_file_netcdf%create(trim(nndev_file))
 
     ! Put global attributes
     if (include_clouds) then 
@@ -709,146 +704,146 @@ program rrtmgp_rfmip_sw
     else
       cmt = "Clear-sky computation which only includes gases"
     end if
-    call nndev_inout_netcdf%put_global_attributes( &
+    call nndev_file_netcdf%put_global_attributes( &
          &   title_str="Input - output from computations with RTE+RRTMGP, can be used as training data for machine learning", &
          &   input_str=input_file, comment_str = trim(cmt))
 
     ! Define dimensions
-    call nndev_inout_netcdf%define_dimension("expt", nexp)
-    call nndev_inout_netcdf%define_dimension("site", ncol)
-    call nndev_inout_netcdf%define_dimension("layer", nlay)
-    call nndev_inout_netcdf%define_dimension("level", nlay+1)
-    call nndev_inout_netcdf%define_dimension("feature", ninputs)
-    call nndev_inout_netcdf%define_dimension("gpt", ngpt)
-    call nndev_inout_netcdf%define_dimension("bnd", nbnd)
+    call nndev_file_netcdf%define_dimension("expt", nexp)
+    call nndev_file_netcdf%define_dimension("site", ncol)
+    call nndev_file_netcdf%define_dimension("layer", nlay)
+    call nndev_file_netcdf%define_dimension("level", nlay+1)
+    call nndev_file_netcdf%define_dimension("feature", ninputs)
+    call nndev_file_netcdf%define_dimension("gpt", ngpt)
+    call nndev_file_netcdf%define_dimension("bnd", nbnd)
 
     nn_input_str = 'Features:'
     do b  = 1, size(input_names)
       nn_input_str = trim(nn_input_str) // " " // trim(input_names(b)) 
     end do
 
-    call nndev_inout_netcdf%define_variable("rrtmgp_nn_input", &
+    call nndev_file_netcdf%define_variable("rrtmgp_nn_input", &
     &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
     &   long_name ="RRTMGP-NN input", comment_str=nn_input_str, &
     &   data_type_name="float")
 
-    call nndev_inout_netcdf%define_variable("tau_sw", &
+    call nndev_file_netcdf%define_variable("tau_sw", &
     &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
     &   long_name="shortwave absorption optical depth", data_type_name="float")
 
-    call nndev_inout_netcdf%define_variable("ssa_sw", &
+    call nndev_file_netcdf%define_variable("ssa_sw", &
     &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
     &   long_name="shortwave single scattering albedo", data_type_name="float")
 
-    call nndev_inout_netcdf%define_variable("col_dry", &
+    call nndev_file_netcdf%define_variable("col_dry", &
     &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
     &   long_name="layer number of dry air molecules")
 
     if(include_clouds) then
-      call nndev_inout_netcdf%define_variable("tau_sw_cloud", &
+      call nndev_file_netcdf%define_variable("tau_sw_cloud", &
       &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="bnd", &
       &   long_name="shortwave cloud absorption optical depth", data_type_name="float")
 
-      call nndev_inout_netcdf%define_variable("ssa_sw_cloud", &
+      call nndev_file_netcdf%define_variable("ssa_sw_cloud", &
       &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="bnd", &
       &   long_name="shortwave cloud single scattering albedo", data_type_name="float")
   
-      call nndev_inout_netcdf%define_variable("g_sw_cloud", &
+      call nndev_file_netcdf%define_variable("g_sw_cloud", &
       &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="bnd", &
       &   long_name="shortwave cloud asymmetry parameter", data_type_name="float")
     end if
 
-    call nndev_inout_netcdf%end_define_mode()
+    call nndev_file_netcdf%end_define_mode()
 
     ! This function also deallocates its input 
-    call unblock_and_write(trim(nndev_inout_file), 'rrtmgp_nn_input',nn_input)
+    call unblock_and_write(trim(nndev_file), 'rrtmgp_nn_input',nn_input)
     ! print *," min max col dry", minval(col_dry), maxval(col_dry)
-    call unblock_and_write(trim(nndev_inout_file), 'col_dry', col_dry)
+    call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
     print *, "RRTMGP inputs were successfully saved"
 
-    call unblock_and_write(trim(nndev_inout_file), 'tau_sw', tau_sw)
-    call unblock_and_write(trim(nndev_inout_file), 'ssa_sw', ssa_sw)
+    call unblock_and_write(trim(nndev_file), 'tau_sw', tau_sw)
+    call unblock_and_write(trim(nndev_file), 'ssa_sw', ssa_sw)
     print *, "RRTMGP outputs were successfully saved"
 
     if(include_clouds) then
-      call unblock_and_write(trim(nndev_inout_file), 'tau_sw_cloud', tau_sw_cloud)
-      call unblock_and_write(trim(nndev_inout_file), 'ssa_sw_cloud', ssa_sw_cloud)
-      call unblock_and_write(trim(nndev_inout_file), 'g_sw_cloud',   g_sw_cloud)
+      call unblock_and_write(trim(nndev_file), 'tau_sw_cloud', tau_sw_cloud)
+      call unblock_and_write(trim(nndev_file), 'ssa_sw_cloud', ssa_sw_cloud)
+      call unblock_and_write(trim(nndev_file), 'g_sw_cloud',   g_sw_cloud)
       print *, "Cloud optics outputs were successfully saved"
     end if
 
-    call nndev_inout_netcdf%close()
+    call nndev_file_netcdf%close()
 
-    call nndev_inout_netcdf%open(trim(nndev_inout_file), redefine_existing=.true.)
+    call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.)
 
-    call nndev_inout_netcdf%define_variable("rsu", &
+    call nndev_file_netcdf%define_variable("rsu", &
     &   dim3_name="expt", dim2_name="site", dim1_name="level", &
     &   long_name="upwelling shortwave flux")
 
-    call nndev_inout_netcdf%define_variable("rsd", &
+    call nndev_file_netcdf%define_variable("rsd", &
     &   dim3_name="expt", dim2_name="site", dim1_name="level", &
     &   long_name="downwelling shortwave flux")
 
-    call nndev_inout_netcdf%define_variable("rsd_dir", &
+    call nndev_file_netcdf%define_variable("rsd_dir", &
     &   dim3_name="expt", dim2_name="site", dim1_name="level", &
     &   long_name="direct downwelling shortwave flux")
 
-    call nndev_inout_netcdf%define_variable("toa_flux", &
+    call nndev_file_netcdf%define_variable("toa_flux", &
     &   dim3_name="expt", dim2_name="site", dim1_name="gpt", &
     &   long_name="top-of-atmosphere incoming flux")
 
-    call nndev_inout_netcdf%define_variable("sfc_alb", &
+    call nndev_file_netcdf%define_variable("sfc_alb", &
     &   dim3_name="expt", dim2_name="site", dim1_name="gpt", &
     &   long_name="surface albedo")
 
-    call nndev_inout_netcdf%define_variable("mu0", &
+    call nndev_file_netcdf%define_variable("mu0", &
     &   dim2_name="expt", dim1_name="site", &
     &   long_name="cosine of solar zenith angle")
 
-    call nndev_inout_netcdf%end_define_mode()
+    call nndev_file_netcdf%end_define_mode()
 
-    call unblock_and_write(trim(nndev_inout_file), 'rsu', flux_up)
-    call unblock_and_write(trim(nndev_inout_file), 'rsd', flux_dn)
-    call unblock_and_write(trim(nndev_inout_file), 'rsd_dir', flux_dn_dir)
+    call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
+    call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)
+    call unblock_and_write(trim(nndev_file), 'rsd_dir', flux_dn_dir)
 
-    call unblock_and_write(trim(nndev_inout_file), 'toa_flux', toa_flux_save)
-    call unblock_and_write(trim(nndev_inout_file), 'sfc_alb', sfc_alb_spec_save)
-    call unblock_and_write(trim(nndev_inout_file), 'mu0', mu0_save)
+    call unblock_and_write(trim(nndev_file), 'toa_flux', toa_flux_save)
+    call unblock_and_write(trim(nndev_file), 'sfc_alb', sfc_alb_spec_save)
+    call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
 
     if (do_gpt_flux) then
 
-      call nndev_inout_netcdf%close()
-      call nndev_inout_netcdf%open(trim(nndev_inout_file), redefine_existing=.true.)
+      call nndev_file_netcdf%close()
+      call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.)
 
-      call nndev_inout_netcdf%define_variable("rsu_gpt", &
+      call nndev_file_netcdf%define_variable("rsu_gpt", &
       &   dim4_name="expt", dim3_name="site", &
       &   dim2_name="level", dim1_name="gpt", &
       &   long_name="upwelling shortwave flux by g-point", &
       &   data_type_name="float")
 
-      call nndev_inout_netcdf%define_variable("rsd_gpt", &
+      call nndev_file_netcdf%define_variable("rsd_gpt", &
       &   dim4_name="expt", dim3_name="site", &
       &   dim2_name="level", dim1_name="gpt", &
       &   long_name="downwelling shortwave flux by g-point", &
       &   data_type_name="float")
 
-      call nndev_inout_netcdf%define_variable("rsd_dir_gpt", &
+      call nndev_file_netcdf%define_variable("rsd_dir_gpt", &
       &   dim4_name="expt", dim3_name="site", &
       &   dim2_name="level", dim1_name="gpt", &
       &   long_name="direct downwelling shortwave flux by g-point", &
       &   data_type_name="float")
 
-      call nndev_inout_netcdf%end_define_mode()
+      call nndev_file_netcdf%end_define_mode()
 
-      call unblock_and_write(trim(nndev_inout_file), 'rsu_gpt', gpt_flux_up)
-      call unblock_and_write(trim(nndev_inout_file), 'rsd_gpt', gpt_flux_dn)
-      call unblock_and_write(trim(nndev_inout_file), 'rsd_dir_gpt', gpt_flux_dn_dir)
+      call unblock_and_write(trim(nndev_file), 'rsu_gpt', gpt_flux_up)
+      call unblock_and_write(trim(nndev_file), 'rsd_gpt', gpt_flux_dn)
+      call unblock_and_write(trim(nndev_file), 'rsd_dir_gpt', gpt_flux_dn_dir)
 
     end if 
 
     print *, "RTE outputs were successfully saved"
 
-    call nndev_inout_netcdf%close()
+    call nndev_file_netcdf%close()
 
     print *, "-------------------------------------------------------------------------"
 
@@ -870,13 +865,35 @@ program rrtmgp_rfmip_sw
   print *, "mean of flux_up is:", mean_3d(flux_up)    ! mean of flux_up is:   41.835381782065106 
   !  if(do_gpt_flux) print *, "mean of gpt_flux_up for gpt=1 is:", mean_3d(gpt_flux_up(1,:,:,:))
 
-  ! Save fluxes ?
-  if (save_flux) then
-    print *, "Attempting to save fluxes to ", flx_file
-    call unblock_and_write(trim(flx_file), 'rsu', flux_up)
-    call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
-    print *, "Fluxes saved to ", flx_file
-  end if 
+
+  ! Save fluxes? This is separated from writing all inputs and outputs, because we might want to 
+  ! evaluate the fluxes predicted with neural networks
+  ! if (save_flux) then
+  flx_file = 'output_fluxes/rsud_RTE-RRTMGP.nc'
+    ! Create file
+  call flux_file_netcdf%create(trim(flx_file))
+
+  ! Define dimensions
+  call flux_file_netcdf%define_dimension("expt", nexp)
+  call flux_file_netcdf%define_dimension("site", ncol)
+  call flux_file_netcdf%define_dimension("level", nlay+1)
+
+  call flux_file_netcdf%define_variable("plev", &
+    dim3_name="expt", dim2_name="site", dim1_name="level", &
+    units_str="Pa", standard_name="air_pressure", long_name="Pressure at layer edge")
+
+  call flux_file_netcdf%define_variable("rsu", &
+    dim3_name="expt", dim2_name="site", dim1_name="level", long_name="upwelling shortwave flux")
+    
+  call flux_file_netcdf%define_variable("rsd", &
+    dim3_name="expt", dim2_name="site", dim1_name="level", long_name="downwelling shortwave flux")
+
+  call flux_file_netcdf%end_define_mode()
+  call unblock_and_write(trim(flx_file), 'plev', p_lev)
+  call unblock_and_write(trim(flx_file), 'rsu', flux_up)
+  call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
+  call flux_file_netcdf%close()
+  print *, "Broadband fluxes saved to ", flx_file
 
   deallocate(flux_up, flux_dn)
 

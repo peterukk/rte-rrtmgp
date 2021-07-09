@@ -246,7 +246,7 @@ var_cloudfrac.comment = comment
 
 #EXISTING GASES
 # (site,layer                            FROM mass mixing ratio to mole fraction
-ch4 = vars_reshaped['ch4'].data       * 28.9644 / 16.0425   * 1/float(dat_rfmip.variables['methane_GM'].units)
+ch4 = vars_reshaped['ch4'].data         * 28.9644 / 16.0425   * 1/float(dat_rfmip.variables['methane_GM'].units)
 o3  = vars_reshaped['go3'].data         * 28.9644 / 47.9982   * 1/float(dat_rfmip.variables['ozone'].units)
 co2 = vars_reshaped['co2'].data         * 28.9644 / 44.0095    * 1/float(dat_rfmip.variables['carbon_dioxide_GM'].units)
 co  = vars_reshaped['co'].data          * 28.9644 / 28.0101   * 1/float(dat_rfmip.variables['carbon_monoxide_GM'].units)

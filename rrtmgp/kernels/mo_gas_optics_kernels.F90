@@ -671,8 +671,7 @@ contains
         do ibnd = 1, nbnd
           gptS = band_lims_gpt(1, ibnd)
           gptE = band_lims_gpt(2, ibnd)
-          !DIR$ SIMD
-          !DIR$ VECTOR ALIGNED 
+          !$OMP SIMD
           do igpt = gptS, gptE
             lev_source(igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lev(ibnd)
             pfrac     (igpt, ilay, icol) = pfrac(igpt,ilay,icol) * planck_function_lay(ibnd)

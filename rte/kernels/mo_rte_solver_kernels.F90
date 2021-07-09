@@ -512,7 +512,7 @@ contains
                                  tau, ssa, g, mu0,           &
                                  sfc_alb_dir, sfc_alb_dif,   &
                                  flux_up, flux_dn, flux_dir, &
-                                 save_gpt_flux, flux_up_gpt, flux_dn_gpt, flux_dir_gpt ) bind(C, name="sw_solver_2stream")
+                                 flux_up_gpt, flux_dn_gpt, flux_dir_gpt ) bind(C, name="sw_solver_2stream")
     integer,                                intent(in   ) :: ngpt_in, nlay_in, ncol ! Number of columns, layers, g-points
     logical(wl),                            intent(in   ) :: top_at_1
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: inc_flux, inc_flux_dif     ! incident flux at top of domain [W/m2] (ngpt, ncol)
@@ -523,9 +523,8 @@ contains
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: sfc_alb_dir, sfc_alb_dif
                                                                     ! Spectral albedo of surface to direct and diffuse radiation
     real(wp), dimension(nlay+1,ncol),       intent(out) :: flux_up, flux_dn, flux_dir ! Broadband fluxes  [W/m2]
-    logical(wl),                            intent(in ) :: save_gpt_flux              ! Save g-point fluxes?
-    real(wp), dimension(:, :, :),   contiguous, target,    &                          !  G-point fluxes (ngpt,nlay+1,ncol) 
-                                            intent(out) :: flux_up_gpt, flux_dn_gpt, flux_dir_gpt  !  only defined if save_gpt_flux is true
+    real(wp), dimension(ngpt, nlay+1, ncol), optional,target,    &  ! G-point fluxes - optional output
+                                            intent(out) :: flux_up_gpt, flux_dn_gpt, flux_dir_gpt 
     ! -------------------------------------------
     real(wp), dimension(:,:), contiguous, pointer   ::  radn_up, radn_dn, radn_dir             ! G-point fluxes [W/m2], local array
     real(wp), dimension(ngpt,nlay+1),     target    ::  radn_up_arr, radn_dn_arr, radn_dir_arr ! G-point fluxes [W/m2], pointer
@@ -533,10 +532,12 @@ contains
     real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
     real(wp), dimension(ngpt,nlay) :: source_up, source_dn
     real(wp), dimension(ngpt     ) :: source_srf
-
+    logical(wl) :: save_gpt_flux = .false.
     ! ------------------------------------
 
     top_level = MERGE(1, nlay+1, top_at_1)
+
+    if (present(flux_up_gpt)) save_gpt_flux = .true.
 
     if (.not.(save_gpt_flux)) then ! fluxes by g-point not needed, use local 2D arrays instead
       radn_up => radn_up_arr
@@ -559,30 +560,35 @@ contains
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
       !
+! #ifdef USE_TIMING
+!     ret =  gptlstart('sw_two_stream')
+! #endif
+!       call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+!                          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+!                          Rdif, Tdif, Rdir, Tdir, Tnoscat)     
+! #ifdef USE_TIMING
+!     ret =  gptlstop('sw_two_stream')
+! #endif    
+!       !
+!       ! Direct-beam and source for diffuse radiation
+!       !
+! #ifdef USE_TIMING
+!     ret =  gptlstart('sw_source_2str')
+! #endif
+!       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
+!                           source_up, source_dn, source_srf, radn_dir)
+! #ifdef USE_TIMING
+!     ret =  gptlstop('sw_source_2str')
+! #endif
 #ifdef USE_TIMING
-    ret =  gptlstart('sw_two_stream')
-#endif
-      call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-                         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-                         Rdif, Tdif, Rdir, Tdir, Tnoscat)     
-      ! call sw_two_stream_source(ngpt, nlay, mu0(icol),                                &
-      ! tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), sfc_alb_dir(:,icol), &
-      ! Rdif, Tdif, source_up, source_dn, radn_dir, source_srf)      
-      
+    ret =  gptlstart('sw_two_stream_source')
+#endif 
+      call sw_two_stream_source(ngpt, nlay, top_at_1, mu0(icol),                                &
+      tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), sfc_alb_dir(:,icol), &
+      Rdif, Tdif, source_up, source_dn, radn_dir, source_srf)     
 #ifdef USE_TIMING
-    ret =  gptlstop('sw_two_stream')
-#endif    
-      !
-      ! Direct-beam and source for diffuse radiation
-      !
-#ifdef USE_TIMING
-    ret =  gptlstart('sw_source_2str')
-#endif
-      call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
-                          source_up, source_dn, source_srf, radn_dir)
-#ifdef USE_TIMING
-    ret =  gptlstop('sw_source_2str')
-#endif
+    ret =  gptlstop('sw_two_stream_source')
+#endif 
       !
       ! Transport
       !
@@ -1063,6 +1069,7 @@ contains
     ret =  gptlstop('tnoscat')
 #endif
     do j = 1, nlay
+      !$OMP SIMD
       do i = 1, ngpt
         ! Zdunkowski Practical Improved Flux Method "PIFM"
         !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
@@ -1082,6 +1089,7 @@ contains
       !
       ! Diffuse reflection and transmission
       !
+      !$OMP SIMD
       do i = 1, ngpt
         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
 
@@ -1102,6 +1110,7 @@ contains
       !
       ! Direct reflect and transmission
       !
+      !$OMP SIMD
       do i = 1, ngpt
         k_mu     = k(i) * mu0
         k_mu2    = k_mu*k_mu
@@ -1152,18 +1161,112 @@ contains
 
   end subroutine sw_two_stream
 
-  pure subroutine sw_two_stream_source(ngpt_in, nlay_in, mu0, tau, w0, g, sfc_albedo, &
+    ! pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
+  !                               Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
+  !   integer,                        intent(in)  :: ngpt_in, nlay_in
+  !   real(wp),                       intent(in)  :: mu0
+  !   real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
+  !   real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+  !   ! -----------------------
+  !   integer  :: i, j
+
+  !   ! Variables used in Meador and Weaver
+  !   real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+  !   ! Ancillary variables
+  !   real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+  !   real(wp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
+  !   ! ---------------------------------
+  !   mu0_inv = 1._wp/mu0
+
+  !   do j = 1, nlay
+  !     do i = 1, ngpt
+  !       ! Zdunkowski Practical Improved Flux Method "PIFM"
+  !       !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
+  !       !
+  !       gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
+  !       gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
+  !       gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
+  !       gamma4(i)=  1._wp - gamma3(i)
+
+  !       alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
+  !       alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
+
+  !       k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_min))
+
+  !     end do
+  !     exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
+  !     !
+  !     ! Diffuse reflection and transmission
+  !     !
+  !     do i = 1, ngpt
+  !       exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
+
+  !       ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
+  !       RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
+
+  !       ! Equation 25
+  !       Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
+
+  !       ! Equation 26
+  !       Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
+  !     end do
+
+  !     !
+  !     ! Transmittance of direct, unscattered beam. Also used below
+  !     !
+  !     Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
+  !     !
+  !     ! Direct reflect and transmission
+  !     !
+  !     do i = 1, ngpt
+  !       k_mu     = k(i) * mu0
+  !       k_mu2    = k_mu*k_mu
+  !       k_gamma3 = k(i) * gamma3(i)
+  !       k_gamma4 = k(i) * gamma4(i)
+  !       !
+  !       ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
+  !       !   and rearranging to avoid div by 0.         
+  !       RT_term(i) =  w0(i,j) *  &
+  !       RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
+  !       !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
+
+  !       Rdir(i,j) = RT_term(i)  *                              &
+  !               (   (1._wp - k_mu) * (alpha2(i) + k_gamma3) -  &
+  !                  (1._wp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
+  !            2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
+
+  !       ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
+  !       ! this term must be in wp
+  !       ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
+
+  !       !
+  !       ! Equation 15, multiplying top and bottom by exp(-k*tau),
+  !       !   multiplying through by exp(-tau/mu0) to
+  !       !   prefer underflow to overflow
+  !       ! Omitting direct transmittance
+  !       !
+  !       Tdir(i,j) = -RT_term(i) *                                                                 &
+  !                   ((1._wp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+  !                    (1._wp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+  !                    2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+  !     end do
+  !   end do
+
+  ! end subroutine sw_two_stream
+
+  pure subroutine sw_two_stream_source(ngpt_in, nlay_in, top_at_1, mu0, tau, w0, g, sfc_albedo, &
                                 Rdif, Tdif, source_up, source_dn, flux_dn_dir, source_sfc)
     integer,                        intent(in)  :: ngpt_in, nlay_in
+    logical(wl),                    intent(in)  :: top_at_1
     real(wp),                       intent(in)  :: mu0
     real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
     real(wp), dimension(ngpt),      intent(in)  :: sfc_albedo
     real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif,  source_up, source_dn
-    real(wp), dimension(ngpt,nlay+1), intent(inout) :: flux_dn_dir
+    real(wp), dimension(ngpt,nlay+1), target, intent(inout) :: flux_dn_dir
     real(wp), dimension(ngpt),      intent(out) :: source_sfc
 
     ! -----------------------
-    integer  :: igpt, ilev
+    integer  :: igpt, ilev, j
 
     ! Variables used in Meador and Weaver
     real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
@@ -1173,7 +1276,14 @@ contains
     ! ---------------------------------
     mu0_inv = 1._wp/mu0
 
-    do ilev = 1, nlay
+    do j = 1, nlay
+      if(top_at_1) then
+        ilev      =  j
+      else
+        ilev      =  nlay-j+1
+      end if
+
+      !$OMP SIMD
       do igpt = 1, ngpt
         ! Zdunkowski Practical Improved Flux Method "PIFM"
         !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
@@ -1193,6 +1303,7 @@ contains
       !
       ! Diffuse reflection and transmission
       !
+      !$OMP SIMD
       do igpt = 1, ngpt
         exp_minus2ktau(igpt)  = exp_minusktau(igpt) * exp_minusktau(igpt)
 
@@ -1213,6 +1324,7 @@ contains
       !
       ! Direct reflect and transmission
       !
+      !$OMP SIMD
       do igpt = 1, ngpt
         k_mu     = k(igpt) * mu0
         k_mu2    = k_mu*k_mu
@@ -1245,108 +1357,25 @@ contains
                      (1._wp - k_mu) * (alpha1(igpt) - k_gamma4) * exp_minus2ktau(igpt) * Tnoscat(igpt) - &
                      2.0_wp * (k_gamma4 + alpha1(igpt) * k_mu)  * exp_minusktau (igpt))
 
-        source_up  (igpt,ilev) =   Rdir    * flux_dn_dir(igpt,ilev)
-        source_dn  (igpt,ilev) =   Tdir    * flux_dn_dir(igpt,ilev)
-        flux_dn_dir(igpt,ilev+1) = Tnoscat(igpt) * flux_dn_dir(igpt,ilev)
+        if (top_at_1) then
+          source_up  (igpt,ilev) =   Rdir    *  flux_dn_dir(igpt,ilev)
+          source_dn  (igpt,ilev) =   Tdir    *  flux_dn_dir(igpt,ilev)
+          flux_dn_dir(igpt,ilev+1) =   Tnoscat(igpt) * flux_dn_dir(igpt,ilev)
+        else 
+          source_up  (igpt,ilev) =     Rdir    *  flux_dn_dir(igpt,ilev+1)
+          source_dn  (igpt,ilev) =     Tdir    *  flux_dn_dir(igpt,ilev+1)
+          flux_dn_dir(igpt,ilev  )  =   Tnoscat(igpt) * flux_dn_dir(igpt,ilev)
+        end if
       end do
     end do
-    source_sfc(:) = flux_dn_dir(:,nlay+1)*sfc_albedo(:)
 
+    if (top_at_1) then
+      source_sfc(:) = flux_dn_dir(:,nlay+1)*sfc_albedo(:)
+    else
+      source_sfc(:) = flux_dn_dir(:,1)*sfc_albedo(:)
+    end if
 
   end subroutine sw_two_stream_source
-
-  ! pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
-  !                               Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
-  !   integer,                        intent(in)  :: ngpt_in, nlay_in
-  !   real(wp),                       intent(in)  :: mu0
-  !   real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
-  !   real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
-  !   ! -----------------------
-  !   integer  :: i, j
-
-  !   ! Variables used in Meador and Weaver
-  !   real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
-  !   ! Ancillary variables
-  !   real(dp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
-  !   real(dp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
-  !   ! ---------------------------------
-  !   mu0_inv = 1._wp/mu0
-
-  !   do j = 1, nlay
-  !     do i = 1, ngpt
-  !       ! Zdunkowski Practical Improved Flux Method "PIFM"
-  !       !  (Zdunkowski et al., 1980;  Contributions to Atmodpheric Physics 53, 147-66)
-  !       !
-  !       gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
-  !       gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
-  !       gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
-  !       gamma4(i)=  1._dp - gamma3(i)
-
-  !       alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
-  !       alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
-
-  !       k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-12_wp))
-
-  !     end do
-  !     exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
-  !     !
-  !     ! Diffuse reflection and transmission
-  !     !
-  !     do i = 1, ngpt
-  !       exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
-
-  !       ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-  !       RT_term(i) = 1._dp / (k(i) * (1._dp + exp_minus2ktau(i)) + gamma1(i) * (1._dp - exp_minus2ktau(i)) )
-
-  !       ! Equation 25
-  !       Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
-
-  !       ! Equation 26
-  !       Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
-  !     end do
-
-  !     !
-  !     ! Transmittance of direct, unscattered beam. Also used below
-  !     !
-  !     Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
-  !     !
-  !     ! Direct reflect and transmission
-  !     !
-  !     do i = 1, ngpt
-  !       k_mu     = k(i) * mu0
-  !       k_mu2    = k_mu*k_mu
-  !       k_gamma3 = k(i) * gamma3(i)
-  !       k_gamma4 = k(i) * gamma4(i)
-  !       !
-  !       ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
-  !       !   and rearranging to avoid div by 0.         
-  !       RT_term(i) =  w0(i,j) *  &
-  !       RT_term(i) / merge(1._dp - k_mu2, epsilon(1._dp), abs(1._dp - k_mu2) >= epsilon(1._dp))
-  !       !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
-
-  !       Rdir(i,j) = RT_term(i)  *                              &
-  !               (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
-  !                  (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-  !            2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
-
-  !       ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
-  !       ! this term must be in dp
-  !       ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
-
-  !       !
-  !       ! Equation 15, multiplying top and bottom by exp(-k*tau),
-  !       !   multiplying through by exp(-tau/mu0) to
-  !       !   prefer underflow to overflow
-  !       ! Omitting direct transmittance
-  !       !
-  !       Tdir(i,j) = -RT_term(i) *                                                                 &
-  !                   ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-  !                    (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-  !                    2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
-  !     end do
-  !   end do
-
-  ! end subroutine sw_two_stream
 
   ! ---------------------------------------------------------------
   !

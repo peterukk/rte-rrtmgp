@@ -78,7 +78,7 @@ contains
     !
     integer :: ncol, nlay, ngpt, nband
     integer :: icol, igpt, ret
-    logical :: do_gpt_flux
+    logical :: do_gpt_flux = .false.
     ! integer, dimension(2,optical_props%get_nband())   :: band_limits
     real(wp), dimension(:,:,:), allocatable, target :: gpt_flux_up, gpt_flux_dn, gpt_flux_dir
     ! Surface albedos expanded to g-points (now done outside RTE)
@@ -159,30 +159,27 @@ contains
     ! Optionally - output spectral fluxes, not only broadband fluxes?
     ! 
     !
-    do_gpt_flux = .false.
-    if(fluxes%are_desired_gpt()) do_gpt_flux = .true. 
+    do_gpt_flux = fluxes%are_desired_gpt()
 
-    ! Now allocate spectral fluxes if they are needed but not already allocated for flux derived type:
-    ! When using no-scattering computations or GPU acceleration they are always allocated, regardless if user wants them
-
-    select type (optical_props)
-      class is (ty_optical_props_1scl)
-        do_gpt_flux = .true.
-    end select
-    ! GPU acceleration
+    if (.not. do_gpt_flux) then  ! If not desired (and already allocated), g-point flux arrays will still be needed if..
+      select type (optical_props)
+        class is (ty_optical_props_1scl) ! .. doing no-scattering computations
+          allocate(gpt_flux_dir(ngpt, nlay+1, ncol))
+          !$acc enter data create(gpt_flux_dir)
+          fluxes%gpt_flux_dn_dir => gpt_flux_dir(:,:,:)
+           !$acc enter data attach(fluxes%gpt_flux_dn_dir)
+        class is (ty_optical_props_2str)
+          ! ...or doing two-stream scattering calculations using GPU kernels
 #ifdef USE_OPENACC
-    do_gpt_flux = .true.
-#endif
-
-    if (do_gpt_flux) then
-      if (.not. fluxes%are_desired_gpt()) then
+          do_gpt_flux = .true.
           allocate(gpt_flux_up (ngpt, nlay+1, ncol), gpt_flux_dn(ngpt, nlay+1, ncol), gpt_flux_dir(ngpt, nlay+1, ncol))
           !$acc enter data create(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
           fluxes%gpt_flux_up => gpt_flux_up(:,:,:)
           fluxes%gpt_flux_dn => gpt_flux_dn(:,:,:)
           fluxes%gpt_flux_dn_dir => gpt_flux_dir(:,:,:)
-        end if
-      !$acc enter data attach(fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir)
+          !$acc enter data attach(fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir)
+#endif
+      end select
     end if
 
     ! ------------------------------------------------------------------------------------
@@ -198,11 +195,10 @@ contains
 
     ! Boundary conditions - for computations with scattering these are passed to the kernel
     ! 
-    ! If inc_flux_dif is not provided, it is zero
     if(present(inc_flux_dif)) then
       !$acc enter data copyin(inc_flux_dif)
       inc_diff_flux => inc_flux_dif
-    else
+    else 
       allocate(inc_flux_zero(ngpt, ncol))
       !$acc enter data create(inc_flux_zero)
       !$acc parallel loop collapse(2) present(inc_flux_zero)
@@ -223,7 +219,7 @@ contains
       select type (optical_props)
         class is (ty_optical_props_1scl)
           !
-          ! Direct beam only
+          ! Direct beam only - no diffuse flux
           !
           !$acc enter data copyin(inc_flux)
           call apply_BC(ngpt, nlay, ncol, logical(top_at_1, wl),  inc_flux, mu0, gpt_flux_dir)
@@ -231,22 +227,25 @@ contains
           call sw_solver_noscat(ngpt, nlay, ncol, logical(top_at_1, wl), &
                                 optical_props%tau, mu0,                          &
                                 fluxes%flux_dn_dir, fluxes%gpt_flux_dn_dir)
-          !
-          ! No diffuse flux
-          !
-          fluxes%gpt_flux_up = 0._wp
-          fluxes%gpt_flux_dn = 0._wp
 
         class is (ty_optical_props_2str)
           !
           ! two-stream calculation with scattering
           !
-          call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
-                                inc_flux, inc_diff_flux,                 &
-                                optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
-                                sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                                fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, &
-                                logical(do_gpt_flux, wl), fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir)
+          if (do_gpt_flux) then
+            call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
+                                  inc_flux, inc_diff_flux,                 &
+                                  optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
+                                  sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
+                                  fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, &
+                                  fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir)
+          else
+            call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
+                                  inc_flux, inc_diff_flux,                 &
+                                  optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
+                                  sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
+                                  fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir)
+          end if
 
         class is (ty_optical_props_nstr)
           !
@@ -263,12 +262,9 @@ contains
 
     !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
 
-    ! if (do_gpt_flux) then
-    !   deallocate(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
-    ! end if
-
     if(.not. present(inc_flux_dif)) then
       !$acc exit data delete(inc_flux_zero)
+      deallocate(inc_flux_zero)
     end if
 
     ! !$acc exit data delete(sfc_alb_dir_gpt, sfc_alb_dif_gpt, band_limits)
