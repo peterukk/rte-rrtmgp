@@ -280,8 +280,7 @@ contains
 
       !$acc parallel loop gang default(present)
       do j = 1, nbatch
-        !DIR$ SIMD
-        !DIR$ VECTOR ALIGNED
+        !$OMP SIMD
         !$acc loop vector
         do i = 1, ngpt
           ! Compute outputs and scale them to obtain molecular absorption 
@@ -455,8 +454,7 @@ contains
 
 !       !$acc parallel loop gang default(present)
 !       do j = 1, nbatch
-!         !DIR$ SIMD
-!         !DIR$ VECTOR ALIGNED
+!         !$OMP SIMD
 !         !$acc loop vector
 !         do i = 1, ngpt
 !           ! Compute outputs and scale them to obtain molecular absorption 
@@ -621,8 +619,7 @@ contains
 
   !     !$acc parallel loop gang vector collapse(2) default(present)
   !     do j = 1, nbatch
-  !       !DIR$ SIMD
-  !       !DIR$ VECTOR ALIGNED
+  !       !$OMP SIMD
   !       do i = 1, ny
   !         ! Compute outputs and scale them to obtain molecular absorption 
   !         ! output(i, j) = (ysigma*(output(i, j) + b(i)) + ymeans_lw_tau(i))**8

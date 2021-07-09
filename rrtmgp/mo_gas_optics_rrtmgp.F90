@@ -716,7 +716,7 @@ contains
           if (nn_scenario_index==0) then
             print *, 'Scenario_index in rte_rrtmgp_config was set to 0 -> using a concentration of zero'
           else
-            print '("Scenario index was set to ", I0, " (", A, ") -> using a reference concentration of ", E10.4)', &
+            print '("Scenario index was set to ", I0, " (", A, ") -> using a reference concentration of ", E10.3)', &
                   nn_scenario_index, trim(scenario_names(nn_scenario_index)), ref_vmr
           end if
         end if 
