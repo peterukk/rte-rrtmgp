@@ -34,7 +34,7 @@
 ! optprop = optical properties, bb = broadband, gpt = g-point, ng = number of g-points (e.g. 224)
 !
 ! Fortran program arguments (k_distribution file and cloud_optics file are fixed):
-! nn_allsky_sw [block_size] [input file] [emulate] [NN model files] [optional file to save NN inputs/outputs]"
+! ml_allsky_sw [block_size] [input file] [emulate] [NN model files] [optional file to save NN inputs/outputs]"
 !
 ! Developed by Peter Ukkonen
 !
@@ -220,9 +220,9 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux = .true.
 
-  print *, "Usage: nn_allsky_sw [block_size] [input file] [k-distribution file]                                         (3 args: use reference code) "
-  print *, "OR   : nn_allsky_sw [block_size] [input file] [k-distribution file] [input/output file for NN development]  (4 args: use ref. code, save input and output)"
-  print *, "OR   : nn_allsky_sw [block_size] [input file] [k-distribution file] [emulated component] [NN model file(s)] (5-6 args, replace a component with NN)"
+  print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file]                                         (3 args: use reference code) "
+  print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [input/output file for NN development]  (4 args: use ref. code, save input and output)"
+  print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [emulated component] [NN model file(s)] (5-6 args, replace a component with NN)"
 
   nargs = command_argument_count()
   if (nargs <  3) call stop_on_err("Need to provide at least block_size input_file k-distribution file")
@@ -869,33 +869,36 @@ program rrtmgp_rfmip_sw
   ! Save fluxes? This is separated from writing all inputs and outputs, because we might want to 
   ! evaluate the fluxes predicted with neural networks
   ! if (save_flux) then
-  flx_file = 'output_fluxes/rsud_RTE-RRTMGP.nc'
-    ! Create file
-  call flux_file_netcdf%create(trim(flx_file))
+  if (.not. save_all_input_output) then
+    flx_file = 'fluxes/rsud_RTE-RRTMGP.nc'
+      ! Create file
+    call flux_file_netcdf%create(trim(flx_file))
 
-  ! Define dimensions
-  call flux_file_netcdf%define_dimension("expt", nexp)
-  call flux_file_netcdf%define_dimension("site", ncol)
-  call flux_file_netcdf%define_dimension("level", nlay+1)
+    ! Define dimensions
+    call flux_file_netcdf%define_dimension("expt", nexp)
+    call flux_file_netcdf%define_dimension("site", ncol)
+    call flux_file_netcdf%define_dimension("level", nlay+1)
 
-  call flux_file_netcdf%define_variable("plev", &
-    dim3_name="expt", dim2_name="site", dim1_name="level", &
-    units_str="Pa", standard_name="air_pressure", long_name="Pressure at layer edge")
+    call flux_file_netcdf%define_variable("plev", &
+      dim3_name="expt", dim2_name="site", dim1_name="level", &
+      units_str="Pa", standard_name="air_pressure", long_name="Pressure at layer edge")
 
-  call flux_file_netcdf%define_variable("rsu", &
-    dim3_name="expt", dim2_name="site", dim1_name="level", long_name="upwelling shortwave flux")
+    call flux_file_netcdf%define_variable("rsu", &
+      dim3_name="expt", dim2_name="site", dim1_name="level", long_name="upwelling shortwave flux")
+      
+    call flux_file_netcdf%define_variable("rsd", &
+      dim3_name="expt", dim2_name="site", dim1_name="level", long_name="downwelling shortwave flux")
+
+    call flux_file_netcdf%end_define_mode()
+    call unblock_and_write(trim(flx_file), 'plev', p_lev)
+    call unblock_and_write(trim(flx_file), 'rsu', flux_up)
+    call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
+    call flux_file_netcdf%close()
+    print *, "Broadband fluxes saved to ", flx_file
     
-  call flux_file_netcdf%define_variable("rsd", &
-    dim3_name="expt", dim2_name="site", dim1_name="level", long_name="downwelling shortwave flux")
+    deallocate(flux_up, flux_dn)
 
-  call flux_file_netcdf%end_define_mode()
-  call unblock_and_write(trim(flx_file), 'plev', p_lev)
-  call unblock_and_write(trim(flx_file), 'rsu', flux_up)
-  call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
-  call flux_file_netcdf%close()
-  print *, "Broadband fluxes saved to ", flx_file
-
-  deallocate(flux_up, flux_dn)
+  end if 
 
   contains
 
