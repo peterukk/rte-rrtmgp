@@ -35,7 +35,7 @@ module mo_io_rfmipstyle_generic
   implicit none
 
   interface unblock_and_write
-    module procedure unblock_and_write_2D, unblock_and_write_3D, unblock_and_write_4D!, unblock_and_write_4D_sp
+    module procedure unblock_and_write_2D, unblock_and_write_3D, unblock_and_write_4D, unblock_and_write_4D_sp
   end interface
 
   private
@@ -763,12 +763,12 @@ contains
 
   subroutine unblock_and_write_4D(fileName, varName, values)
     character(len=*),           intent(in   ) :: fileName, varName
-    real, dimension(:,:,:,:),  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
+    real(wp), dimension(:,:,:,:),  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
                                 intent(in   ) :: values
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks, nfirst, ibnd
-    real, dimension(:,:,:), allocatable :: temp3D
+    real(wp), dimension(:,:,:), allocatable :: temp3D
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
     nfirst      = size(values,1)
@@ -796,42 +796,40 @@ contains
     deallocate(temp3D)
   end subroutine unblock_and_write_4D
 
-  ! subroutine unblock_and_write_4D_sp(fileName, varName, values)
-  !   character(len=*),           intent(in   ) :: fileName, varName
-  !   real(sp), dimension(:,:,:,:), allocatable, & !   (ngas, nlay/+1, block_size, nblocks)
-  !                               intent(inout   ) :: values
-  !   ! ---------------------------
-  !   integer :: ncid
-  !   integer :: b, blocksize, nlev, nblocks, nbnd, ibnd
-  !   real(sp), dimension(:,:,:), allocatable :: temp3D
-  !   ! ---------------------------
-  !   if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
-  !   nbnd      = size(values,1)
-  !   nlev      = size(values,2)
-  !   blocksize = size(values,3)
-  !   nblocks   = size(values,4)
-  !   ! if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
-  !   if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
+  subroutine unblock_and_write_4D_sp(fileName, varName, values)
+    character(len=*),           intent(in   ) :: fileName, varName
+    real(sp), dimension(:,:,:,:),  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
+                                intent(in   ) :: values
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks, nfirst, ibnd
+    real(sp), dimension(:,:,:), allocatable :: temp3D
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
+    nfirst      = size(values,1)
+    nlev      = size(values,2)
+    blocksize = size(values,3)
+    nblocks   = size(values,4)
+    !if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
 
-  !   allocate(temp3D(nbnd, nlev, ncol_l*nexp_l))
+    allocate(temp3D(nfirst, nlev, ncol_l*nexp_l))
 
-  !   do b = 1, nblocks
-  !      temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
-  !   end do
+    do b = 1, nblocks
+       temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
+    end do
+    !
+    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
+    !
 
-  !   deallocate(values)
-  !   !
-  !   ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
-  !   !
+    if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
+    call stop_on_err(write_field(ncid, varName,  &
+                                 reshape(temp3D, shape = [nfirst, nlev, ncol_l, nexp_l])))
 
-  !   if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
-  !     call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
-  !   call stop_on_err(write_4D_sp(ncid, varName,  &
-  !                                reshape(temp3D, shape = [nbnd, nlev, ncol_l, nexp_l])))
-
-  !   ncid = nf90_close(ncid)
-  !   deallocate(temp3D)
-  ! end subroutine unblock_and_write_4D_sp
+    ncid = nf90_close(ncid)
+    deallocate(temp3D)
+  end subroutine unblock_and_write_4D_sp
 
   function write_4D_sp(ncid, varName, var) result(err_msg)
     integer,                    intent(in) :: ncid

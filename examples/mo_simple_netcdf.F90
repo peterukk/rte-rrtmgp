@@ -1,5 +1,5 @@
 module mo_simple_netcdf
-  use mo_rte_kind, only: wp, wl
+  use mo_rte_kind, only: wp,sp, wl
   use netcdf
   implicit none
   private
@@ -9,7 +9,8 @@ module mo_simple_netcdf
   end interface
   interface write_field
     module procedure write_1d_int_field, write_2d_int_field, &
-                     write_1d_field, write_2d_field, write_3d_field, write_4d_field
+                     write_1d_field, write_2d_field, write_3d_field, write_4d_field,  &
+                     write_1d_field_sp, write_2d_field_sp, write_3d_field_sp, write_4d_field_sp
   end interface
 
   public :: dim_exists, get_dim_size, create_dim, &
@@ -216,6 +217,78 @@ contains
       err_msg = "write_field: can't write variable " // trim(varName)
 
   end function write_4d_field
+
+  function write_1d_field_sp(ncid, varName, var) result(err_msg)
+    integer,                intent(in) :: ncid
+    character(len=*),       intent(in) :: varName
+    real(sp), dimension(:), intent(in) :: var
+    character(len=128)                 :: err_msg
+
+    integer :: varid
+
+    err_msg = ""
+    if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) then
+      err_msg = "write_field: can't find variable " // trim(varName)
+      return
+    end if
+    if(nf90_put_var(ncid, varid, var)  /= NF90_NOERR) &
+      err_msg = "write_field: can't write variable " // trim(varName)
+
+  end function write_1d_field_sp
+  !--------------------------------------------------------------------------------------------------------------------
+  function write_2d_field_sp(ncid, varName, var) result(err_msg)
+    integer,                  intent(in) :: ncid
+    character(len=*),         intent(in) :: varName
+    real(sp), dimension(:,:), intent(in) :: var
+    character(len=128)                   :: err_msg
+
+    integer :: varid
+
+    err_msg = ""
+    if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) then
+      err_msg = "write_field: can't find variable " // trim(varName)
+      return
+    end if
+    if(nf90_put_var(ncid, varid, var)  /= NF90_NOERR) &
+      err_msg = "write_field: can't write variable " // trim(varName)
+
+  end function write_2d_field_sp
+  !--------------------------------------------------------------------------------------------------------------------
+  function write_3d_field_sp(ncid, varName, var) result(err_msg)
+    integer,                    intent(in) :: ncid
+    character(len=*),           intent(in) :: varName
+    real(sp), dimension(:,:,:), intent(in) :: var
+    character(len=128)                     :: err_msg
+
+    integer :: varid
+
+    err_msg = ""
+    if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) then
+      err_msg = "write_field: can't find variable " // trim(varName)
+      return
+    end if
+    if(nf90_put_var(ncid, varid, var)  /= NF90_NOERR) &
+      err_msg = "write_field: can't write variable " // trim(varName)
+
+  end function write_3d_field_sp
+  !--------------------------------------------------------------------------------------------------------------------
+  function write_4d_field_sp(ncid, varName, var) result(err_msg)
+    integer,                    intent(in) :: ncid
+    character(len=*),           intent(in) :: varName
+    real(sp), dimension(:,:,:,:), intent(in) :: var
+    character(len=128)                     :: err_msg
+
+    integer :: varid
+
+    err_msg = ""
+    if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) then
+      err_msg = "write_field: can't find variable " // trim(varName)
+      return
+    end if
+    if(nf90_put_var(ncid, varid, var)  /= NF90_NOERR) &
+      err_msg = "write_field: can't write variable " // trim(varName)
+
+  end function write_4d_field_sp
   !--------------------------------------------------------------------------------------------------------------------
   function write_string(ncid, varName, var) result(err_msg)
     integer,                    intent(in) :: ncid

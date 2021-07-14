@@ -55,7 +55,9 @@ contains
   function rte_sw(optical_props, top_at_1,                 &
                   mu0, inc_flux,                   &
                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                  fluxes, inc_flux_dif) result(error_msg)
+                  fluxes, inc_flux_dif, &
+                  reftrans_vars & !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+                  ) result(error_msg)
     class(ty_optical_props_arry), intent(in   ) :: optical_props           ! Optical properties provided as arrays
     logical,                      intent(in   ) :: top_at_1        ! Is the top of the domain at index 1?
                                                                    ! (if not, ordering is bottom-to-top)
@@ -68,6 +70,7 @@ contains
     class(ty_fluxes_flexible),   intent(inout) :: fluxes                 ! Array of ty_fluxes. Default computes broadband fluxes at all levels
     real(wp), dimension(:,:), optional, target, &
                                   intent(in   ) :: inc_flux_dif    ! incident diffuse flux at top of domain [W/m2] (ngpt, ncol)
+    real(wp), dimension(:,:,:,:), optional, intent(inout) :: reftrans_vars  !!TEMPORARY CODE FOR ML EXPERIMENTS!!
     ! logical,                  optional, &
     !                               intent(in   ) :: do_gpt_flux    ! Compute fluxes at g-points, not only broadband fluxes
 
@@ -238,13 +241,13 @@ contains
                                   optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
                                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
                                   fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, &
-                                  fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir)
+                                  fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir, reftrans_variables=reftrans_vars)
           else
             call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
                                   inc_flux, inc_diff_flux,                 &
                                   optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
                                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                                  fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir)
+                                  fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, reftrans_variables=reftrans_vars)
           end if
 
         class is (ty_optical_props_nstr)

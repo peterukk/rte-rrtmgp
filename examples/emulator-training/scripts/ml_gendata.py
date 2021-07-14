@@ -23,6 +23,7 @@ You also need to modify ml_allsky_sw if you want to change which gases are used
 
 
 import os, subprocess, argparse
+from ml_loaddata import *
 
 #from gasopt_load_train_funcs import load_data_all,create_model, gptnorm_numba,gptnorm_numba_reverse
 #from gasopt_load_train_funcs import ymeans_lw, ysigma_lw, ymeans_sw, ysigma_sw, ysigmas_sw, ysigmas_lw

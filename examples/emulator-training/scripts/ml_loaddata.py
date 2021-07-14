@@ -140,37 +140,31 @@ def load_inp_outp_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     
     return x,y,col_dry
 
-def load_inp_outp_rte_rrtmgp(fname, predictand, clouds=True):
-    # Load data for training a RADIATIVE TRANSFER (RTE+RRTMGP) emulator,
+def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
+    # Load data for training a RADIATION SCHEME (RTE+RRTMGP) emulator,
     # where inputs are vertical PROFILES of atmospheric conditions (T,p, gas concentrations)
     # and outputs (predictand) are PROFILES of broadband fluxes (upwelling and downwelling)
     
     dat = Dataset(fname)
     
     if predictand not in ['rsu_rsd']:
-        sys.exit("Second drgument to load_inp_outp_rrtmgp (predictand) " \
-        "must be either rsu_rsd...")
+        sys.exit("Supported predictands (second argument) : rsu_rsd..")
             
-    if predictand in ["rlu_rld"]:
-        shortwave = False
-        # x_gasopt = dat.variables['rrtmgp_lw_input'][:].data
-    else: # In the shortwave, inputs are
-        shortwave = True
-        # temperature, pressure, and gas concentrations...
-        x_gasopt = dat.variables['rrtmgp_sw_input'][:].data  # (nexp,ncol,nlay,ngas+2)
-        (nexp,ncol,nlay,nx) = x_gasopt.shape
-        # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
-        sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
-        sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
-        # plus by cosine of solar angle..
-        mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
-        # # ..multiplied by incoming flux
-        # #  (ASSUMED CONSTANT)
-        # toa_flux = dat.variables['toa_flux'][:].data # (nexp,ncol,ngpt)
-        # ngpt = toa_flux.shape[-1]
-        # for iexp in range(nexp):
-        #     for icol in range(ncol):
-        #         toa_flux[iexp,icol,:] = mu0[iexp,icol] * toa_flux[iexp,icol,:]
+    # temperature, pressure, and gas concentrations...
+    x_gasopt = dat.variables['rrtmgp_sw_input'][:].data  # (nexp,ncol,nlay,ngas+2)
+    (nexp,ncol,nlay,nx) = x_gasopt.shape
+    # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
+    sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
+    sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
+    # plus by cosine of solar angle..
+    mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
+    # # ..multiplied by incoming flux
+    # #  (ASSUMED CONSTANT)
+    # toa_flux = dat.variables['toa_flux'][:].data # (nexp,ncol,ngpt)
+    # ngpt = toa_flux.shape[-1]
+    # for iexp in range(nexp):
+    #     for icol in range(ncol):
+    #         toa_flux[iexp,icol,:] = mu0[iexp,icol] * toa_flux[iexp,icol,:]
     if clouds:
         ciwc = dat.variables['ciwc'][:].data
         clwc = dat.variables['clwc'][:].data
@@ -193,7 +187,7 @@ def load_inp_outp_rte_rrtmgp(fname, predictand, clouds=True):
     ns = nexp*ncol # number of samples (profiles)
     y  = np.zeros((ns,nlev*2))
     # inputs: one input vector consists of the atmospheric profile (T,p,gases),
-    # plus flux (ngpt) plus surface albedo (1)...these need to be flattened and
+    # plus mu0 (1) plus surface albedo (1)...these need to be flattened and
     # stacked on top of each other
     x_gasopt = np.reshape(x_gasopt,(nexp,ncol,nlay*nx)) # to profiles
     nx_gasopt = nlay*nx
@@ -205,7 +199,7 @@ def load_inp_outp_rte_rrtmgp(fname, predictand, clouds=True):
     # need to reshape mu0 and sfc alb so they are also 3D
     mu0     = np.reshape(mu0,(nexp,ncol,1))
     sfc_alb = np.reshape(sfc_alb,(nexp,ncol,1))
-
+    
     i = 0
     if clouds:
         for iexp in range(nexp):
@@ -219,6 +213,76 @@ def load_inp_outp_rte_rrtmgp(fname, predictand, clouds=True):
            for icol in range(ncol):
                y[i,:] = np.concatenate((y0[iexp,icol,:], y1[iexp,icol,:]))
                x[i,:] = np.concatenate((x_gasopt[iexp,icol,:], mu0[iexp,icol], sfc_alb[iexp,icol]))
+               i = i + 1
+           
+    print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
+    
+    return x,y
+
+
+def load_inp_outp_rte_sw(fname):
+    # Load data for training a RADIATIVE TRANSFER  SOLVER (RTE) emulator,
+    # where inputs are vertical PROFILES of optical properties (tau, ssa, g)
+    # + boundary conditions, for one spectral point (g-point)
+    # outputs (predictand) are PROFILES of broadband fluxes (up and down)
+    # also per spectral point
+    
+    dat = Dataset(fname)
+    
+    tau = dat.variables['tau_sw'][:].data # nexp, ncol, nlay, ngpt
+    ssa = dat.variables['ssa_sw'][:].data # nexp, ncol, nlay, ngpt
+    g = dat.variables['g_sw'][:].data # nexp, ncol, nlay, ngpt
+    
+    (nexp,ncol,nlay,ngpt) = tau.shape
+    # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
+    sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
+    sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
+    # plus by cosine of solar angle..
+    mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
+    # # ..multiplied by incoming flux
+    # #  (ASSUMED CONSTANT)
+    # toa_flux = dat.variables['toa_flux'][:].data # (nexp,ncol,ngpt)
+    # ngpt = toa_flux.shape[-1]
+    # for iexp in range(nexp):
+    #     for icol in range(ncol):
+    #         toa_flux[iexp,icol,:] = mu0[iexp,icol] * toa_flux[iexp,icol,:]
+
+
+    # if predictand in ['broadband_rsu_rsd','broadband_rlu_rld']: 
+    y0 = dat.variables['rsu'][:] # (nexp,ncol,nlev,ngpt)
+    y1 = dat.variables['rsd'][:]
+    
+    nlev = nlay+1
+        
+    # Permute to (nexp,ncol,ngpt,nlev)
+    y0 = np.swapaxes(y0,2,3)
+    y1 = np.swapaxes(y1,2,3)
+    if (y0.shape[-1] != nlev):
+        sys.exit("Invalid shape for gpt flux, last dimension after permuting should be nlev")
+    tau = np.swapaxes(tau,2,3)
+    ssa = np.swapaxes(ssa,2,3)
+    g = np.swapaxes(g,2,3)
+    if (tau.shape[-1] != nlay):
+        sys.exit("Invalid shape for tau, last dimension after permuting should be nlay")
+
+    # Reshape to 2D data matrix 
+    ns = nexp*ncol*ngpt # number of samples 
+    y  = np.zeros((ns,nlev*2))
+    # inputs: one input vector consists of vertical profiles of tau+ssa+g,
+    # plus mu0 and surface albedo..these variables all need to be flattened and
+    # stacked on top of each other
+    x = np.zeros(ns,(3*nlay + 1 + 1))
+    # need to reshape mu0 and sfc alb so they are 1D arrays of size 1 when indexed
+    mu0     = np.reshape(mu0,(nexp,ncol,1))
+    sfc_alb = np.reshape(sfc_alb,(nexp,ncol,1))
+    
+    i = 0
+    for iexp in range(nexp):
+       for icol in range(ncol):
+           for igpt in range(ngpt):
+               y[i,:] = np.concatenate((y0[iexp,icol,igpt,:], y1[iexp,icol,igpt,:]))
+               x[i,:] = np.concatenate((tau[iexp,icol,igpt], ssa[iexp,icol,igpt],
+                g[iexp,icol,igpt], mu0[iexp,icol], sfc_alb[iexp,icol]))
                i = i + 1
            
     print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
@@ -264,130 +328,4 @@ def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
 
     return y
 
-
-import warnings
-warnings.filterwarnings("ignore")
-
-# ----------------------------------------------------------------------------
-# ----------------- PREPARE GAS OPTICS TRAINING DATA  ------------------------
-# ----------------------------------------------------------------------------
-
-#  ----------------- File paths -----------------
-dat_file = "ml_data_g224_clouds_CAMS_2011_RFMIPstyle.nc"                                
-# this_dir = ""
-# emulator_dir  = this_dir + "../"
-# dat_path  = emulator_dir + "data_training/" + dat_file
-dat_path = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/" + dat_file
-
-# LOAD DATA
-predictand = 'tau_sw_abs'
-x,y_raw,col_dry = load_inp_outp_rrtmgp(dat_path, predictand) # RRTMGP inputs have already been scaled
-
-# Standardization coefficients 
-y_mean = ymeans_sw_abs; y_sigma = ysigma_sw_abs
-# Power scaling coefficient (y == y**(1/nfac))
-nfac = 8
-
-# Scale by layer number of molecules to obtain absorption cross section
-y_raw   = preproc_tau_to_crossection(y_raw, col_dry)
-# Scale using power-scaling followed by standard-scaling
-y       = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
-
-# Ready for training!
-# ----------------------------------------------------------------------------
-
-
-
-
-
-
-# --- QUICK TRAINING EXERCISE FOR WHOLE SCHEME
-dat_file = 'ml_data_g224_clouds_CAMS_2011_2012_2018_RFMIPstyle.nc'
-dat_path = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/" + dat_file
-
-x, y_raw = load_inp_outp_rte_rrtmgp(dat_path, 'rsu_rsd')
-
-
-
-# SCALE
-# y.shape   (14400, 122)
-ngpt = y_raw.shape[1]
-nobs = y_raw.shape[0]
-y_mean = np.zeros(ngpt)
-for igpt in range(ngpt):
-    y_mean[igpt] = y_raw[:,igpt].mean()
-    
-y_sigma = np.std(y_raw) # 467.72
-y_sigma = np.repeat(y_sigma,ngpt)
-nfac = 1
-
-# for iobs in range(nobs):
-#     for igpt in range(ngpt):
-#         y[iobs,igpt] = (y[iobs,igpt] - ymeans[igpt]) / ysigma[igpt]
-y       = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
-
-
-
-from sklearn.model_selection import train_test_split
-
-train_ratio = 0.75
-validation_ratio = 0.15
-test_ratio = 0.10
-
-# train is now 75% of the entire data set
-# the _junk suffix means that we drop that variable completely
-x_tr, x_test, y_tr, y_test = train_test_split(x, y, test_size=1 - train_ratio)
-
-# test is now 10% of the initial data set
-# validation is now 15% of the initial data set
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio)) 
-
-
-
-gc.collect()
-
-mymetrics   = ['mean_absolute_error']
-valfunc     = 'val_mean_absolute_error'
-activ       = 'softsign'
-fpath       = rootdir+'data/tmp/tmp.h5'
-epochs      = 100000
-patience    = 25
-lossfunc    = losses.mean_squared_error
-ninputs     = x_tr.shape[1]
-lr          = 0.001 
-batch_size  = 1024
-
-# neurons = [64,64]
-# neurons = [58,58]
-# neurons = [52,52,52]
-
-# batch_size  = 3*batch_size
-# lr          = 2 * lr
-
-optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
-
-# Create model
-model = create_model(nx=ninputs,ny=ngpt,neurons=neurons,activ=activ,kernel_init='he_uniform')
-
-model.compile(loss=lossfunc, optimizer=optim,
-              metrics=mymetrics,  context= ["gpu(0)"])
-model.summary()
-
-gc.collect()
-# Create earlystopper
-earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
-
-# START TRAINING
-
-history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                    validation_data=(x_val,y_val), callbacks=[earlystopper])
-gc.collect()
-
-
-# TEST
-y_pred_sc    = model.predict(x);  
-y_pred       = preproc_pow_gptnorm_reverse(y_pred_sc, nfac, y_mean,y_sigma)
-
-
-plot_hist2d(y_raw,y_pred,20,True)      #  
     
