@@ -20,6 +20,8 @@ FCINCLUDE += -I$(RRTMGP_BUILD)
 FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
+# NetCDF-4 format for easy_netcdf
+FCFLAGS += -DNC_NETCDF4
 
 # 
 # -------- BLAS lbirary: required for RRTMGP-NN --------

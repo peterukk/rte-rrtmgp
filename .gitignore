@@ -24,15 +24,15 @@ examples/rfmip-clear-sky/rrtmgp_rfmip_sw
 examples/rfmip-clear-sky/timing*
 examples/rfmip-clear-sky/*.pgprof
 examples/rfmip-clear-sky/*.qdrep
-stop_on_err__genmod.f90
+*__genmod.f90
 
 examples/all-sky/ref
 examples/all-sky/rrtmgp-allsky.nc
 
-examples/emulator-training/data_ml_input_output/
-examples/emulator-training/nn_allsky_sw
+examples/emulator-training/data_training/
+examples/emulator-training/ml_allsky_sw
 examples/emulator-training/scripts/CAMS_download_and_preprocess/tmp/*
-examples/emulator-training/output_fluxes/*
+examples/emulator-training/fluxes/*
 
 *.pgprof
 *.gprof

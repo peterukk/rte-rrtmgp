@@ -512,7 +512,9 @@ contains
                                  tau, ssa, g, mu0,           &
                                  sfc_alb_dir, sfc_alb_dif,   &
                                  flux_up, flux_dn, flux_dir, &
-                                 flux_up_gpt, flux_dn_gpt, flux_dir_gpt ) bind(C, name="sw_solver_2stream")
+                                 flux_up_gpt, flux_dn_gpt, flux_dir_gpt, &
+                                 reftrans_variables & !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+                                 ) bind(C, name="sw_solver_2stream")
     integer,                                intent(in   ) :: ngpt_in, nlay_in, ncol ! Number of columns, layers, g-points
     logical(wl),                            intent(in   ) :: top_at_1
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: inc_flux, inc_flux_dif     ! incident flux at top of domain [W/m2] (ngpt, ncol)
@@ -525,11 +527,17 @@ contains
     real(wp), dimension(nlay+1,ncol),       intent(out) :: flux_up, flux_dn, flux_dir ! Broadband fluxes  [W/m2]
     real(wp), dimension(ngpt, nlay+1, ncol), optional,target,    &  ! G-point fluxes - optional output
                                             intent(out) :: flux_up_gpt, flux_dn_gpt, flux_dir_gpt 
+    real(wp), dimension(ngpt, nlay, ncol, 4), optional, target, intent(inout)  :: reftrans_variables !!TEMPORARY CODE FOR ML EXPERIMENTS!!                                        
     ! -------------------------------------------
     real(wp), dimension(:,:), contiguous, pointer   ::  radn_up, radn_dn, radn_dir             ! G-point fluxes [W/m2], local array
     real(wp), dimension(ngpt,nlay+1),     target    ::  radn_up_arr, radn_dn_arr, radn_dir_arr ! G-point fluxes [W/m2], pointer
     integer :: icol, igpt, top_level
-    real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+    !real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+    !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+    real(wp), dimension(ngpt,nlay) :: Tnoscat
+    real(wp), dimension(ngpt,nlay), target :: Rdif_arr, Tdif_arr, Rdir_arr, Tdir_arr
+    real(wp), dimension(:,:), contiguous, pointer   :: Rdif, Tdif, Rdir, Tdir
+    !!TEMPORARY CODE FOR ML EXPERIMENTS!!
     real(wp), dimension(ngpt,nlay) :: source_up, source_dn
     real(wp), dimension(ngpt     ) :: source_srf
     logical(wl) :: save_gpt_flux = .false.
@@ -547,6 +555,21 @@ contains
 
     do icol = 1, ncol
 
+      
+      !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+      if (present(reftrans_variables)) then
+        Rdif => reftrans_variables(:,:,icol,1)
+        Tdif => reftrans_variables(:,:,icol,2)
+        Rdir => reftrans_variables(:,:,icol,3)
+        Tdir => reftrans_variables(:,:,icol,4)
+      else
+        Rdif => Rdif_arr
+        Tdif => Tdif_arr
+        Rdir => Rdir_arr
+        Tdir => Tdir_arr
+      end if
+      !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+
       if (save_gpt_flux) then
         radn_up => flux_up_gpt(:,:,icol)
         radn_dn => flux_dn_gpt(:,:,icol)
@@ -560,35 +583,35 @@ contains
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
       !
-! #ifdef USE_TIMING
-!     ret =  gptlstart('sw_two_stream')
-! #endif
-!       call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-!                          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-!                          Rdif, Tdif, Rdir, Tdir, Tnoscat)     
-! #ifdef USE_TIMING
-!     ret =  gptlstop('sw_two_stream')
-! #endif    
-!       !
-!       ! Direct-beam and source for diffuse radiation
-!       !
-! #ifdef USE_TIMING
-!     ret =  gptlstart('sw_source_2str')
-! #endif
-!       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
-!                           source_up, source_dn, source_srf, radn_dir)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('sw_source_2str')
-! #endif
 #ifdef USE_TIMING
-    ret =  gptlstart('sw_two_stream_source')
-#endif 
-      call sw_two_stream_source(ngpt, nlay, top_at_1, mu0(icol),                                &
-      tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), sfc_alb_dir(:,icol), &
-      Rdif, Tdif, source_up, source_dn, radn_dir, source_srf)     
+    ret =  gptlstart('sw_two_stream')
+#endif
+      call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+                         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+                         Rdif, Tdif, Rdir, Tdir, Tnoscat)     
 #ifdef USE_TIMING
-    ret =  gptlstop('sw_two_stream_source')
-#endif 
+    ret =  gptlstop('sw_two_stream')
+#endif    
+      !
+      ! Direct-beam and source for diffuse radiation
+      !
+#ifdef USE_TIMING
+    ret =  gptlstart('sw_source_2str')
+#endif
+      call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
+                          source_up, source_dn, source_srf, radn_dir)
+#ifdef USE_TIMING
+    ret =  gptlstop('sw_source_2str')
+#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('sw_two_stream_source')
+! #endif 
+!       call sw_two_stream_source(ngpt, nlay, top_at_1, mu0(icol),                                &
+!       tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), sfc_alb_dir(:,icol), &
+!       Rdif, Tdif, source_up, source_dn, radn_dir, source_srf)     
+! #ifdef USE_TIMING
+!     ret =  gptlstop('sw_two_stream_source')
+! #endif 
       !
       ! Transport
       !

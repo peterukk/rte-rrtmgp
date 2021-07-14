@@ -283,7 +283,7 @@ contains
         !$OMP SIMD
         !$acc loop vector
         do i = 1, ngpt
-          ! Compute outputs and scale them to obtain molecular absorption 
+          ! Compute outputs 
           ! output(i, j) = (ysigma*(output(i, j) + b(i)) + ymeans_lw_tau(i))**8
 
           ! Scale with number of dry air molecules to obtain optical depth
