@@ -22,15 +22,15 @@
 !
 ! following machine learning methods for shortwave radiation computations could be tested (preliminary ideas):
 ! 
-!                   "emulate"   cloud   NN input (shape)	    NN output (shape)           #NN		  #NN iterations needed
-!                               optics                                                    models  (= #training samples) 
+!                   "emulate"   cloud   NN input (shape)	NN output (shape)     	#NN	#NN iterations needed
+!                               optics                                                  models  (= #training samples) 
 !   RTE + RRTMGP      none      orig.                  
-!   (RTE+RRTMGP)-NN   both      NN      concs+BC (8*nlay +2)  bb flux (2*nlay)            1		    ncol                    		   	        
-!  ^RTE + RRTMGP-NN   rrtmgp    orig.   layer concs (8)       layer gas OP (ng)           2 	    nlay*ncol 
-!   RTE-NN1 + RRTMGP  rte       orig.   OPs+BC (3*nlay +2)    gp flux (2*nlay)            1		    ng*ncol
-!  *RTE-NN2 + RRTMGP  reftrans  orig.   layer OPs (3 + 1)     layer rdif,tdif,rdir,tdir   1		    ng*nlay*ncol
-!  ?RTE-NN3 + RRTMGP  rte-bb    orig.   OPs+BC (3*nlay*ng +2) bb flux (2*nlay)            1		    ncol
-!  ?RTE-NN4 + RRTMGP  rte-gpvec orig.   OPs+BC (3*nlay*ng +2) gp flux vectors (2*nlay*ng) 1		    ncol
+!   (RTE+RRTMGP)-NN   both      NN      concs+BC (8*nlay +2)  bb flux (2*nlay)            1	ncol                    		   	        
+!  ^RTE + RRTMGP-NN   rrtmgp    orig.   layer concs (8)       layer gas OP (ng)           2	nlay*ncol 
+!   RTE-NN1 + RRTMGP  rte       orig.   OPs+BC (3*nlay +2)    gp flux (2*nlay)            1	ng*ncol
+!  *RTE-NN2 + RRTMGP  reftrans  orig.   layer OPs (3 + 1)     layer rdif,tdif,rdir,tdir   1	ng*nlay*ncol
+!  ?RTE-NN3 + RRTMGP  rte-bb    orig.   OPs+BC (3*nlay*ng +2) bb flux (2*nlay)            1	ncol
+!  ?RTE-NN4 + RRTMGP  rte-gpvec orig.   OPs+BC (3*nlay*ng +2) gp flux vectors (2*nlay*ng) 1	ncol
 
 ! ^method used in Ukkonen 2020; separate NNs are used to predict absorption and Rayleigh absorption cross-sections
 ! *this model would only emulate one component of RTE, which is relatively expensive and has no layer dependency
