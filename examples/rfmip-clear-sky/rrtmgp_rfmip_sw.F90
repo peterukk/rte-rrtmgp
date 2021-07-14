@@ -162,7 +162,7 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_rrtmgp_nn      = .false.
+  use_rrtmgp_nn      = .true.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)

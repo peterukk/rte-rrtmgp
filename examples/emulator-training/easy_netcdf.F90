@@ -245,6 +245,15 @@ contains
     integer                       :: istatus
     integer                       :: i_write_mode
 
+    !  --- protect against overwriting existing files ---
+    logical :: fileExists
+    inquire(file=file_name, exist=fileExists)
+    if (fileExists) then
+      write(nulerr,'(a)') '*** create_netcdf_file: File already exists, stopping program to be safe (please remove existing file)'
+      stop
+    end if
+    !  --- protect against overwriting existing files ---
+
     if (present(iverbose)) then
       this%iverbose = iverbose
     else
