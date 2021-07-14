@@ -66,7 +66,7 @@ def qsatGFS(p,T):
     return qs 
 
 # Input data file
-fpath_cams  = root_dir+'data_input/CAMS_2012.nc'
+fpath_cams  = root_dir+'data_input/CAMS_2011-2013.nc'
 # New file
 fpath_new   = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle.nc'
 print("Saving new file to {}".format(fpath_new))

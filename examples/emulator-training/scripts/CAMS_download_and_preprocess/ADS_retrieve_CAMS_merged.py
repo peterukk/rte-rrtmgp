@@ -98,11 +98,11 @@ def get_dict_egg4_ml(year,month):
 # ---------------------- 1. DOWNLOAD MAIN CAMS DATA  -----------------
 # -------------------------------------------------------------------
 
-# dl_folder = '/media/peter/samlinux/data/CAMS/'
-this_folder = os.getcwd() + "/"
-dl_folder   = this_folder + "tmp/"
+# dl_dir = '/media/peter/samlinux/data/CAMS/'
+this_dir = os.getcwd() + "/"
+dl_dir   = this_dir + "tmp/"
 
-os.chdir(this_folder)
+os.chdir(this_dir)
 
 # Specify which year to download, everything else is fixed
 year = "2013"
@@ -115,27 +115,27 @@ for month in ["02", "05", "08", "11"]:
     dict_eac4 = get_dict_eac4_sfc(year,month)
     c.retrieve(
         'cams-global-reanalysis-eac4', dict_eac4,
-        dl_folder+'CAMS_eac4_sfc_%s%s01.grb'%(year,month))
+        dl_dir+'CAMS_eac4_sfc_%s%s01.grb'%(year,month))
     
     dict_eac4 = get_dict_eac4_ml(year,month)
     c.retrieve(
         'cams-global-reanalysis-eac4', dict_eac4,
-        dl_folder+'CAMS_eac4_ml_%s%s01.grb'%(year,month))
+        dl_dir+'CAMS_eac4_ml_%s%s01.grb'%(year,month))
     
     # EGG4
     dict_egg4 = get_dict_egg4_sfc(year,month)
     c.retrieve(
         'cams-global-ghg-reanalysis-egg4', dict_egg4,
-        dl_folder+'CAMS_egg4_sfc_%s%s01.grb'%(year,month))
+        dl_dir+'CAMS_egg4_sfc_%s%s01.grb'%(year,month))
     
     dict_egg4 = get_dict_egg4_ml(year,month)
     c.retrieve(
         'cams-global-ghg-reanalysis-egg4', dict_egg4,
-        dl_folder+'CAMS_egg4_ml_%s%s01.grb'%(year,month))
+        dl_dir+'CAMS_egg4_ml_%s%s01.grb'%(year,month))
 
 
 # PREPROCESS INTO ONE NetCDF FILE USING CDO COMMANDS
-# these are in a bash script
+# these are in a bash script, output file is tmp/CAMS_YYYY.nc
 os.system("./preproc_bash_cdo_nco {}".format(year)) 
 
 
@@ -144,7 +144,7 @@ os.system("./preproc_bash_cdo_nco {}".format(year))
 # -------------------------------------------------------------------
 # Unfortunately the dataset and format is different so we need quite a lot of
 # processing
-fname = dl_folder+'CAMS_n2o_%s.tar.gz'%(year)
+fname = dl_dir+'CAMS_n2o_%s.tar.gz'%(year)
 
 c.retrieve(
     'cams-global-greenhouse-gas-inversion',
@@ -164,22 +164,23 @@ c.retrieve(
     fname)
 
 # Unpack and merge into on year-long file
-os.chdir(dl_folder)
+os.chdir(dl_dir)
 os.system("tar -xvzf {}".format(fname))
 os.system("cdo mergetime cams73_latest_n2o_conc_surface_inst_{}*.nc tmp.nc".format(year))
 # Remove ap,bp and remap to the coarser grid
 os.system("ncks -O -x -v ap,bp tmp.nc tmp2.nc")
-os.system("cdo remapbil,newgrid tmp2.nc CAMS_n2o_{}_tmp.nc".format(year))
+os.system("cdo remapbil,../newgrid tmp2.nc CAMS_n2o_{}_tmp.nc".format(year))
 # Now add the vertical reference
-os.system("ncks -A -v level,hyam,hybm,hyai,hybi REF_vert.nc CAMS_n2o_{}_tmp.nc".format(year))
+os.system("ncks -A -v level,hyam,hybm,hyai,hybi ../REF_vert.nc CAMS_n2o_{}_tmp.nc".format(year))
 os.system("ncrename -v Psurf,surface_air_pressure CAMS_n2o_{}_tmp.nc".format(year))
 os.system("rm tmp*")
 os.system("rm cams73*")
+os.system("rm *.tar.gz")
 
 # The vertical reference is inconsistent with the 3D variable
 # We need to flip the profiles so they are from top to bottom of atmosphere
 fname_tmp = "CAMS_n2o_{}_tmp.nc".format(year)
-dat = Dataset(dl_folder+fname_tmp,'a')
+dat = Dataset(dl_dir+fname_tmp,'a')
 sp_v = dat.variables['surface_air_pressure']
 sp_v.standard_name = "surface_air_pressure"
 n2o_dat = dat.variables['N2O'][:].data
@@ -191,7 +192,7 @@ dat.close()
 # used by the main CAMS data
 fname_tmp2 = "CAMS_n2o_{}_tmp2.nc".format(year)
 fname_n2o = "CAMS_{}_n2o.nc".format(year)
-os.system("cdo remapeta,newvct {} {}".format(fname_tmp,fname_tmp2))
+os.system("cdo remapeta,../newvct {} {}".format(fname_tmp,fname_tmp2))
 
 # Extract the time slices corresponding to the main CAMS data
 codestr = "ncks -d time,0 -d time,4 -d time,22 -d time,228 -d time,472 " \
@@ -200,7 +201,11 @@ os.system(codestr)
 os.system("rm *tmp*")
 
 # FINALLY, concatenate N2O and main data files, write to final destination
+fname = "CAMS_{}.nc".format(year)
+
+os.system("ncks -A {} {}".format(fname_n2o,fname))
+os.system("ncatted -h -a history,global,d,, {}".format(fname))
+os.system("ncatted -h -a history_of_appended_files,global,d,, {}".format(fname))
+
 fname_final = "../../../data_input/CAMS_{}.nc".format(year)
-os.system("ncks -A {} {}".format(fname_n2o,fname_final))
-os.system("ncatted -h -a history,global,d,, {}".format(fname_final))
-os.system("ncatted -h -a history_of_appended_files,global,d,, {}".format(fname_final))
+os.system("cp {} {}".format(fname,fname_final))

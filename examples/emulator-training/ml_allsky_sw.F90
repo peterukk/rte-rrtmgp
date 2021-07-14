@@ -19,18 +19,19 @@
 ! The data comes from CAMS which has been extended into RFMIP-style experiments where gas
 ! concentrations are varied. The large problem is divided into blocks
 !
-! following machine learning methods for radiation computations could be supported (preliminary ideas):
-!
-!                     emulate       cloud   NN output (shape)           NN iterations   NN models
-!                                   optics                              
-! RTE + RRTMGP        none          orig.                                               0
-! (RTE+RRTMGP)-NN     both          NN      bb fluxes (3*1)             nlay*ncol       1
-! RTE + RRTMGP-NN     rrtmgp        orig.   optprop. gpt vector (ng)    ~2*nlay*ncol    2 (abs,scat)
-! RTE-NN1 + RRTMGP    rte           orig.   bb fluxes (3*1)             nlay*ncol       1
-!(RTE-NN2 + RRTMGP    rte-gptvec    orig.   gpt flux vectors (3*ng)     nlay*ncol       1)
-! RTE-NN3 + RRTMGP    rte-gptscal   orig.   gpt flux scalars (3*1)      nlay*ncol*ng    1
-! RTE-NN4 + RRTMGP    rte-reftrans  orig.   gpt REFTRANS scalars (4*1)  nlay*ncol*ng    1
+! following machine learning methods for shortwave radiation computations could be tested (preliminary ideas):
 ! 
+!                     emulate       cloud   NN output (shape)             NN iterations   NN models
+!                                   optics                              
+! RTE + RRTMGP        none          orig.                                                 0
+! (RTE+RRTMGP)-NN     both          NN      bb fluxes (3*nlay)            nlay*ncol       1
+! RTE + RRTMGP-NN     rrtmgp        orig.   optprop. gpt vector (ng)      ~2*nlay*ncol    2 (abs,scat)
+! RTE-NN1 + RRTMGP    rte           orig.   bb fluxes (3*nlay)            ncol            1
+! RTE-NN2 + RRTMGP    rte-gptvec    orig.   gpt flux vectors (3*nlay*ng)  ncol            1
+! RTE-NN3 + RRTMGP    rte-gptscal   orig.   gpt flux scalars (3*nlay)     ng*ncol         1
+! RTE-NN4 + RRTMGP    rte-reftrans  orig.   gpt REFTRANS scalars (4)      ng*nlay*ncol    1
+! 
+! the number 3 comes from upwelling + downwelling + direct downwelling flux, but the last could be omitted
 ! optprop = optical properties, bb = broadband, gpt = g-point, ng = number of g-points (e.g. 224)
 !
 ! Fortran program arguments (k_distribution file and cloud_optics file are fixed):
@@ -722,9 +723,9 @@ program rrtmgp_rfmip_sw
       nn_input_str = trim(nn_input_str) // " " // trim(input_names(b)) 
     end do
 
-    call nndev_file_netcdf%define_variable("rrtmgp_nn_input", &
+    call nndev_file_netcdf%define_variable("rrtmgp_sw_input_scaled", &
     &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
-    &   long_name ="RRTMGP-NN input", comment_str=nn_input_str, &
+    &   long_name ="layer-wise inputs for RRTMGP shortwave gas optics", comment_str=nn_input_str, &
     &   data_type_name="float")
 
     call nndev_file_netcdf%define_variable("tau_sw", &
@@ -756,7 +757,7 @@ program rrtmgp_rfmip_sw
     call nndev_file_netcdf%end_define_mode()
 
     ! This function also deallocates its input 
-    call unblock_and_write(trim(nndev_file), 'rrtmgp_nn_input',nn_input)
+    call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_input)
     ! print *," min max col dry", minval(col_dry), maxval(col_dry)
     call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
     print *, "RRTMGP inputs were successfully saved"
