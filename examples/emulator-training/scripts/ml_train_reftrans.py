@@ -22,7 +22,8 @@ import gc
 import numpy as np
 
 
-from ml_loaddata import load_inp_outp_rte_sw,  preproc_minmax_inputs, load_inp_outp_reftrans
+from ml_loaddata import load_inp_outp_rte_sw,  preproc_minmax_inputs, load_inp_outp_reftrans, \
+    preproc_pow_gptnorm
 from sklearn.model_selection import train_test_split
 
 
@@ -40,14 +41,33 @@ dat_file = "ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"
 dat_dir = '/media/peter/samlinux/data/data_training/'
 dat_path = dat_dir + dat_file
 
-x_raw, y  = load_inp_outp_reftrans(dat_path)
+x_raw, y_raw  = load_inp_outp_reftrans(dat_path)
 
 scale_inputs = True
+scale_outputs = True
 
 if scale_inputs:
     x,xmax,xmin = preproc_minmax_inputs(x_raw)
 else:
     x = x_raw
+    
+if scale_outputs:
+        # Original
+    ny = y_raw.shape[1]      # y.shape (14400, 122)
+    nobs = y_raw.shape[0]
+    y_mean = np.zeros(ny)
+    y_sigma = np.zeros(ny)
+    for i in range(ny):
+        y_mean[i] = y_raw[:,i].mean()
+        # y_sigma[i] = y_raw[:,i].std()
+    # y_mean = np.repeat(y_raw.mean(),ny)
+    y_sigma = np.repeat(y_raw.std(),ny)  # 467.72
+
+    nfac = 1
+
+    y  = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
+else:
+    y = y_raw
     
 # xmin = np.array([4.1395123e-09, 4.0951968e-12, 0.0000000e+00, 1.2061903e-04],
 #       dtype=np.float32)

@@ -235,12 +235,16 @@ def load_inp_outp_rte_sw(fname):
     
     (nexp,ncol,nlay,ngpt) = tau.shape
     # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
+    # 
     sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
     # sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
-    # plus by cosine of solar angle..
+    # plus cosine of solar angle..
     mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
-    # # ..multiplied by incoming flux
-    # #  (CONSTANT)
+    # ..and incoming flux times mu0
+    # Incoming flux does not vary by column, but does have a spectral dependence
+    # SINCE THE NN MODEL TREATS ALL G-POINTS EQUALLY, the spectrally 
+    # variant incoming flux needs to be an input!
+    inc_flux = dat.variables['toa_flux'][:].data # (nexp,ncol, ngpt)
 
     y0 = dat.variables['rsu_gpt'][:] # (nexp,ncol,nlev,ngpt)
     y1 = dat.variables['rsd_gpt'][:]
@@ -267,20 +271,23 @@ def load_inp_outp_rte_sw(fname):
     del y0,y1
         
     # inputs: one input vector consists of vertical profiles of tau+ssa+g,
-    # plus mu0 and surface albedo..these variables all need to be flattened and
+    # plus mu0, inc flux and surface albedo..these variables all need to be flattened and
     # stacked on top of each other
-    x = np.zeros((ns,(3*nlay + 1 + 1)),dtype=np.float32)
-    # need to reshape mu0 and sfc alb so they are provided at every column and gpt
+    x = np.zeros((ns,(3*nlay + 1 + 1 + 1)),dtype=np.float32)
+    # need to ensure mu0, inc flux and albedo are provided at every column and gpt
     mu0     = np.reshape(mu0,(nexp,ncol,1))
     mu0     = np.repeat(mu0,ngpt,axis=2)
     mu0     = np.reshape(mu0,(nexp*ncol*ngpt,1))
     sfc_alb = np.reshape(sfc_alb,(nexp*ncol*ngpt,1))
+    inc_flux = np.reshape(inc_flux,(nexp*ncol*ngpt,1))
+    # downward radiance is inc flux times mu0
+    inc_flux = mu0 * inc_flux
 
     tau = np.reshape(tau,(ns,nlay))
     ssa = np.reshape(ssa,(ns,nlay))
     g = np.reshape(g,(ns,nlay))
     
-    stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,sfc_alb)    
+    stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,inc_flux, sfc_alb)    
     
     del tau,ssa,g
 
@@ -342,7 +349,7 @@ def load_inp_outp_reftrans(fname):
     return x,y
 
 @njit(parallel=True)
-def stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,sfc_alb):
+def stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,inc_flux,sfc_alb):
     nlay2 = 2*nlay
     nlay3 = 3*nlay
     for i in prange(ns):
@@ -350,7 +357,8 @@ def stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,sfc_alb):
         x[i,nlay:nlay2]     = ssa[i,:]
         x[i,nlay2:nlay3]    = g[i,:]
         x[i,nlay3:nlay3+1]  = mu0[i]
-        x[i,nlay3+1:nlay3+2]= sfc_alb[i]
+        x[i,nlay3+1:nlay3+2]= inc_flux[i]
+        x[i,nlay3+2:nlay3+3]=sfc_alb[i]
 
 def preproc_tau_to_crossection(tau, col_dry):
     y = np.zeros(tau.shape)
