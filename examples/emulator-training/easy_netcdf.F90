@@ -236,21 +236,26 @@ contains
 
   !---------------------------------------------------------------------
   ! Open a NetCDF file for writing
-  subroutine create_netcdf_file(this, file_name, iverbose, is_hdf5_file)
+  subroutine create_netcdf_file(this, file_name, iverbose, is_hdf5_file, override_file)
     class(netcdf_file)            :: this
     character(len=*), intent(in)  :: file_name
     integer, intent(in), optional :: iverbose
     logical, intent(in), optional :: is_hdf5_file
-
+    logical, intent(in), optional :: override_file
     integer                       :: istatus
     integer                       :: i_write_mode
 
     !  --- protect against overwriting existing files ---
-    logical :: fileExists
-    inquire(file=file_name, exist=fileExists)
-    if (fileExists) then
-      write(nulerr,'(a)') '*** create_netcdf_file: File already exists, stopping program to be safe (please remove existing file)'
-      stop
+    logical :: fileExists, override=.false.
+    if (present(override_file)) override = override_file
+
+    if (.not. override) then
+      inquire(file=file_name, exist=fileExists)
+      if (fileExists) then
+        write(nulerr,'(a,a,a)') '*** create_netcdf_file: ',file_name, &
+        ' - File already exists, stopping program to be safe (please remove existing file)'
+        stop
+      end if
     end if
     !  --- protect against overwriting existing files ---
 

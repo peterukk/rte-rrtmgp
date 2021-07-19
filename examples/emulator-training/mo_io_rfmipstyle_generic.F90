@@ -35,7 +35,7 @@ module mo_io_rfmipstyle_generic
   implicit none
 
   interface unblock_and_write
-    module procedure unblock_and_write_2D, unblock_and_write_3D, unblock_and_write_4D, unblock_and_write_4D_sp
+    module procedure unblock_and_write_2D, unblock_and_write_3D, unblock_and_write_4D_dp, unblock_and_write_4D_sp
   end interface
 
   private
@@ -761,9 +761,9 @@ contains
   end subroutine unblock_and_write_3D
 
 
-  subroutine unblock_and_write_4D(fileName, varName, values)
+  subroutine unblock_and_write_4D_dp(fileName, varName, values)
     character(len=*),           intent(in   ) :: fileName, varName
-    real(wp), dimension(:,:,:,:),  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
+    real(dp), dimension(:,:,:,:),  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
                                 intent(in   ) :: values
     ! ---------------------------
     integer :: ncid
@@ -794,7 +794,7 @@ contains
 
     ncid = nf90_close(ncid)
     deallocate(temp3D)
-  end subroutine unblock_and_write_4D
+  end subroutine unblock_and_write_4D_dp
 
   subroutine unblock_and_write_4D_sp(fileName, varName, values)
     character(len=*),           intent(in   ) :: fileName, varName

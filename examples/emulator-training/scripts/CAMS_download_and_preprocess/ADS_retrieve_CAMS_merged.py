@@ -105,7 +105,7 @@ dl_dir   = this_dir + "tmp/"
 os.chdir(this_dir)
 
 # Specify which year to download, everything else is fixed
-year = "2013"
+year = "2015"
 
 c = cdsapi.Client()
 
