@@ -16,6 +16,7 @@ import sys
 import numpy as np
 from numba import jit, njit, prange
 from netCDF4 import Dataset
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 # input scaling coefficients for RRTMGP-NN - these should probably be put in an
 # external file 
@@ -98,13 +99,13 @@ def load_inp_outp_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     
     # outputs
     if (predictand=='tau_sw_ray'):
-        ssa = dat.variables['ssa_sw'][:].data
-        tau = dat.variables['tau_sw'][:].data
+        ssa = dat.variables['ssa_sw_gas'][:].data
+        tau = dat.variables['tau_sw_gas'][:].data
         y = tau * ssa # tau_sw_ray = tau_tot * single scattering albedo
         del tau, ssa
     elif (predictand=='tau_sw_abs'):
-        ssa = dat.variables['ssa_sw'][:].data
-        tau = dat.variables['tau_sw'][:].data
+        ssa = dat.variables['ssa_sw_gas'][:].data
+        tau = dat.variables['tau_sw_gas'][:].data
         tau_sw_ray = tau * ssa
         y = tau - tau_sw_ray # tay_sw_abs = tau_tot - tau_ray
         del tau, ssa, tau_sw_ray
@@ -166,8 +167,8 @@ def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
     #     for icol in range(ncol):
     #         toa_flux[iexp,icol,:] = mu0[iexp,icol] * toa_flux[iexp,icol,:]
     if clouds:
-        ciwc = dat.variables['ciwc'][:].data
-        clwc = dat.variables['clwc'][:].data
+        lwp = dat.variables['cloud_lwp'][:].data
+        iwp = dat.variables['cloud_iwp'][:].data
 
     # if predictand in ['broadband_rsu_rsd','broadband_rlu_rld']: 
     y0 = dat.variables['rsu'][:]
@@ -206,7 +207,7 @@ def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
            for icol in range(ncol):
                y[i,:] = np.concatenate((y0[iexp,icol,:], y1[iexp,icol,:]))
                x[i,:] = np.concatenate((x_gasopt[iexp,icol,:], mu0[iexp,icol], 
-                        sfc_alb[iexp,icol], ciwc[iexp,icol,:], clwc[iexp,icol,:]))
+                        sfc_alb[iexp,icol], lwp[iexp,icol,:], iwp[iexp,icol,:]))
                i = i + 1
     else:
         for iexp in range(nexp):
@@ -218,7 +219,6 @@ def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
     print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
     
     return x,y
-
 
 def load_inp_outp_rte_sw(fname):
     # Load data for training a RADIATIVE TRANSFER  SOLVER (RTE) emulator,
@@ -236,25 +236,17 @@ def load_inp_outp_rte_sw(fname):
     (nexp,ncol,nlay,ngpt) = tau.shape
     # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
     sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
-    sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
+    # sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
     # plus by cosine of solar angle..
     mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
     # # ..multiplied by incoming flux
-    # #  (ASSUMED CONSTANT)
-    # toa_flux = dat.variables['toa_flux'][:].data # (nexp,ncol,ngpt)
-    # ngpt = toa_flux.shape[-1]
-    # for iexp in range(nexp):
-    #     for icol in range(ncol):
-    #         toa_flux[iexp,icol,:] = mu0[iexp,icol] * toa_flux[iexp,icol,:]
+    # #  (CONSTANT)
 
-
-    # if predictand in ['broadband_rsu_rsd','broadband_rlu_rld']: 
-    y0 = dat.variables['rsu'][:] # (nexp,ncol,nlev,ngpt)
-    y1 = dat.variables['rsd'][:]
+    y0 = dat.variables['rsu_gpt'][:] # (nexp,ncol,nlev,ngpt)
+    y1 = dat.variables['rsd_gpt'][:]
     
     nlev = nlay+1
-        
-    # Permute to (nexp,ncol,ngpt,nlev)
+    # Permute from (nexp,ncol,nlev,ngpt) to (nexp,ncol,ngpt,nlev)
     y0 = np.swapaxes(y0,2,3)
     y1 = np.swapaxes(y1,2,3)
     if (y0.shape[-1] != nlev):
@@ -267,27 +259,98 @@ def load_inp_outp_rte_sw(fname):
 
     # Reshape to 2D data matrix 
     ns = nexp*ncol*ngpt # number of samples 
-    y  = np.zeros((ns,nlev*2))
+
+    y0 = np.reshape(y0,(nexp*ncol*ngpt,nlev))
+    y1 = np.reshape(y1,(nexp*ncol*ngpt,nlev))
+    y = np.hstack((y0,y1))
+    
+    del y0,y1
+        
     # inputs: one input vector consists of vertical profiles of tau+ssa+g,
     # plus mu0 and surface albedo..these variables all need to be flattened and
     # stacked on top of each other
-    x = np.zeros(ns,(3*nlay + 1 + 1))
-    # need to reshape mu0 and sfc alb so they are 1D arrays of size 1 when indexed
+    x = np.zeros((ns,(3*nlay + 1 + 1)),dtype=np.float32)
+    # need to reshape mu0 and sfc alb so they are provided at every column and gpt
     mu0     = np.reshape(mu0,(nexp,ncol,1))
-    sfc_alb = np.reshape(sfc_alb,(nexp,ncol,1))
+    mu0     = np.repeat(mu0,ngpt,axis=2)
+    mu0     = np.reshape(mu0,(nexp*ncol*ngpt,1))
+    sfc_alb = np.reshape(sfc_alb,(nexp*ncol*ngpt,1))
+
+    tau = np.reshape(tau,(ns,nlay))
+    ssa = np.reshape(ssa,(ns,nlay))
+    g = np.reshape(g,(ns,nlay))
     
-    i = 0
-    for iexp in range(nexp):
-       for icol in range(ncol):
-           for igpt in range(ngpt):
-               y[i,:] = np.concatenate((y0[iexp,icol,igpt,:], y1[iexp,icol,igpt,:]))
-               x[i,:] = np.concatenate((tau[iexp,icol,igpt], ssa[iexp,icol,igpt],
-                g[iexp,icol,igpt], mu0[iexp,icol], sfc_alb[iexp,icol]))
-               i = i + 1
-           
+    stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,sfc_alb)    
+    
+    del tau,ssa,g
+
+    print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
+    
+    # broadband flux    
+    y0_bb = dat.variables['rsu'][:]; y1_bb = dat.variables['rsd'][:]
+    y0_bb = np.reshape(y0_bb,(nexp*ncol,nlev)); y1_bb = np.reshape(y1_bb,(nexp*ncol,nlev))
+    y_bb = np.hstack((y0_bb,y1_bb))
+
+    return x,y,y_bb
+
+def load_inp_outp_reftrans(fname):
+    # Load data for training an emulator for one component of the 
+    # RADIATIVE TRANSFER  SOLVER (RTE) - reflectance-transmittance computations
+    # Inputs are layer-wise optical properties (tau, ssa, g) + solar angle mu0,
+    # and outputs are layer-wise rdif,tdif,rdir,tdir (diffuse and direct 
+    # reflectance and transmittance)
+    
+    dat = Dataset(fname)
+    
+    # Inputs
+    tau = dat.variables['tau_sw'][:].data # nexp, ncol, nlay, ngpt
+    ssa = dat.variables['ssa_sw'][:].data # nexp, ncol, nlay, ngpt
+    g = dat.variables['g_sw'][:].data # nexp, ncol, nlay, ngpt
+    mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
+
+    # Outputs
+    rdif = dat.variables['rdif'][:].data # nexp, ncol, nlay, ngpt
+    tdif = dat.variables['tdif'][:].data # nexp, ncol, nlay, ngpt
+    rdir = dat.variables['rdir'][:].data # nexp, ncol, nlay, ngpt
+    tdir = dat.variables['tdir'][:].data # nexp, ncol, nlay, ngpt
+
+    (nexp,ncol,nlay,ngpt) = rdif.shape
+
+    # Reshape to 2D data matrix 
+    ns = nexp*ncol*nlay*ngpt # number of samples 
+    
+    rdif = np.reshape(rdif,(ns,1))
+    tdif = np.reshape(tdif,(ns,1))
+    rdir = np.reshape(rdir,(ns,1))
+    tdir = np.reshape(tdir,(ns,1))
+
+    tau = np.reshape(tau,(ns,1))
+    ssa = np.reshape(ssa,(ns,1))
+    g   = np.reshape(g,  (ns,1))
+    ssa = np.reshape(ssa,(ns,1))
+    
+    mu0 = np.reshape(mu0,(nexp,ncol,1,1))
+    mu0 = np.repeat(mu0,nlay,axis=2)
+    mu0 = np.repeat(mu0,ngpt,axis=3)
+    mu0 = np.reshape(mu0,(ns,1))
+
+    x = np.hstack((tau,ssa,g,mu0))
+    y = np.hstack((rdif,tdif,rdir,tdir))
+    
     print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
     
     return x,y
+
+@njit(parallel=True)
+def stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,sfc_alb):
+    nlay2 = 2*nlay
+    nlay3 = 3*nlay
+    for i in prange(ns):
+        x[i,0:nlay]         = tau[i,:]
+        x[i,nlay:nlay2]     = ssa[i,:]
+        x[i,nlay2:nlay3]    = g[i,:]
+        x[i,nlay3:nlay3+1]  = mu0[i]
+        x[i,nlay3+1:nlay3+2]= sfc_alb[i]
 
 def preproc_tau_to_crossection(tau, col_dry):
     y = np.zeros(tau.shape)
@@ -328,4 +391,24 @@ def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
 
     return y
 
+    # Preprocess RRTMGP inputs (p,T, gas concs)
+def preproc_minmax_rrtmgp_inputs(x): #, datamin, datamax):
+        x_scaled = np.copy(x)
+        x_scaled[:,1] = np.log(x_scaled[:,1])
+        x_scaled[:,2] = x_scaled[:,2]**(1.0/4) 
+        x_scaled[:,3] = x_scaled[:,3]**(1.0/4) 
+        # x = minmaxscale(x,data_min_,data_max_)
     
+        scaler = MinMaxScaler()  
+        scaler.fit(x_scaled)
+        x_scaled = scaler.transform(x_scaled)  
+
+        return x_scaled, scaler.data_max_, scaler.data_min_
+
+def preproc_minmax_inputs(x):
+        x_scaled = np.copy(x)
+        scaler = MinMaxScaler()  
+        scaler.fit(x_scaled)
+        x_scaled = scaler.transform(x_scaled)  
+
+        return x_scaled, scaler.data_max_, scaler.data_min_
