@@ -32,6 +32,7 @@ examples/all-sky/rrtmgp-allsky.nc
 examples/emulator-training/data_training/
 examples/emulator-training/ml_allsky_sw
 examples/emulator-training/scripts/CAMS_download_and_preprocess/tmp/*
+examples/emulator-training/scripts/lightning_logs/*
 examples/emulator-training/fluxes/*
 
 *.pgprof

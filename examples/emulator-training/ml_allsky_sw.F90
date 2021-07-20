@@ -1098,7 +1098,7 @@ program rrtmgp_rfmip_sw
     integer,                                    intent(in)  ::  ncol, nlay, nx_gasopt
     real(sp), dimension(nx_gasopt, nlay, ncol), intent(in)  ::  rrtmgp_inputs 
     real(wp), dimension(nlay,ncol),             intent(in)  ::  cloud_lwc, cloud_iwc
-    real(wp), dimension(ncol),                  intent(in)  ::  mu0, surface_albedo 
+    real(wp), dimension(ncol),                  intent(in)  ::  mu0, sfc_alb 
     type(network_type),                         intent(in)  ::  neural_net 
     class(ty_fluxes_flexible),                  intent(inout) :: fluxes  
 

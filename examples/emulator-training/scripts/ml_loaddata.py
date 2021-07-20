@@ -334,7 +334,6 @@ def load_inp_outp_reftrans(fname):
     tau = np.reshape(tau,(ns,1))
     ssa = np.reshape(ssa,(ns,1))
     g   = np.reshape(g,  (ns,1))
-    ssa = np.reshape(ssa,(ns,1))
     
     mu0 = np.reshape(mu0,(nexp,ncol,1,1))
     mu0 = np.repeat(mu0,nlay,axis=2)
@@ -361,7 +360,7 @@ def stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,inc_flux,sfc_alb):
         x[i,nlay3+2:nlay3+3]=sfc_alb[i]
 
 def preproc_tau_to_crossection(tau, col_dry):
-    y = np.zeros(tau.shape)
+    y = np.zeros(tau.shape,dtype=np.float32)
     for igpt in range(tau.shape[1]):
         y[:,igpt]  = tau[:,igpt] / col_dry
     return y
@@ -378,7 +377,7 @@ def preproc_pow_gptnorm(y, nfac, means,sigma):
     # the means and sigma(s) are input arguments as they need to be fixed 
     # for production
     (nobs,ngpt) = y.shape
-    y_scaled = np.zeros(y.shape)
+    y_scaled = np.zeros(y.shape,dtype=np.float32)
     nfacc = 1/nfac
     for iobs in prange(nobs):
         for igpt in prange(ngpt):
@@ -399,24 +398,76 @@ def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
 
     return y
 
-    # Preprocess RRTMGP inputs (p,T, gas concs)
-def preproc_minmax_rrtmgp_inputs(x): #, datamin, datamax):
-        x_scaled = np.copy(x)
-        x_scaled[:,1] = np.log(x_scaled[:,1])
-        x_scaled[:,2] = x_scaled[:,2]**(1.0/4) 
-        x_scaled[:,3] = x_scaled[:,3]**(1.0/4) 
-        # x = minmaxscale(x,data_min_,data_max_)
-    
-        scaler = MinMaxScaler()  
-        scaler.fit(x_scaled)
-        x_scaled = scaler.transform(x_scaled)  
-
-        return x_scaled, scaler.data_max_, scaler.data_min_
-
 def preproc_minmax_inputs(x):
         x_scaled = np.copy(x)
         scaler = MinMaxScaler()  
         scaler.fit(x_scaled)
         x_scaled = scaler.transform(x_scaled)  
 
-        return x_scaled, scaler.data_max_, scaler.data_min_
+        return x_scaled, scaler.data_min_, scaler.data_max_
+
+# Preprocess RRTMGP inputs (p,T, gas concs)
+def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
+        x_scaled = np.copy(x)
+        # Log-scale pressure, power-scale H2O and O3
+        x_scaled[:,1] = np.log(x_scaled[:,1])
+        x_scaled[:,2] = x_scaled[:,2]**(1.0/4) 
+        x_scaled[:,3] = x_scaled[:,3]**(1.0/4) 
+        # x = minmaxscale(x,data_min_,data_max_)
+        if xcoeffs==None:
+            scaler = MinMaxScaler()  
+            scaler.fit(x_scaled)
+            x_scaled = scaler.transform(x_scaled) 
+            return x_scaled, scaler.data_min_, scaler.data_min_
+
+        else:
+            (xmin,xmax) = xcoeffs
+            for i in range(x.shape[1]):
+                x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
+            return x_scaled
+
+# A wrapping function to automate things further for RRTMGP preprocessing        
+def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False, 
+                 y_mean=0, y_sigma=0, xcoeffs=None):
+
+    if scale_inputs:
+        if xcoeffs is None:
+            x,xmax,xmin = preproc_minmax_inputs_rrtmgp(x_raw)
+        else:
+            x = preproc_minmax_inputs_rrtmgp(x_raw,xcoeffs )
+    else:
+        x = x_raw
+        
+    if scale_outputs:
+        # Standardization coefficients loaded from file
+#        y_mean = ymeans_sw_abs; y_sigma = ysigma_sw_abs
+        # Set power scaling coefficient (y == y**(1/nfac))
+        nfac = 8 
+        
+        # Scale by layer number of molecules to obtain absorption cross section
+        y   = preproc_tau_to_crossection(y_raw, col_dry)
+        # Scale using power-scaling followed by standard-scaling
+        y   = preproc_pow_gptnorm(y, nfac, y_mean, y_sigma)
+    else:
+        y = y_raw
+        
+    if xcoeffs is None:
+        return x, y, xmax, xmin
+    else: return x,y
+    
+# Preprocess inputs to reflectance-transmittance computations
+def preproc_minmax_inputs_reftrans(x,xcoeffs=None):
+        x_scaled = np.copy(x)
+        # Power-scale optical depth
+        x_scaled[:,0] = x_scaled[:,0]**(1.0/4) 
+
+        if xcoeffs is None:
+            scaler = MinMaxScaler()  
+            scaler.fit(x_scaled)
+            x_scaled = scaler.transform(x_scaled)  
+            return x_scaled, scaler.data_max_, scaler.data_min_
+        else:
+            (xmin,xmax) = xcoeffs
+            for i in range(x.shape[1]):
+                x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
+            return x_scaled
