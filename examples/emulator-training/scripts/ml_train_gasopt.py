@@ -32,6 +32,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from torchvision import transforms
 import pytorch_lightning as pl
 
+from keras import losses
+
+
 class MLP(pl.LightningModule):
   
   def __init__(self, nx, ny):

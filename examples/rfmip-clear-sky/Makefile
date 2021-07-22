@@ -45,6 +45,7 @@ else ifeq ($(BLASLIB),mkl)
 endif
 
 
+
 # -------- Use OpenMP? May be needed for BLAS -------
 # ifeq ($(BLASLIB),blis-amd)
 #    USE_OPENMP=1
@@ -88,6 +89,18 @@ ifeq ($(FC),gfortran)
 	LIBS      += -rdynamic  
 endif
 endif
+
+# Use LIBDXSMM for small matrix-matrix multiplications
+ifeq ($(USE_LIBXSMM),1)
+FCINCLUDE += -I$(LIBXSMM_DIR)/include
+FCFLAGS += -DUSE_LIBXSMM
+
+LDFLAGS += $(LIBXSMM_DIR)/lib/libxsmmf.a $(LIBXSMM_DIR)/lib/libxsmm.a -lpthread -lrt -ldl -lm 
+
+# LDFLAGS += -L$(LIBXSMM_DIR)/lib -libxsmmf -lxsmm -lxsmmnoblas
+# LIBS      += -libxsmmf -lxsmm -lxsmmnoblas 
+endif
+
 
 VPATH = ../
 

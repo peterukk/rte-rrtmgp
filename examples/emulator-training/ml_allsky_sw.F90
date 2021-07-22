@@ -1104,7 +1104,7 @@ program rrtmgp_rfmip_sw
 
     ! Local variables
     real(wp), dimension(:,:), allocatable   :: nn_inputs
-    integer :: nlev, ns, nfeatures
+    integer :: nlev, ns, nfeatures, is, ix
 
     ! number of samples (profiles)
     ns = ncol 
@@ -1114,6 +1114,10 @@ program rrtmgp_rfmip_sw
     !               gases,         clouds,  mu0, sfc_alb
     nfeatures =    nlay*nx_gasopt + 2*nlay  + 1 + 1
     allocate(nn_inputs(nfeatures, ns))
+
+    ! Compute inputs
+    ! do is = 1, ns 
+      
 
 
 
