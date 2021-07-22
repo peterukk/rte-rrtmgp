@@ -133,9 +133,11 @@ program rrtmgp_rfmip_sw
   character(len=4)   :: block_size_char, forcing_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
-  character (len = 80)                :: modelfile_tau, modelfile_ray
+  character (len = 80)                :: modelfile_tau, modelfile_ray, modelfile_reftrans
 
   type(network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
+  type(network_type)                  :: nn_reftrans 
+
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
   real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir
@@ -144,7 +146,8 @@ program rrtmgp_rfmip_sw
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
   real(wp), dimension(:),             allocatable :: temparray
-  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux
+  real(wp), dimension(:,:,:,:),         allocatable :: reftrans_variables
+  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux, use_reftrans_nn=.false.
   !
   ! Classes used by rte+rrtmgp
   !
@@ -184,9 +187,12 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
+  use_reftrans_nn = .true.
+
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-8.txt" 
 
   if (use_rrtmgp_nn) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau
@@ -196,6 +202,11 @@ program rrtmgp_rfmip_sw
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
   end if  
   ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90
+  if (use_reftrans_nn) then
+	  print *, 'loading reflectance-transmittance model from ', modelfile_reftrans
+    call nn_reftrans % load(modelfile_reftrans)
+
+  end if
 
   print *, "Usage: rrtmgp_rfmip_sw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [optional gas optics input_output file]"
   nargs = command_argument_count()
@@ -349,6 +360,7 @@ program rrtmgp_rfmip_sw
 #endif
 
   ! --------------------------------------------------
+  allocate(reftrans_variables(ngpt,nlay,block_size,4))
 
   if (use_rrtmgp_nn) then
     print *, "starting clear-sky shortwave computations, using neural networks as RRTMGP kernel"
@@ -444,6 +456,13 @@ do i = 1, 4
     end do
     !$acc end parallel
 
+
+    ! test reftrans-NN
+    
+    call predict_nn_reftrans(block_size, nlay, ngpt,  &
+                                nn_reftrans, optical_props, mu0, &
+                                reftrans_variables)
+
     !
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
     !    via ty_fluxes_broadband
@@ -451,15 +470,34 @@ do i = 1, 4
 #ifdef USE_TIMING
     ret =  gptlstart('rte_sw')
 #endif
+    if (use_reftrans_nn) then
+      call stop_on_err(rte_sw(optical_props,   &
+                              top_at_1,        &
+                              mu0,             &
+                              toa_flux,        &
+                              sfc_alb_spec,    &
+                              sfc_alb_spec,    &
+                              fluxes,          &
+                              reftrans_vars=reftrans_variables))
+    else
+      call stop_on_err(rte_sw(optical_props,   &
+                              top_at_1,        &
+                              mu0,             &
+                              toa_flux,        &
+                              sfc_alb_spec,    &
+                              sfc_alb_spec,    &
+                              fluxes))
+    end if     
     
-    call stop_on_err(rte_sw(optical_props,   &
-                            top_at_1,        &
-                            mu0,             &
-                            toa_flux,        &
-                            sfc_alb_spec,    &
-                            sfc_alb_spec,    &
-                            fluxes))
-                       
+    print *,"2 mean,max,min Rdif", mean_3d(reftrans_variables(:,:,:,1)), &
+      maxval(reftrans_variables(:,:,:,1)), minval(reftrans_variables(:,:,:,1))
+    print *,"2 mean,max,min Tdif", mean_3d(reftrans_variables(:,:,:,2)), &
+    maxval(reftrans_variables(:,:,:,2)), minval(reftrans_variables(:,:,:,2))
+    print *,"2 mean,max,min  Rdir", mean_3d(reftrans_variables(:,:,:,3)), &
+    maxval(reftrans_variables(:,:,:,3)), minval(reftrans_variables(:,:,:,3))
+    print *,"2 mean,max,min  Tdir", mean_3d(reftrans_variables(:,:,:,4)), &
+    maxval(reftrans_variables(:,:,:,4)), minval(reftrans_variables(:,:,:,4))
+        
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
 #endif
@@ -472,7 +510,9 @@ do i = 1, 4
         flux_dn(:,icol,b)  = 0._wp
       end if
     end do
-    icol = test_gemm(nlay*block_size)
+
+    ! icol = test_gemm(nlay*block_size)
+
   end do !blocks
 #ifdef USE_OPENMP
   !$OMP END DO
@@ -714,9 +754,93 @@ do i = 1, 4
   deallocate(flux_up, flux_dn)
   print *, "SUCCESS!"
 
-
-
   contains
+
+  subroutine predict_nn_reftrans(ncol, nlay, ngpt,  &
+                                neural_net, optical_props, mu0, &
+                                reftrans_variables)
+    use, intrinsic :: ISO_C_BINDING
+    integer,                      intent(in)    :: ngpt,nlay,ncol
+    type(network_type),           intent(in)    :: neural_net 
+    class(ty_optical_props_2str), intent(in   ) :: optical_props  ! inputs: tau, ssa, g
+    real(wp), dimension(ncol),    intent(in)    :: mu0            ! also input
+    real(wp), dimension(ngpt,nlay,ncol,4), &      ! outputs: Rdif,Tdif,Rdir,Tdir
+                                  intent(inout) :: reftrans_variables 
+    ! local vars
+    integer :: nbatch, is, icol, ilay, igpt
+    ! after scaling inputs by **(1/2), min max scaling 
+    real(sp), dimension(4)   :: xmin =  (/ 0.0, 0.0, 0.0, 0.0 /)
+    real(sp), dimension(4)   :: xmax =  (/ 180.0,  1.0,  0.54999859,  0.99999514 /)
+    real(sp), dimension (:,:), allocatable :: nn_input ! (nbatch, 4), where nbatch=ngpt*nlay*ncol
+    ! real(sp), dimension (ngpt*nlay*ncol,4) :: nn_input
+    real(sp), dimension(:), contiguous, pointer     :: input
+    real(sp), dimension(:,:),   contiguous, pointer     :: nn_output   
+    ! integer                                           :: ilay, icol, nobs
+    ! nobs = nlay*ncol
+    
+#ifdef USE_TIMING
+    ret =  gptlstart('prep_input')
+#endif
+    
+    nbatch = ngpt*nlay*ncol
+    allocate(nn_input(nbatch,4))
+    
+    ! print *," tau 1", optical_props%tau(1,1,1)
+
+    ! Copy input arrays into place and do scaling: because all xmin values are 0, min max scaling is just divide
+
+    call C_F_POINTER (C_LOC(optical_props%tau), input, [nbatch])
+    nn_input(:,1) = sqrt(input) / xmax(1)
+    call C_F_POINTER (C_LOC(optical_props%ssa), input, [nbatch])
+    nn_input(:,2) = input  ! / xmax(2)
+    call C_F_POINTER (C_LOC(optical_props%g), input, [nbatch])
+    nn_input(:,3) = input / xmax(3)
+    
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        do igpt = 1, ngpt
+          nn_input(is,4) = mu0(icol) / xmax(4)
+        end do
+      end do
+    end do
+
+    call C_F_POINTER (C_LOC(reftrans_variables), nn_output, [nbatch,4])
+
+
+    call neural_net % output_sgemm_byrows(4, 4, nbatch, nn_input, nn_output)
+
+    print *,"mean,max,min Rdif", mean(nn_output(:,1)), maxval(nn_output(:,1)), minval(nn_output(:,1))
+    print *,"mean,max,min Tdif", mean(nn_output(:,2)), maxval(nn_output(:,2)), minval(nn_output(:,2))
+    print *,"mean,max,min  Rdir", mean(nn_output(:,3)), maxval(nn_output(:,3)), minval(nn_output(:,3))
+    print *,"mean,max,min  Tdir", mean(nn_output(:,4)), maxval(nn_output(:,4)), minval(nn_output(:,4))
+
+    ! is = 1
+    ! do icol = 1, ncol
+    !   do ilay = 1, nlay
+    !     do igpt = 1, ngpt
+    !       nn_input(is,1) = optical_props%tau(igpt,ilay,icol)
+    !       nn_input(is,2) = optical_props%ssa(igpt,ilay,icol)
+    !       nn_input(is,3) = optical_props%g(igpt,ilay,icol)
+    !       nn_input(is,4) = mu0(icol)
+    !       is = is + 1
+    !       ! reftrans_variables(igpt,ilay,icol,1) = optical_props%tau(igpt,ilay,icol)
+    !       ! reftrans_variables(igpt,ilay,icol,2) = optical_props%ssa(igpt,ilay,icol)
+    !       ! reftrans_variables(igpt,ilay,icol,3) = optical_props%g(igpt,ilay,icol)
+    !       ! reftrans_variables(igpt,ilay,icol,4) = mu0(icol)
+
+    !     end do
+    !   end do
+    ! end do
+
+
+
+#ifdef USE_TIMING
+    ret =  gptlstop('prep_input')
+#endif
+
+  end subroutine predict_nn_reftrans
+
+
   subroutine standardscaler(x,means,stdevs)
     implicit none
     real(wp), dimension(:,:,:,:), intent(inout) :: x 
@@ -790,11 +914,10 @@ do i = 1, 4
 
 
 
-  function test_gemm(nbatch) result(i)
+  function test_gemm(nbatch) result(neurons)
     integer, intent(in) :: nbatch
     integer   :: i, j, neurons, nlayers, ngpt
     real(sp), allocatable :: output2(:,:), wt2(:,:), inp2(:,:)
-
 #ifdef USE_LIBXSMM
     TYPE(LIBXSMM_MMFUNCTION) :: xmm
     ! INTEGER(LIBXSMM_BLASINT_KIND) :: m=60*4, n=8, k=4, batchsize=224

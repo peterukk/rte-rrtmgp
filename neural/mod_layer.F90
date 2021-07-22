@@ -16,11 +16,18 @@ module mod_layer
     real(sp), allocatable :: w(:,:) ! weights
     real(sp), allocatable :: w_transposed(:,:) ! weights
     !!  !$acc policy<copylayer> copyin(b, w, w_transposed)
-    procedure(activation_vec),    pointer, nopass :: activation !=> null()
-    procedure(activation_mat),    pointer, nopass :: activation_m
+    procedure(activation_interface),        pointer, nopass :: activation !=> null()
+    procedure(bias_and_activation_interface),pointer, nopass :: bias_and_activation !=> null()
+
   contains
+  
     procedure, public, pass(self) :: set_activation
   end type layer_type
+
+  ! interface activation
+  !   procedure activation_func
+  !   procedure activation_func_bias
+  ! end interface activation
 
   interface layer_type
     module procedure constructor
@@ -48,25 +55,22 @@ contains
     select case(trim(activation))
       case('gaussian')
         self % activation => gaussian
-        self % activation_m => gaussian_m
+        ! self % bias_and_activation => gaussian_b
       case('relu')
-        self % activation => relu
-        self % activation_m => relu_m
+        self % activation             => relu
+        self % bias_and_activation        => relu_mat_b
       case('sigmoid')
         self % activation => sigmoid
-        self % activation_m => sigmoid_m
       case('softsign')
-        self % activation => softsign
-        self % activation_m => softsign_m
+        self % activation             => softsign
+        self % bias_and_activation        => softsign_mat_b
       case('tanh')
         self % activation => tanhf
-        self % activation_m => tanhf_m
       case('linear')
-        self % activation => linear
-        self % activation_m => linear_m
+        self % activation             => linear
+        self % bias_and_activation        => linear_mat_b
       case default
         self % activation => sigmoid
-        self % activation_m => sigmoid_m
     end select
   end subroutine set_activation
 
