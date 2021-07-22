@@ -134,7 +134,7 @@ def load_inp_outp_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
         col_dry = col_dry[:,::dcol,:]
 
     nobs = nexp*ncol*nlay
-    print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
+    print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
 
     y = np.reshape(y, (nobs,ngpt)); x = np.reshape(x, (nobs,nx))
     col_dry = np.reshape(col_dry,(nobs))
@@ -216,7 +216,7 @@ def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
                x[i,:] = np.concatenate((x_gasopt[iexp,icol,:], mu0[iexp,icol], sfc_alb[iexp,icol]))
                i = i + 1
            
-    print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
+    print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
     
     return x,y
 
@@ -291,7 +291,7 @@ def load_inp_outp_rte_sw(fname):
     
     del tau,ssa,g
 
-    print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
+    print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
     
     # broadband flux    
     y0_bb = dat.variables['rsu'][:]; y1_bb = dat.variables['rsd'][:]
@@ -343,9 +343,120 @@ def load_inp_outp_reftrans(fname):
     x = np.hstack((tau,ssa,g,mu0))
     y = np.hstack((rdif,tdif,rdir,tdir))
     
-    print( "there are {} profiles (expt*col) this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
+    print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
     
     return x,y
+
+
+@njit(parallel=True)
+def reftrans(tau,w0,g,mu0):
+    ns = tau.shape[0]
+    
+    Tdir = np.zeros(ns,dtype=np.float64)
+    Rdir = np.zeros(ns,dtype=np.float64)
+    Tdif = np.zeros(ns,dtype=np.float64)
+    Rdif = np.zeros(ns,dtype=np.float64)
+
+    for i in prange(ns):
+        mu0_inv = 1./mu0[i]
+        Tnoscat = np.exp(-tau[i]*mu0_inv)
+        epsilon = np.finfo(np.float64).eps
+
+        # Zdunkowski Practical Improved Flux Method "PIFM"
+        #  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
+        #
+        gamma1= (8. - w0[i] * (5. + 3. * g[i])) * .25
+        gamma2=  3. *(w0[i] * (1. -         g[i])) * .25
+        gamma3= (2. - 3. * mu0[i] *              g[i] ) * .25
+        gamma4=  1. - gamma3
+    
+        alpha1 = gamma1 * gamma4 + gamma2 * gamma3           # Eq. 16
+        alpha2 = gamma1 * gamma3 + gamma2 * gamma4           # Eq. 17
+    
+        k = np.sqrt(max((gamma1 - gamma2) * (gamma1 + gamma2),  1e-12))
+
+        exp_minusktau = np.exp(-tau[i]*k)
+        
+        #
+        # Diffuse reflection and transmission
+        #
+        #$OMP SIMD
+        exp_minus2ktau  = exp_minusktau * exp_minusktau
+
+        # Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
+        RT_term = 1. / (k * (1. + exp_minus2ktau) + gamma1 * (1. - exp_minus2ktau) )
+
+        # Equation 25
+        Rdif[i] = RT_term * gamma2 * (1. - exp_minus2ktau)
+
+        # Equation 26
+        Tdif[i] = RT_term * 2. * k * exp_minusktau
+
+        k_mu     = k * mu0[i]
+        k_mu2    = k_mu*k_mu
+        k_gamma3 = k * gamma3
+        k_gamma4 = k * gamma4
+        #
+        # Equation 14, multiplying top and bottom by exp_fast(-k*tau)
+        #   and rearranging to avoid div by 0.    
+        x = 1 - k_mu2
+        if np.abs(x) >= epsilon:
+            RT_term = (w0[i] * RT_term) / x
+        else:
+            RT_term = (w0[i] * RT_term) / epsilon  
+
+
+        Rdir[i] = RT_term  *                          \
+            (   (1.0 - k_mu) * (alpha2 + k_gamma3) -  \
+                (1.0 + k_mu) * (alpha2 - k_gamma3) * exp_minus2ktau - \
+             2.0 * (k_gamma3 - alpha2 * k_mu)  * exp_minusktau  * Tnoscat)
+
+        Tdir[i] = -RT_term *                                                \
+            ((1.0 + k_mu) * (alpha1 + k_gamma4)                  * Tnoscat  \
+            - (1.0 - k_mu) * (alpha1 - k_gamma4) * exp_minus2ktau * Tnoscat \
+            - 2.0 * (k_gamma4 + alpha1 * k_mu)  * exp_minusktau )
+                
+            
+                
+    return Rdif, Tdif, Rdir, Tdir
+
+def gen_synthetic_inp_outp_reftrans(ns, minmax_tau, minmax_ssa, minmax_g,
+                                    minmax_mu0):
+    from doepy import build
+    ranges = {  
+                    'tau':  [minmax_tau[0], minmax_tau[1]], 
+                    'ssa':  [minmax_ssa[0], minmax_ssa[1]], 
+                    'g':    [minmax_g[0],   minmax_g[1]], 
+                    'mu0':  [minmax_mu0[0], minmax_mu0[1]],
+                  }
+    samples = build.halton(ranges, num_samples = ns)
+
+    tau = samples['tau'][:].to_numpy()
+    ssa = samples['ssa'][:].to_numpy()
+    g   = samples['g'][:].to_numpy()
+    mu0 = samples['mu0'][:].to_numpy()
+    
+    Rdif, Tdif, Rdir, Tdir = reftrans(tau,ssa,g,mu0)
+
+    tau = np.reshape(tau,(ns,1))
+    ssa = np.reshape(ssa,(ns,1))
+    g   = np.reshape(g,  (ns,1))
+    mu0 = np.reshape(mu0,(ns,1))
+    
+    Rdif = np.reshape(Rdif,(ns,1))
+    Tdif = np.reshape(Tdif,(ns,1))
+    Rdir = np.reshape(Rdir,(ns,1))
+    Tdir = np.reshape(Tdir,(ns,1))
+    
+    x = np.hstack((tau,ssa,g,mu0))
+    y = np.hstack((Rdif,Tdif,Rdir,Tdir))
+    
+    x = np.float32(x)
+    y = np.float32(y)
+    
+        
+    return x,y
+
 
 @njit(parallel=True)
 def stack_x_vector(ns,nlay,x,tau,ssa,g,mu0,inc_flux,sfc_alb):
@@ -432,7 +543,7 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
 
     if scale_inputs:
         if xcoeffs is None:
-            x,xmax,xmin = preproc_minmax_inputs_rrtmgp(x_raw)
+            x,xmin,xmax = preproc_minmax_inputs_rrtmgp(x_raw)
         else:
             x = preproc_minmax_inputs_rrtmgp(x_raw,xcoeffs )
     else:
@@ -452,20 +563,20 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         y = y_raw
         
     if xcoeffs is None:
-        return x, y, xmax, xmin
+        return x, y, xmin, xmax
     else: return x,y
     
 # Preprocess inputs to reflectance-transmittance computations
-def preproc_minmax_inputs_reftrans(x,xcoeffs=None):
+def preproc_minmax_inputs_reftrans(x,nfac=4, xcoeffs=None):
         x_scaled = np.copy(x)
         # Power-scale optical depth
-        x_scaled[:,0] = x_scaled[:,0]**(1.0/4) 
+        x_scaled[:,0] = x_scaled[:,0]**(1/nfac) 
 
         if xcoeffs is None:
             scaler = MinMaxScaler()  
             scaler.fit(x_scaled)
             x_scaled = scaler.transform(x_scaled)  
-            return x_scaled, scaler.data_max_, scaler.data_min_
+            return x_scaled, scaler.data_min_, scaler.data_max_
         else:
             (xmin,xmax) = xcoeffs
             for i in range(x.shape[1]):

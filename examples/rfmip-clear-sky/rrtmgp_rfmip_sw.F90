@@ -101,6 +101,20 @@ program rrtmgp_rfmip_sw
                                    gptlpercent, gptloverhead
 #endif
 
+#ifdef USE_LIBXSMM
+#ifdef DOUBLE_PRECISION
+  USE :: LIBXSMM, ONLY: LIBXSMM_BLASINT_KIND,                     &
+  &                        LIBXSMM_MMFUNCTION => LIBXDMM_SMMFUNCTION,&
+  &                        libxsmm_mmdispatch => libxdmm_smmdispatch,&
+  &                        libxsmm_mmcall => libxsmm_dmmcall  
+#else
+  USE :: LIBXSMM, ONLY: LIBXSMM_BLASINT_KIND,                     &
+  &                        LIBXSMM_MMFUNCTION => LIBXSMM_SMMFUNCTION,&
+  &                        libxsmm_mmdispatch => libxsmm_smmdispatch,&
+  &                        libxsmm_mmcall => libxsmm_smmcall 
+#endif
+#endif
+
   implicit none
 
 #ifdef USE_PAPI  
@@ -458,7 +472,7 @@ do i = 1, 4
         flux_dn(:,icol,b)  = 0._wp
       end if
     end do
-
+    icol = test_gemm(nlay*block_size)
   end do !blocks
 #ifdef USE_OPENMP
   !$OMP END DO
@@ -700,6 +714,8 @@ do i = 1, 4
   deallocate(flux_up, flux_dn)
   print *, "SUCCESS!"
 
+
+
   contains
   subroutine standardscaler(x,means,stdevs)
     implicit none
@@ -771,4 +787,185 @@ do i = 1, 4
     mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
 
   end function mean_2d
+
+
+
+  function test_gemm(nbatch) result(i)
+    integer, intent(in) :: nbatch
+    integer   :: i, j, neurons, nlayers, ngpt
+    real(sp), allocatable :: output2(:,:), wt2(:,:), inp2(:,:)
+
+#ifdef USE_LIBXSMM
+    TYPE(LIBXSMM_MMFUNCTION) :: xmm
+    ! INTEGER(LIBXSMM_BLASINT_KIND) :: m=60*4, n=8, k=4, batchsize=224
+    INTEGER(LIBXSMM_BLASINT_KIND) :: m=9, n=9, k=9, batchsize=60*4
+    integer :: LIBXSMM_PREFETCH_AUTO
+    real(sp), allocatable :: a(:,:,:), b(:,:), c(:,:,:)
+
+    allocate(a(m,k,batchsize), b(k,n), c(m,n,batchsize))
+    ! initialize input
+    b = 0.5_sp
+    a = 0.33_sp
+    b(4,8) = 100.0_sp
+    a(1,:,1) = 20.0_sp
+#ifdef USE_TIMING
+    ret =  gptlstart('(nobs*ngpt,4) X (4,8) LIBXSMM')
+#endif
+    ! generates and dispatches a matrix multiplication kernel
+    call libxsmm_mmdispatch(xmm, m, n, k,                           &
+    &    alpha=1.0_wp, beta=1.0_wp, prefetch=LIBXSMM_PREFETCH_AUTO)
+    ! kernel multiplies and accumulates matrices: C += Ai * Bi
+    DO i = 1, batchsize
+      CALL libxsmm_mmcall(xmm, a(:,:,i), b(:,:), c(:,:,i))
+    END DO
+#ifdef USE_TIMING
+    ret =  gptlstop('(nobs*ngpt,4) X (4,8) LIBXSMM')
+#endif
+    deallocate(a, b, c)
+#else
+    ! NORMAL BLAS 
+
+    integer   :: m, k, n
+
+    ngpt = 224
+
+    !                                   Layer Weights            Layer Inputs                Layer Outputs
+    ! First layer :                      (Nneurons x Nx)       * (Nx x nbatch )          = (Nneurons x nbatch) 
+    ! Intermediate layers :              (Nneurons x Nneurons) * (Nneurons x nbatch )    = (Nneurons x nbatch) 
+    ! Final layer:                       (Ngpoints x Nneurons) * (Nneurons x nbatch )    = (Ngpoints x nbatch)  
+    ! in GEMM terms:                         A                 *         B                = C
+    !                                     (m x k)              *      (k * N )            = (m  * N)  
+
+    m = 240 
+    k = 240 
+  
+    allocate(wt2(m,k), inp2(k,nbatch), output2(m,nbatch))
+    !$acc enter data create(output2, wt2,inp2)
+    !$acc kernels
+    wt2 = 0.5_sp
+    inp2 = 0.5_sp
+    !$acc end kernels
+#ifdef USE_TIMING
+  ret =  gptlstart('(240,240) X (240,nobs)')
+#endif
+    !$acc host_data use_device(wt2, inp2, output2)
+    call sgemm("N","N", m, nbatch, k, 1.0, wt2, m, inp2, k, 0.0, output2, m)
+    !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('(240,240) X (240,nobs)')
+#endif
+    !$acc exit data delete(output2,wt2,inp2)
+    deallocate(output2,wt2,inp2)
+
+    n = nbatch*ngpt
+    neurons = 8
+
+    m = neurons  ! neurons
+    k = 4 ! features
+    allocate(wt2(m,k), inp2(k,n), output2(m,n))
+    !$acc enter data create(output2, wt2,inp2)
+    !$acc kernels
+    wt2 = 0.5_sp
+    inp2 = 0.33_sp
+    !$acc end kernels
+#ifdef USE_TIMING
+  ret =  gptlstart('(8,4) X (4,nobs*ngpt) GEMM')
+#endif
+    !$acc host_data use_device(wt2, inp2, output2)
+    call sgemm("N","N", m, n, k, 1.0, wt2, m, inp2, k, 0.0, output2, m)
+    !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('(8,4) X (4,nobs*ngpt) GEMM')
+#endif
+    !$acc exit data delete(output2,wt2,inp2)
+    deallocate(output2,wt2,inp2)
+    
+    m = 4 ! outputs
+    k = neurons ! neurons
+    allocate(wt2(m,k), inp2(k,n), output2(m,n))
+    !$acc enter data create(output2, wt2,inp2)
+    !$acc kernels
+    wt2 = 0.5_sp
+    inp2 = 0.5_sp
+    !$acc end kernels
+#ifdef USE_TIMING
+  ret =  gptlstart('(4,8) X (8,nobs*ngpt) GEMM')
+#endif
+    !$acc host_data use_device(wt2, inp2, output2)
+    call sgemm("N","N", m, n, k, 1.0, wt2, m, inp2, k, 0.0, output2, m)
+    !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('(4,8) X (8,nobs*ngpt) GEMM')
+#endif
+
+    !$acc exit data delete(output2,wt2,inp2)
+    deallocate(output2,wt2,inp2)
+
+    ! Reverse structure
+    !                                   layer inputs              weights
+    !                                   (nbatch * nx)          * (nx * nneur)        = (nbatch * nneur)
+    !                                   (nbatch * nneur)       * (nneur * ny ) (T)   = (nbatch * ny)
+    !                                     (m x k)              *   (k * N )          = (m  * N)  
+    m =  nbatch*ngpt
+    k = 4 ! features
+    n = neurons
+
+    allocate(inp2(m,k),wt2(k,n), output2(m,n))
+    !$acc enter data create(output2, wt2,inp2)
+    !$acc kernels
+    wt2 = 0.5_sp
+    inp2 = 0.33_sp
+    !$acc end kernels
+#ifdef USE_TIMING
+  ret =  gptlstart('(nobs*ngpt,4) X (4,8) GEMM')
+#endif
+    !$acc host_data use_device(wt2, inp2, output2)
+    call sgemm("N","N", m, n, k, 1.0, inp2, m, wt2, k, 0.0, output2, m)
+    !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('(nobs*ngpt,4) X (4,8) GEMM')
+#endif
+    !$acc exit data delete(output2,wt2,inp2)
+    deallocate(output2,wt2,inp2)
+
+    ! final layer
+    k = neurons 
+    n = 4 ! outputs
+
+    allocate(inp2(m,k),wt2(k,n), output2(m,n))
+    !$acc enter data create(output2, wt2,inp2)
+    !$acc kernels
+    wt2 = 0.5_sp
+    inp2 = 0.33_sp
+    !$acc end kernels
+
+#ifdef USE_TIMING
+    ret =  gptlstart('(nobs*ngpt,8) X (8,4) GEMM')
+#endif
+    !$acc host_data use_device(wt2, inp2, output2)
+    call sgemm("N","N", m, n, k, 1.0, inp2, m, wt2, k, 0.0, output2, m)
+    !$acc end host_data
+#ifdef USE_TIMING
+    ret =  gptlstop('(nobs*ngpt,8) X (8,4) GEMM')  ! = (nbatch, 4)
+#endif
+
+#ifdef USE_TIMING
+  ret =  gptlstart('exp')
+  output2 = exp(output2)
+  ret =  gptlstop('exp')
+
+  ret =  gptlstart('ss')
+  output2 = output2/ (abs(output2) + 1)
+  ret =  gptlstop('ss')
+
+  ret =  gptlstart('relu')
+  output2 = max(output2,0.0_wp)
+  ret =  gptlstop('relu')
+#endif
+
+#endif 
+
+                                              
+  end function
+
 end program rrtmgp_rfmip_sw
