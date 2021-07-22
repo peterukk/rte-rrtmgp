@@ -720,7 +720,6 @@ contains
 #endif
     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
 
-    !call neural_nets(1) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, ymeans_lw_tau, ysigma_lw_tau, output)
 #ifdef USE_TIMING
@@ -731,7 +730,6 @@ contains
 #endif
     call C_F_POINTER (C_LOC(pfrac), output, [ngpt,nobs])
 
-    !call neural_nets(2) % nn_kernel_m(ninputs,ngpt,nobs,input, output)
     call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, output)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_pfrac')

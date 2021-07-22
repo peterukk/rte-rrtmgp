@@ -586,9 +586,13 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('sw_two_stream')
 #endif
-      call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-                         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-                         Rdif, Tdif, Rdir, Tdir, Tnoscat)     
+      ! if (present(reftrans_variables)) then
+      !   Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
+      ! else
+        call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+                          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+                          Rdif, Tdif, Rdir, Tdir, Tnoscat)
+      ! end if     
 #ifdef USE_TIMING
     ret =  gptlstop('sw_two_stream')
 #endif    

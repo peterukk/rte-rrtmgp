@@ -179,7 +179,7 @@ program rrtmgp_rfmip_lw
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
   compare_flux = .true.
   ! Compute fluxes per g-point?
-  do_gpt_flux = .true.
+  do_gpt_flux = .false.
 
 
   ! ------------ Neural network model weights -----------------

@@ -8,16 +8,20 @@ module mod_activation
   
   public
 
-  abstract interface
-    pure subroutine activation_vec(x)
+  abstract interface 
+
+    pure subroutine activation_interface(x)
       import :: sp
       real(sp), intent(inout) :: x(:)
-    end subroutine activation_vec
+    end subroutine activation_interface
 
-    pure subroutine activation_mat(x)
+    pure subroutine bias_and_activation_interface(x, b)
+      ! This one works on batched 2D data, and adds bias before activation
       import :: sp
       real(sp), intent(inout) :: x(:,:)
-    end subroutine activation_mat
+      real(sp), intent(in)    :: b(:)
+    end subroutine bias_and_activation_interface
+
   end interface
 
 contains
@@ -28,35 +32,40 @@ contains
     x = exp(-x**2)
   end subroutine gaussian
 
-  pure subroutine gaussian_m(x) 
-    real(sp), intent(inout) :: x(:,:)
-    x = exp(-x**2)
-  end subroutine gaussian_m
-
-
   pure subroutine relu(x) 
     !! REctified Linear Unit (RELU) activation subroutine.
     real(sp), intent(inout) :: x(:)
     x = max(0.0_sp, x)
   end subroutine relu
 
-  pure subroutine relu_m(x) 
-    real(sp), intent(inout) :: x(:,:)
-    x = max(0.0_sp, x)
-  end subroutine relu_m
-
+  pure subroutine relu_mat_b(x,b)
+    real(sp), intent(inout) :: x(:,:) 
+    real(sp), intent(in)    :: b(:) !
+    integer :: i,j
+    if (size(x,dim=1) == size(b)) then
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(i)
+          x(i,j) = max(0.0_sp, x(i,j) )
+        end do
+      end do
+    else 
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(j)
+          x(i,j) = max(0.0_sp, x(i,j) )
+        end do
+      end do
+    end if
+  end subroutine
 
   pure subroutine sigmoid(x) 
     ! Sigmoid activation subroutine.
     real(sp), intent(inout) :: x(:)
     x = 1 / (1 + exp(-x))
   end subroutine sigmoid
-
-  pure subroutine sigmoid_m(x) 
-    real(sp), intent(inout) :: x(:,:)
-    x = 1 / (1 + exp(-x))
-  end subroutine sigmoid_m
-
 
   pure subroutine tanhf(x) 
     ! Tangent hyperbolic activation subroutine.
@@ -67,20 +76,32 @@ contains
     x = tanh(x)
   end subroutine tanhf
 
-  pure subroutine tanhf_m(x) 
-    real(sp), intent(inout) :: x(:,:)
-    x = tanh(x)
-  end subroutine tanhf_m
-
-
   pure subroutine softsign(x)
     real(sp), intent(inout) :: x(:)
     x = x / (abs(x) + 1)
   end subroutine
 
-  pure subroutine softsign_m(x)
-    real(sp), intent(inout) :: x(:,:)
-    x = x / (abs(x) + 1)
+  pure subroutine softsign_mat_b(x,b)
+    real(sp), intent(inout) :: x(:,:) 
+    real(sp), intent(in)    :: b(:) !
+    integer :: i,j
+    if (size(x,dim=1) == size(b)) then
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(i)
+          x(i,j) = x(i,j) / (abs(x(i,j)) + 1)
+        end do
+      end do
+    else 
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(j)
+          x(i,j) = x(i,j) / (abs(x(i,j)) + 1)
+        end do
+      end do
+    end if
   end subroutine
 
   pure subroutine linear(x)
@@ -88,9 +109,25 @@ contains
     x = x
   end subroutine
 
-  pure subroutine linear_m(x)
-    real(sp), intent(inout) :: x(:,:)
-    x = x
+  pure subroutine linear_mat_b(x,b)
+    real(sp), intent(inout) :: x(:,:) 
+    real(sp), intent(in)    :: b(:)
+    integer :: i,j
+    if (size(x,dim=1) == size(b)) then
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(i)
+        end do
+      end do
+    else 
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(j)
+        end do
+      end do
+    end if
   end subroutine
-
+  
 end module mod_activation
