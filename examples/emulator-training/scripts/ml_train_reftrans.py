@@ -114,7 +114,8 @@ else:
 
 
 if scale_inputs:
-    nfac_tau = 4
+    # Square-root scaling of optical depth, what factor (**1/nfac)?
+    # nfac_tau = 4
     nfac_tau = 2
 
     xmin = np.array([0, 0, 0, 0])
@@ -267,7 +268,9 @@ if train_keras:
     #2 0.99718657
     #3 0.96724492
     
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/soft/rte-rrtmgp-nn/neural/data/reftrans-8.h5"
+    # tau**(1/2) stopped at epoch 110, R2 0.997
+    
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-8.h5"
     # kerasfile = rootdir+"soft/rte-rrtmgp-nn/neural/data/pfrac-18-16-16.h5"
     
     # from keras.models import load_model
