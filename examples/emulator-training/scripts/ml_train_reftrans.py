@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Python framework for developing neural network emulators of 
-RRTMGP gas optics scheme
+Python framework for developing neural networks to replace radiative
+transfer computations, either fully or just one component
 
-This program takes existing input-output data generated with RRTMGP and
-user-specified hyperparameters such as the number of neurons, 
-scales the data if requested, and trains a neural network. 
+This code is for emulating reflectance-transmittance computations in RTE
 
-Alternatively, an automatic tuning method can be used for
-finding a good set of hyperparameters (expensive).
+This program takes existing input-output data generated with RTE+RRTMGP and
+user-specified hyperparameters such as the number of neurons, optionally
+scales the data, and trains a neural network. 
 
-Right now just a placeholder, pasted some of the code I used in my paper
+Temporary code
 
 Contributions welcome!
 
 @author: Peter Ukkonen
 """
-import os
-import gc
+import os,gc
 import numpy as np
 
 from ml_loaddata import load_inp_outp_reftrans, preproc_minmax_inputs_reftrans, \
@@ -28,19 +26,24 @@ from ml_eval_funcs import plot_hist2d
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-# ----------------------------------------------------------------------------
-# ----------------- TEMP. CODE, REFTRANS EMULATION  ------------------------
-# ----------------------------------------------------------------------------
-
 import warnings
 warnings.filterwarnings("ignore")
 
-# ----------- config
+# ----------------------------------------------------------------------------
+# --- TRAIN NEURAL NETS TO REPLACE REFLECTANCE-TRANSMITTANCE COMPUTATIONS ---
+# ----------------------------------------------------------------------------
+
+#  ----------------- File paths -----------------
+#fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"  
+#fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
+
+fpath  ='/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc'
+
+# ----------- config ------------
 
 scale_inputs = True
 scale_outputs = True
 
-# OPTIONAL
 # CAMS data: balance samples so that half of them correspond to cloudy layers?
 # This is done by extracting all cloudy layers, and then an equal amount of 
 # random non-cloudy layers
@@ -50,47 +53,28 @@ balance_samples = True
 # generating corresponding outputs on the fly? For REFTRANS computations this 
 # is very doable because there's only 4 inputs; additionally the 
 # reftrans routine can easily be coded in Python
-synthetic_data = False
-synthetic_data_supplement = True
+synthetic_data_supplement = False
 
 # Use independent clear-sky RFMIP profiles for testing? Doesn't reflect
 # the training data which includes cloudy samples, but may be interesting 
-test_on_RFMIP = True
+test_on_RFMIP = False
+if not test_on_RFMIP: fpath_rfmip=None
 
 # Add no-scattering transmittance as a NN input?
 add_Tnoscat = True
 
+# Which ML library to use: select either 'pytorch',
+# or 'tf-keras' for Tensorflow with Keras frontend
+ml_library = 'pytorch'
+# ml_library = 'tf-keras'
 
-#  ----------------- File paths -----------------
-fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"  
-fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
-# dat_file = "ml_data_g224_CAMS_2018_clouds.nc"
-# dat_dir  = '/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/'
-# fpath = dat_dir + dat_file
+# Data evaluation: plot distributions of input and output data
+plot_distributions = False
+
+# Model evaluation: plot scatterplots of individual outputs
+plot_eval = False
 
 
-# x_raw[:,i].min(), x_raw[:,i].max()
-# i0 (4.1395123e-09, 29715.678)
-# i1 (4.095197e-12, 1.0)
-# i2 (0.0, 0.48579213)
-# i3  (0.00012061903, 0.9999998)
-
-# if synthetic_data:
-#     nsamples    = np.int(3e6)
-#     x_raw, y_raw = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
-#                                     minmax_mu0)
-#     minmax_tau  = (1.0, 10.0)
-#     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
-#                                     minmax_mu0)
-#     x_raw = np.concatenate((x_raw,x_raw2),axis=0)
-#     y_raw = np.concatenate((y_raw,y_raw2),axis=0)
-#     x_raw_test,y_raw_test =  load_inp_outp_reftrans(fpath)
-#     # this "real" dataset is large, lets pick random 5% for testing
-#     frac = 0.05 
-#     nrows = x_raw_test.shape[0]
-#     inds_rand = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
-#     x_raw_test = x_raw_test[inds_rand,:]; y_raw_test = y_raw_test[inds_rand,:]
-# else:
     
 x_raw, y_raw  = load_inp_outp_reftrans(fpath, balance_samples)
 
@@ -110,10 +94,6 @@ if test_on_RFMIP:
     nrows = x_raw_test.shape[0]
     inds_rand = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
     x_raw_test = x_raw_test[inds_rand,:]; y_raw_test = y_raw_test[inds_rand,:]
-    if add_Tnoscat:
-        mu0_inv = (1/x_raw_test[:,3])
-        tnoscat = np.exp(-x_raw_test[:,0]*mu0_inv)
-        x_raw_test = np.hstack((x_raw_test,np.reshape(tnoscat,(inds_rand.size,1))))
 else:
     # random 20% of original data for testing 
     test_frac = 0.20
@@ -164,13 +144,18 @@ if synthetic_data_supplement:
     x_raw = np.concatenate((x_raw,x_raw2),axis=0)
     y_raw = np.concatenate((y_raw,y_raw2),axis=0)
     
-    y_raw[y_raw<0.0] = 0.0
-
-
+# Add Tnoscat as input if requested
 if add_Tnoscat:
-    mu0_inv = (1/x_raw[:,3])
-    tnoscat = np.exp(-x_raw[:,0]*mu0_inv)
+    tnoscat = np.exp(-x_raw[:,0]*(1/x_raw[:,3]))
     x_raw = np.hstack((x_raw,np.reshape(tnoscat,(x_raw.shape[0],1))))
+    
+    tnoscat_test = np.exp(-x_raw_test[:,0]* (1/x_raw_test[:,3]))
+    x_raw_test = np.hstack((x_raw_test,np.reshape(tnoscat_test,(x_raw_test.shape[0],1)))) 
+    
+# Ensure outputs are positive 
+y_raw[y_raw<0.0] = 0.0
+y_raw_test[y_raw_test<0.0] = 0.0
+
 
 if scale_inputs:
     # Square-root scaling of optical depth, what factor (**1/nfac)?
@@ -204,11 +189,9 @@ else:
 if scale_outputs:
     ny = y_raw.shape[1]    
     # original
-    # nfac = 1
     nfac = 2
     # nfac = 4
     # nfac = 8
-    # nfac = 16
 
     # y_mean = np.zeros(ny)
     # y_sigma = np.zeros(ny)
@@ -242,16 +225,8 @@ val_ratio = 0.25
 x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=0.25)
 
           
-# eval
+# Inspect distributions of input and output variables?
 
-
-# for i in range(4):
-#     print("tr {} test {}".format(y_tr[:,i].std(),y_test[:,i].std()))
-# for i in range(4):
-#     print("RAW std {} tr {} test {}".format(i,y_raw[:,i].std(),y_raw_test[:,i].std()))
-#     # print("RAW max {} tr {} test {}".format(i,y_raw[:,i].max(),y_raw_test[:,i].max()))
-
-plot_distributions = False
 if plot_distributions:
     # fig, ax = plt.subplots()
     # ax.hist(x_raw[:,0], bins=np.logspace(start=-6, stop=6, num=10))
@@ -277,47 +252,38 @@ if plot_distributions:
             i = i + 1
     # Tdir values are low compared to Wiebkes master thesis??
     # x vals for higher Tdir: tau 1.5, ssa 1, g 0.993, mu 0.615
-    
-    # from fastkde.fastKDE import pdf
-    # def get_pdf(data):
-    #     y, x = pdf(data)
-    #     return x, y
-    
-    # fig, ax = plt.subplots(2,2)
-    # fig2, ax2 = plt.subplots(2,2)
-    # i = 0
-    # for ix in range(2):
-    #     for iy in range(2):
-    #         xp,yp = get_pdf(x_tr[:,i])
-    #         ax[ix,iy].plot(xp,yp,label='Training')
-    #         if (i != 2): 
-    #             xp2,yp2 = get_pdf(x_test[:,i])
-    #             ax[ix,iy].plot(xp2,yp2,label='Testing')
-    #         ax[ix,iy].legend()
-    #         ax[ix,iy].set_title("KDE for X={}".format(i))
-    #         #outp
-    #         xp,yp = get_pdf(y_tr[:,i])
-    #         ax2[ix,iy].plot(xp,yp,label='Training')
-    #         xp2,yp2 = get_pdf(y_test[:,i])
-    #         ax2[ix,iy].plot(xp2,yp2,label='Testing')
-    #         ax2[ix,iy].legend()
-    #         ax2[ix,iy].set_xlim([0.0,1.0])
-    #         ax2[ix,iy].set_title("KDE for Y={}".format(i))
-    #         i = i + 1
-    # plt.show()
+
+    # for i in range(4):
+    #     print("i={} : y_tr {} y_test {}".format(i,y_tr[:,i].std(),y_test[:,i].std()))
+
 
 # Ready for training
 
-
-train_pytorch = False
-
-if train_pytorch:
+# PYTORCH TRAINING
+if (ml_library=='pytorch'):
+    from torch import nn
     import torch
     import pytorch_lightning as pl
     from torch.utils.data import DataLoader, TensorDataset
-    from ml_trainfuncs_pytorch import MLP
+    from ml_trainfuncs_pytorch import MLP#, MLP_cpu
+    os.environ['MKL_THREADING_LAYER'] = 'GNU'
 
-    batch_size = 256
+    lr          = 0.001
+    batch_size  = 1024
+    nneur       = 12
+    mymodel = nn.Sequential(
+          nn.Linear(nx, nneur),
+          nn.Softsign(), # first hidden layer
+          nn.Linear(nneur, ny),
+          nn.ReLU()
+        )
+#    mymodel = nn.Sequential(
+#          nn.Linear(nx, nneur),
+#          nn.Softsign(), # first hidden layer
+#          nn.Linear(nneur, nneur),
+#          nn.ReLU(), # second hidden layer
+#          nn.Linear(nneur, ny)
+#        )
     
     x_tr_torch = torch.from_numpy(x_tr); y_tr_torch = torch.from_numpy(y_tr)
     data_tr  =  TensorDataset(x_tr_torch,y_tr_torch)
@@ -328,34 +294,52 @@ if train_pytorch:
     x_test_torch = torch.from_numpy(x_test); y_test_torch = torch.from_numpy(y_test)
     data_test    = TensorDataset(x_test_torch,y_test_torch)
     
-    mlp = MLP(nx=nx,ny=ny)
-    #trainer = pl.Trainer(auto_scale_batch_size='power', gpus=0, deterministic=True, max_epochs=5)
+    mlp = MLP(nx=nx,ny=ny,learning_rate=lr,SequentialModel=mymodel)
+
+    # trainer = pl.Trainer(gpus=0, deterministic=True, max_epochs=30)
+    # trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
+    #             val_dataloaders=DataLoader(data_val,batch_size=batch_size))
+
+    mc = pl.callbacks.ModelCheckpoint(monitor='val_loss',every_n_epochs=2)
     
-    trainer = pl.Trainer(gpus=0, deterministic=True, max_epochs=10)
-    #trainer = pl.Trainer(gpus=0, deterministic=True, max_epochs=5,num_processes=3)
+    trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
+            num_processes=8) 
+            #plugins=pl.plugins.DDPPlugin(find_unused_parameters=False))
     
     trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
-                val_dataloaders=DataLoader(data_val,batch_size=batch_size))
-
-
-
-train_keras = True
-
-if train_keras:
+            val_dataloaders=DataLoader(data_val,batch_size=batch_size))
     
-    from keras import losses, optimizers
-    from keras.callbacks import EarlyStopping
+    # Test model
+    y_pred = mlp(x_test_torch)
+    y_pred = y_pred.detach().numpy()
+    if scale_outputs:
+        y_pred      = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
+        
+        
+    # from pytorch2keras import pytorch_to_keras
+    # # we should specify shape of the input tensor
+    # k_model = pytorch_to_keras(mlp, input_var, [(10, 32, 32,)], verbose=True) 
+            
+# TENSORFLOW-KERAS TRAINING
+elif (ml_library=='tf-keras'):
+    
+    from tensorflow.keras import losses, optimizers
+    from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel
 
     mymetrics   = ['mean_absolute_error']
     valfunc     = 'val_mean_absolute_error'
     
+    gpu=False
+    
+    # First hidden layer (input layer) activation
     activ0      = 'softsign'
-
-    # activ0      = 'sigmoid'
     # activ0       = 'relu'
+    
+    # Activation in other hidden layers
     activ       =  activ0
     
+    # Activation in last layer
     # activ_last = 'softsign'
     # activ_last = 'relu'
     activ_last = 'sigmoid'
@@ -364,30 +348,26 @@ if train_keras:
     epochs      = 100000
     patience    = 15
     lossfunc    = losses.mean_squared_error
-    
     lr          = 0.001
-    # lr          = 0.002
     # lr          = 0.0001 
-    # lr          = 0.0002 
     # batch_size  = 512
     batch_size  = 1024
     # neurons     = [16,16]
-    # neurons     = [8]
     # neurons     = [8,8]
-    # neurons     = [16]
-    # neurons     = [6,6]
-    neurons = [12]
-    # neurons = [4,4]
+    neurons     = [12]
     
-    optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
-    # optim = optimizers.Adam(lr=lr)
+    # optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
+    optim = optimizers.Adam(lr=lr)
     
     # Create model
     model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
                              activ_last = activ_last, kernel_init='he_uniform')
     # Compile model
-    model.compile(loss=lossfunc, optimizer=optim,
-                  metrics=mymetrics,  context= ["gpu(0)"])
+    if gpu:
+        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics, context= ["gpu(0)"])
+    else:
+        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
+
     model.summary()
     
     # Create earlystopper
@@ -398,30 +378,12 @@ if train_keras:
                         validation_data=(x_val,y_val), callbacks=[earlystopper])
     gc.collect()
     
-    # TEST
-
-    y_test_pred      = model.predict(x_test);  
-    
+    # PREDICT OUTPUTS FOR TEST DATA
+    y_pred = model.predict(x_test);  
     if scale_outputs:
-        y_test_pred      = preproc_pow_gptnorm_reverse(y_test_pred,nfac, y_mean,y_sigma)
-        
-    # for i in range(4):
-    #     plot_hist2d(y_raw_test[:,i],y_test_pred[:,i],20,True)      # [6] 0.9988
-
-
-    for i in range(4):
-        r = np.corrcoef(y_raw_test[:,i],y_test_pred[:,i])[0,1]
-        print("R2 i={}: {}".format(i,r**2))    
-        
-    #0 0.36045932
-    #1 0.9993
-    #2 0.47
-    #3 0.495156
-    
-    # y_test_pred[:,i].mean(), y_test_pred[:,i].max(), y_test_pred[:,i].min()
-    
+        y_pred = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
+  
     # SAVE MODEL
-    
     kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt.h5"
     savemodel(kerasfile, model)
 
@@ -429,5 +391,15 @@ if train_keras:
     # kerasfile = rootdir+"soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"
     # model = load_model(kerasfile,compile=False)
     
+else:
+    print("ml_library must be either 'pytorch' or 'tf-keras'")
 
 
+# EVALUATE
+for i in range(4):
+    r = np.corrcoef(y_raw_test[:,i],y_pred[:,i])[0,1]
+    print("R2 i={}: {}".format(i,r**2))   
+    if plot_eval:
+        plot_hist2d(y_raw_test[:,i],y_pred[:,i],20,True) 
+    
+ # y_pred[:,i].mean(), y_pred[:,i].max(), y_pred[:,i].min()
