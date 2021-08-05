@@ -23,6 +23,8 @@ import numpy as np
 
 from ml_loaddata import load_inp_outp_rte_rrtmgp_sw, preproc_tau_to_crossection, \
                         preproc_pow_gptnorm, preproc_pow_gptnorm_reverse, preproc_rrtmgp_inputs
+from ml_eval_funcs import plot_hist2d
+ 
 from sklearn.model_selection import train_test_split
 
 
@@ -32,25 +34,24 @@ from sklearn.model_selection import train_test_split
 
 # --- QUICK TRAINING EXERCISE FOR WHOLE SCHEME
 #  ----------------- File paths -----------------
-dat_file = "ml_data_g224_withclouds_CAMS_2011-2013_RFMIPstyle.nc"     
-dat_dir = '/media/peter/samlinux/data/data_training/'
-dat_path = dat_dir + dat_file
+fpath =  "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2011-2013_RFMIPstyle.nc"  
+fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc" 
 
-x_raw, y_raw = load_inp_outp_rte_rrtmgp_sw(dat_path, 'rsu_rsd')
+x_raw, y_raw = load_inp_outp_rte_rrtmgp_sw(fpath, 'rsu_rsd')
+x_raw_test, y_raw_test = load_inp_outp_rte_rrtmgp_sw(fpath, 'rsu_rsd')
 
 scale_inputs = True
 scale_outputs = True
 
 if scale_inputs:
     x,xmax,xmin = preproc_rrtmgp_inputs(x_raw)
+    x_test      = preproc_rrtmgp_inputs(x_raw_test)
+
 else:
     x = x_raw
     
 if scale_outputs: 
-    
-    # SCALE
     ngpt = y_raw.shape[1]      # y.shape (14400, 122)
-    nobs = y_raw.shape[0]
     y_mean = np.zeros(ngpt)
     y_sigma = np.zeros(ngpt)
     for igpt in range(ngpt):
@@ -61,73 +62,70 @@ if scale_outputs:
 
     nfac = 1
 
-    y  = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
+    y       = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
+    y_test  = preproc_pow_gptnorm(y_raw_test, nfac, y_mean, y_sigma)
 else:
     y = y_raw
 
 gc.collect()
+
+# Validation data as a subset of the training data
+val_ratio = 0.25
+x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=val_ratio)
+
 # Ready for training
 
+train_keras = True
 
-import warnings
-warnings.filterwarnings("ignore")
-
-train_ratio = 0.75
-validation_ratio = 0.15
-test_ratio = 0.10
-
-# train is now 75% of the entire data set
-# the _junk suffix means that we drop that variable completely
-x_tr, x_test, y_tr, y_test = train_test_split(x, y, test_size=1 - train_ratio)
-
-# test is now 10% of the initial data set
-# validation is now 15% of the initial data set
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio)) 
-
-
-mymetrics   = ['mean_absolute_error']
-valfunc     = 'val_mean_absolute_error'
-activ       = 'softsign'
-activ       = 'relu'
-# activ           ='tanh'
-# activ           ='sigmoid'
-
-epochs      = 100000
-patience    = 25
-lossfunc    = losses.mean_squared_error
-ninputs     = x_tr.shape[1]
-# lr          = 0.001
-# lr          = 0.0001 
-lr          = 0.0002 
-
-batch_size  = 128
-neurons     = [128,128]
-neurons     = [256,256]
-neurons     = [512,256]
-
-optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
-# optim = optimizers.Adam(lr=lr)
-
-# Create model
-model = create_model(nx=ninputs,ny=ngpt,neurons=neurons,activ=activ,kernel_init='he_uniform')
-# Compile model
-model.compile(loss=lossfunc, optimizer=optim,
-              metrics=mymetrics,  context= ["gpu(0)"])
-model.summary()
-
-# Create earlystopper
-earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
-
-# START TRAINING
-history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                    validation_data=(x_val,y_val), callbacks=[earlystopper])
-gc.collect()
-
-# TEST
-y_pred_sc    = model.predict(x);  
-y_pred       = preproc_pow_gptnorm_reverse(y_pred_sc, nfac, y_mean,y_sigma)
-
-plot_hist2d(y_raw,y_pred,20,True)      #  
+if train_keras:
     
-diff = np.abs(y_raw-y_pred)
-np.max(diff)
+    from keras import losses, optimizers
+    from keras.callbacks import EarlyStopping
+    from ml_trainfuncs_keras import create_model_mlp, savemodel
+    
+    mymetrics   = ['mean_absolute_error']
+    valfunc     = 'val_mean_absolute_error'
+    activ       = 'softsign'
+    activ       = 'relu'
+    # activ           ='tanh'
+    # activ           ='sigmoid'
+    
+    epochs      = 100000
+    patience    = 25
+    lossfunc    = losses.mean_squared_error
+    ninputs     = x_tr.shape[1]
+    # lr          = 0.001
+    # lr          = 0.0001 
+    lr          = 0.0002 
+    
+    batch_size  = 128
+    neurons     = [128,128]
+    neurons     = [256,256]
+    neurons     = [512,256]
+    
+    optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
+    # optim = optimizers.Adam(lr=lr)
+    
+    # Create model
+    model = create_model_mlp(nx=ninputs,ny=ngpt,neurons=neurons,activ=activ,kernel_init='he_uniform')
+    # Compile model
+    model.compile(loss=lossfunc, optimizer=optim,
+                  metrics=mymetrics,  context= ["gpu(0)"])
+    model.summary()
+
+    # Create earlystopper
+    earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
+    
+    # START TRAINING
+    history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                        validation_data=(x_val,y_val), callbacks=[earlystopper])
+    gc.collect()
+    
+    # TEST
+    y_pred_sc    = model.predict(x);  
+    y_pred       = preproc_pow_gptnorm_reverse(y_pred_sc, nfac, y_mean,y_sigma)
+    
+    plot_hist2d(y_raw,y_pred,20,True)      #  
+        
+    diff = np.abs(y_raw-y_pred)
+    np.max(diff)

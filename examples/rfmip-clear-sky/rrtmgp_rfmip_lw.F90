@@ -84,8 +84,7 @@ program rrtmgp_rfmip_lw
   !
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
-                                   unblock_and_write_3D, unblock_and_write_3D_sp, unblock, unblock_and_write2, &
-                                   read_and_block_lw_bc, determine_gas_names
+                                   unblock, read_and_block_lw_bc, determine_gas_names
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
   use mod_network

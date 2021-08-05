@@ -206,8 +206,8 @@ def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
         for iexp in range(nexp):
            for icol in range(ncol):
                y[i,:] = np.concatenate((y0[iexp,icol,:], y1[iexp,icol,:]))
-               x[i,:] = np.concatenate((x_gasopt[iexp,icol,:], mu0[iexp,icol], 
-                        sfc_alb[iexp,icol], lwp[iexp,icol,:], iwp[iexp,icol,:]))
+               x[i,:] = np.concatenate((x_gasopt[iexp,icol,:], lwp[iexp,icol,:],
+                    iwp[iexp,icol,:], mu0[iexp,icol],  sfc_alb[iexp,icol]))
                i = i + 1
     else:
         for iexp in range(nexp):
@@ -300,7 +300,7 @@ def load_inp_outp_rte_sw(fname):
 
     return x,y,y_bb
 
-def load_inp_outp_reftrans(fname):
+def load_inp_outp_reftrans(fname,half_clouds=False):
     # Load data for training an emulator for one component of the 
     # RADIATIVE TRANSFER  SOLVER (RTE) - reflectance-transmittance computations
     # Inputs are layer-wise optical properties (tau, ssa, g) + solar angle mu0,
@@ -309,23 +309,77 @@ def load_inp_outp_reftrans(fname):
     
     dat = Dataset(fname)
     
+    nexp = dat.dimensions['expt'].size 
+    ncol = dat.dimensions['site'].size 
+    nlay = dat.dimensions['layer'].size
+    ntot = nexp*ncol*nlay
+    
+    if half_clouds:
+        # Sample the data so that half of the samples are from
+        # cloudy layers, by selecting all cloudy layers and an equal amount
+        # of random non-cloudy layers?
+        cloudfrac = dat.variables['cloud_fraction'][:]
+        inds_clouds = cloudfrac > 0.0
+        ncloud = inds_clouds.sum()
+        inds_clouds = np.reshape(inds_clouds,(ntot))
+        inds_noclouds = ~inds_clouds
+        # To integer index array
+        inds_nocloud = np.where(inds_noclouds)[0]
+        inds_cloud   = np.where(inds_clouds)[0]
+        # Get indices of random non-cloudy samples
+        inds_cloudrnd = np.sort(np.random.choice(inds_nocloud,ncloud,replace=False))
+        # Add these to the cloudy indices
+        inds_sel = np.concatenate((inds_cloud,inds_cloudrnd))
+        inds_sel.sort()
+        # into a tuple of coordinate arrays (3D indices)
+        ii,jj,kk = np.unravel_index(inds_sel,cloudfrac.shape)
+    else:
+        # All indices
+        ii,jj,kk = np.unravel_index(np.arange(ntot),(nexp,ncol,nlay))
+    
     # Inputs
-    tau = dat.variables['tau_sw'][:].data # nexp, ncol, nlay, ngpt
-    ssa = dat.variables['ssa_sw'][:].data # nexp, ncol, nlay, ngpt
-    g = dat.variables['g_sw'][:].data # nexp, ncol, nlay, ngpt
-    mu0 = dat.variables['mu0'][:].data           # (nexp,ncol)
-
+    # nexp, ncol, nlay, ngpt
+    if 'tau_sw' in dat.variables:
+        tau = dat.variables['tau_sw'][:].data[ii,jj,kk,:]
+    elif ('tau_sw_gas' in dat.variables):
+        tau = dat.variables['tau_sw_gas'][:].data[ii,jj,kk,:] 
+    else:
+        print("couldn't find variable tau_sw or tau_sw_gas in netCDF file")
+        
+    # (nexp,ncol,nlay,ngpt) = tau.shape
+    (nsel,ngpt) = tau.shape 
+    
+    if 'ssa_sw' in dat.variables:
+        ssa = dat.variables['ssa_sw'][:].data[ii,jj,kk,:]
+    elif ('ssa_sw_gas' in dat.variables):
+        ssa = dat.variables['ssa_sw_gas'][:].data[ii,jj,kk,:] 
+    else:
+        print("couldn't find variable ssa_sw or ssa_sw_gas in netCDF file")    
+    if 'g_sw' in dat.variables:
+        g = dat.variables['g_sw'][:].data[ii,jj,kk,:]
+    else:
+        print("couldn't find variable g_sw in netCDF file, filling with zeroes")    
+        # g = np.zeros((nexp,ncol,nlay,ngpt),dtype=np.float32)
+        g = np.zeros((nsel,ngpt),dtype=np.float32)
+    if 'mu0' in dat.variables:
+        mu0 = dat.variables['mu0'][:].data[ii,jj]  # (nexp,ncol)
+    else:
+        print("couldn't find mu0 in netCDF file")
+        
+        
     # Outputs
-    rdif = dat.variables['rdif'][:].data # nexp, ncol, nlay, ngpt
-    tdif = dat.variables['tdif'][:].data # nexp, ncol, nlay, ngpt
-    rdir = dat.variables['rdir'][:].data # nexp, ncol, nlay, ngpt
-    tdir = dat.variables['tdir'][:].data # nexp, ncol, nlay, ngpt
+    # Like inputs (nexp, ncol, nlay, ngpt), but flattened to (nsel,ngpt) 
+    # where nsel are the selected exp, col and layer indices, flattened into 1D
+    rdif = dat.variables['rdif'][:].data[ii,jj,kk,:]  # nexp, ncol, nlay, ngpt
+    tdif = dat.variables['tdif'][:].data[ii,jj,kk,:]
+    rdir = dat.variables['rdir'][:].data[ii,jj,kk,:]
+    tdir = dat.variables['tdir'][:].data[ii,jj,kk,:]
 
-    (nexp,ncol,nlay,ngpt) = rdif.shape
+    # (nexp,ncol,nlay,ngpt) = rdif.shape
 
     # Reshape to 2D data matrix 
-    ns = nexp*ncol*nlay*ngpt # number of samples 
-    
+    # ns = nexp*ncol*nlay*ngpt # number of samples 
+    ns = nsel*ngpt
     rdif = np.reshape(rdif,(ns,1))
     tdif = np.reshape(tdif,(ns,1))
     rdir = np.reshape(rdir,(ns,1))
@@ -335,16 +389,19 @@ def load_inp_outp_reftrans(fname):
     ssa = np.reshape(ssa,(ns,1))
     g   = np.reshape(g,  (ns,1))
     
-    mu0 = np.reshape(mu0,(nexp,ncol,1,1))
-    mu0 = np.repeat(mu0,nlay,axis=2)
-    mu0 = np.repeat(mu0,ngpt,axis=3)
+    # mu0 = np.reshape(mu0,(nexp,ncol,1,1))
+    # mu0 = np.repeat(mu0,nlay,axis=2)
+    # mu0 = np.repeat(mu0,ngpt,axis=3)
+
+    mu0 = np.reshape(mu0,(nsel,1))
+    mu0 = np.repeat(mu0,ngpt,axis=1)
     mu0 = np.reshape(mu0,(ns,1))
 
     x = np.hstack((tau,ssa,g,mu0))
     y = np.hstack((rdif,tdif,rdir,tdir))
     
-    print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
-    
+    print( "{:e} samples were extracted from this dataset".format(ns))
+    if half_clouds: print("50% of these are from cloudy layers")
     return x,y
 
 
@@ -352,6 +409,11 @@ def load_inp_outp_reftrans(fname):
 def reftrans(tau,w0,g,mu0):
     ns = tau.shape[0]
     
+    # tau = np.array(tau,dtype=np.float64)
+    # w0  = np.array(w0,dtype=np.float64)
+    # g   = np.array(g,dtype=np.float64)
+    # mu0 = np.array(mu0,dtype=np.float64)
+
     Tdir = np.zeros(ns,dtype=np.float64)
     Rdir = np.zeros(ns,dtype=np.float64)
     Tdif = np.zeros(ns,dtype=np.float64)
@@ -423,19 +485,35 @@ def reftrans(tau,w0,g,mu0):
 def gen_synthetic_inp_outp_reftrans(ns, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0):
     from doepy import build
-    ranges = {  
-                    'tau':  [minmax_tau[0], minmax_tau[1]], 
-                    'ssa':  [minmax_ssa[0], minmax_ssa[1]], 
-                    'g':    [minmax_g[0],   minmax_g[1]], 
-                    'mu0':  [minmax_mu0[0], minmax_mu0[1]],
-                  }
-    samples = build.halton(ranges, num_samples = ns)
+    
+    print("Generating {:e} hypercube samples, this may take a while".format(ns))
+
+    if minmax_g == None:
+        ranges = {  
+                'tau':  [minmax_tau[0], minmax_tau[1]], 
+                'ssa':  [minmax_ssa[0], minmax_ssa[1]], 
+                'mu0':  [minmax_mu0[0], minmax_mu0[1]],
+              }
+        samples = build.halton(ranges, num_samples = ns)
+        g = np.zeros(ns)
+    else:
+        ranges = {  
+                        'tau':  [minmax_tau[0], minmax_tau[1]], 
+                        'ssa':  [minmax_ssa[0], minmax_ssa[1]], 
+                        'g':    [minmax_g[0],   minmax_g[1]], 
+                        'mu0':  [minmax_mu0[0], minmax_mu0[1]],
+                      }
+        samples = build.halton(ranges, num_samples = ns)
+        g   = samples['g'][:].to_numpy()
+
 
     tau = samples['tau'][:].to_numpy()
     ssa = samples['ssa'][:].to_numpy()
-    g   = samples['g'][:].to_numpy()
     mu0 = samples['mu0'][:].to_numpy()
     
+    str1="Doing reflectance-transmittance computations for {:e}".format(ns) \
+        + " samples"
+    print(str1)
     Rdif, Tdif, Rdir, Tdir = reftrans(tau,ssa,g,mu0)
 
     tau = np.reshape(tau,(ns,1))
@@ -494,6 +572,7 @@ def preproc_pow_gptnorm(y, nfac, means,sigma):
         for igpt in prange(ngpt):
             y_scaled[iobs,igpt] = np.power(y[iobs,igpt],nfacc)
             y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
+        
     return y_scaled
 
 @njit(parallel=True)
@@ -539,7 +618,7 @@ def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
 
 # A wrapping function to automate things further for RRTMGP preprocessing        
 def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False, 
-                 y_mean=0, y_sigma=0, xcoeffs=None):
+                 nfac=1, y_mean=0, y_sigma=0, xcoeffs=None):
 
     if scale_inputs:
         if xcoeffs is None:
@@ -553,7 +632,7 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         # Standardization coefficients loaded from file
 #        y_mean = ymeans_sw_abs; y_sigma = ysigma_sw_abs
         # Set power scaling coefficient (y == y**(1/nfac))
-        nfac = 8 
+        # nfac = 8 
         
         # Scale by layer number of molecules to obtain absorption cross section
         y   = preproc_tau_to_crossection(y_raw, col_dry)
