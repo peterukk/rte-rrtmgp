@@ -67,6 +67,29 @@ contains
     x = 1 / (1 + exp(-x))
   end subroutine sigmoid
 
+  pure subroutine sigmoid_mat_b(x,b)
+    real(sp), intent(inout) :: x(:,:) 
+    real(sp), intent(in)    :: b(:) !
+    integer :: i,j
+    if (size(x,dim=1) == size(b)) then
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(i)
+          x(i,j) = 1 / (1 + exp(-x(i,j)))
+        end do
+      end do
+    else 
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(j)
+          x(i,j) = 1 / (1 + exp(-x(i,j)))
+        end do
+      end do
+    end if
+  end subroutine
+
   pure subroutine tanhf(x) 
     ! Tangent hyperbolic activation subroutine.
     ! Same as the intrinsic tanh, but must be

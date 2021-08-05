@@ -58,17 +58,18 @@ contains
         ! self % bias_and_activation => gaussian_b
       case('relu')
         self % activation             => relu
-        self % bias_and_activation        => relu_mat_b
+        self % bias_and_activation    => relu_mat_b
       case('sigmoid')
-        self % activation => sigmoid
+        self % activation             => sigmoid
+        self % bias_and_activation    => sigmoid_mat_b
       case('softsign')
         self % activation             => softsign
-        self % bias_and_activation        => softsign_mat_b
+        self % bias_and_activation    => softsign_mat_b
       case('tanh')
         self % activation => tanhf
       case('linear')
         self % activation             => linear
-        self % bias_and_activation        => linear_mat_b
+        self % bias_and_activation    => linear_mat_b
       case default
         self % activation => sigmoid
     end select

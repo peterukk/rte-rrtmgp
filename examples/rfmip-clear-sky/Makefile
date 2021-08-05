@@ -20,7 +20,8 @@ FCINCLUDE += -I$(RRTMGP_BUILD)
 FCINCLUDE += -I$(NFHOME)/include
 LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
-
+# NetCDF-4 format for easy_netcdf
+FCFLAGS += -DNC_NETCDF4
 # 
 # -------- BLAS lbirary: required for RRTMGP-NN --------
 # 
@@ -114,7 +115,7 @@ VPATH = ../
 #
 # Ancillary codes
 #
-ADDITIONS = mo_simple_netcdf.o mo_rfmip_io.o mo_load_coefficients.o
+ADDITIONS = mo_simple_netcdf.o easy_netcdf.o mo_rfmip_io.o mo_load_coefficients.o
 
 all: rrtmgp_rfmip_lw rrtmgp_rfmip_sw
 
@@ -127,6 +128,8 @@ rrtmgp_rfmip_sw:   rrtmgp_rfmip_sw.o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(R
 rrtmgp_rfmip_sw.o: rrtmgp_rfmip_sw.F90 $(ADDITIONS)
 
 mo_rfmip_io.o:          mo_rfmip_io.F90          mo_simple_netcdf.o
+
+easy_netcdf.o: easy_netcdf.F90
 
 mo_load_coefficients.o: mo_load_coefficients.F90 mo_simple_netcdf.o
 

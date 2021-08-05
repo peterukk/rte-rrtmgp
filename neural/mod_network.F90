@@ -33,7 +33,7 @@ module mod_network
     procedure, public, pass(self) :: load
     procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input, matrix-vector product
     procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau   ! Matrix-matrix using BLAS
-    procedure, public, pass(self) :: output_sgemm_byrows
+    procedure, public, pass(self) :: output_sgemm_flat, output_sgemm_flat_byrows
     procedure, public, pass(self) :: save
     procedure, public, pass(self) :: set_activation
 
@@ -439,7 +439,7 @@ contains
 
   end subroutine
 
-  subroutine output_sgemm_byrows(self, nx, ny, nbatch, x, output)
+  subroutine output_sgemm_flat_byrows(self, nx, ny, nbatch, x, output)
     ! Generic inference function using BLAS/cuBLAS for batched prediction (many samples at a time)
     ! In this version, the dimensions of inputs and outputs are reversed so that the individual
     ! NN input/output vectors are strided across the outer dimension
@@ -472,13 +472,22 @@ contains
       w   => layers(1) % w  ! Set the weights to the weights of the first layer
       a   => a1                        
       b   => layers(2) % b            
-
+#ifdef USE_TIMING
+  ret =  gptlstart('first_sgemm')
+#endif
       !$acc host_data use_device(w, x, a)
       call sgemm('N','N', nbatch, neurons, nx, 1.0, x, nbatch, w, nx, 0.0, a, nbatch)
       !$acc end host_data
-
+#ifdef USE_TIMING
+  ret =  gptlstop('first_sgemm')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('bias_and_activ1')
+#endif
       call layers(2) % bias_and_activation(a, b)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('bias_and_activ1')
+#endif
       ! INTERMEDIATE LAYERS
       a_next => a2
       
@@ -486,13 +495,22 @@ contains
 
         w => layers(n-1) % w
         b => layers(n) % b
-
+#ifdef USE_TIMING
+  ret =  gptlstart('middle_sgemm')
+#endif
         !$acc host_data use_device(w, a, a_next)
         call sgemm("N","N", nbatch, neurons, neurons, 1.0, a, nbatch, w, neurons, 0.0, a_next, nbatch)
         !$acc end host_data
-
+#ifdef USE_TIMING
+  ret =  gptlstop('middle_sgemm')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('bias_and_activ_mid')
+#endif
         call layers(n) % bias_and_activation(a_next, b)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('bias_and_activ_mid')
+#endif
         ! Swap pointers
         if(mod(n,2) .EQ. 1) then
           a       => a2
@@ -506,13 +524,22 @@ contains
 
       w => layers(n-1) % w
       b  => layers(n) % b
-
+#ifdef USE_TIMING
+  ret =  gptlstart('last_sgemm')
+#endif
       !$acc host_data use_device(w, a, output)
       call sgemm("N","N", nbatch, ny, neurons, 1.0, a, nbatch, w, neurons, 0.0, output, nbatch)
       !$acc end host_data
-
+#ifdef USE_TIMING
+  ret =  gptlstop('last_sgemm')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('bias_and_activ_fin')
+#endif
       call layers(n) % bias_and_activation(output, b)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('bias_and_activ_fin')
+#endif
       end associate
     !$acc exit data detach(a,a_next) delete(a1, a2)
 

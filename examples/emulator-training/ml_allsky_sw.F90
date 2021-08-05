@@ -880,6 +880,8 @@ program rrtmgp_rfmip_sw
     call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
 
     if(save_reftrans) then
+      print *, "max Rdif", maxval(Rdif_save), "max Tdif", maxval(Tdif_save)
+      print *, "max Rdir", maxval(Rdir_save), "max Tdir", maxval(Tdir_save)
       call unblock_and_write(trim(nndev_file), 'rdif', Rdif_save)
       call unblock_and_write(trim(nndev_file), 'tdif', Tdif_save)
       call unblock_and_write(trim(nndev_file), 'rdir', Rdir_save)
@@ -1091,52 +1093,124 @@ program rrtmgp_rfmip_sw
   ! and outputs are COLUMNS of broadband fluxes (upwelling and downwelling)
   subroutine predict_nn_radscheme_sw(ncol, nlay, nx_gasopt, & 
                                     rrtmgp_inputs, & ! RRTMGP inputs (gas concentrations + T + p)
-                                    cloud_lwc, cloud_iwc, & ! cloud liquid and ice water paths
+                                    cloud_lwp, cloud_iwp, & ! cloud liquid and ice water paths
                                     mu0, sfc_alb,  & ! RTE inputs; no inc. flux because its assumed constant across columns
                                     neural_net,    & ! pre-trained neural network 
                                     fluxes)
     integer,                                    intent(in)  ::  ncol, nlay, nx_gasopt
     real(sp), dimension(nx_gasopt, nlay, ncol), intent(in)  ::  rrtmgp_inputs 
-    real(wp), dimension(nlay,ncol),             intent(in)  ::  cloud_lwc, cloud_iwc
+    real(wp), dimension(nlay,ncol),             intent(in)  ::  cloud_lwp, cloud_iwp
     real(wp), dimension(ncol),                  intent(in)  ::  mu0, sfc_alb 
     type(network_type),                         intent(in)  ::  neural_net 
     class(ty_fluxes_flexible),                  intent(inout) :: fluxes  
 
     ! Local variables
-    real(wp), dimension(:,:), allocatable   :: nn_inputs
-    integer :: nlev, ns, nfeatures, is, ix
+    real(wp), dimension(:,:), allocatable   :: nn_inputs, nn_outputs
+    integer :: nlev, nbatch, nx, ny, ib, ix
+    integer :: i1e, i2s, i2e, i3s, i3e, i4, i5
 
     ! number of samples (profiles)
-    ns = ncol 
+    nbatch = ncol 
     ! number of features (inputs)
     ! the inputs are stacked columns of atmospheric conditions (gas concentrations + T + p), cloud conditions and
     ! scalars mu+ and sfc_alb 
-    !               gases,         clouds,  mu0, sfc_alb
-    nfeatures =    nlay*nx_gasopt + 2*nlay  + 1 + 1
-    allocate(nn_inputs(nfeatures, ns))
+    ! Incoming flux at top of the atmosphere is assumed constant! (not spectrally constant, but the solar gpt flux is still an array of constants)
+    !           gases,         clouds,  mu0, sfc_alb
+    nx    =    nlay*nx_gasopt + 2*nlay  + 1 + 1
+    ! outputs
+    nlev = nlay + 1
+    ny   = 2*nlev ! 3 if dir downward flux needed
+    allocate(nn_inputs (nx, nbatch))
+    allocate(nn_outputs(ny, nbatch))
 
-    ! Compute inputs
-    ! do is = 1, ns 
-      
+    i1e = nlay*nx_gasopt
+    i2s = i1e + 1
+    i2e = i2s + nlay 
+    i3s = i2e + 1
+    i3e = i3s + nlay 
+    i4   = i3e + 1
+    i5   = i4 + 1
 
+    do icol = 1, ncol
+      nn_inputs(1:i1e,icol)     = reshape(rrtmgp_inputs(:,:,icol),(/nx_gasopt*nlay/))
+      nn_inputs(i2s:i2e,icol)   = cloud_lwp(:,icol)
+      nn_inputs(i3s:i3e,icol)   = cloud_iwp(:,icol)
+      nn_inputs(i4,icol)        = mu0(icol)
+      nn_inputs(i5,icol)        = sfc_alb(icol)
+    end do
 
+    call neural_net % output_sgemm_flat(nx, ny, nbatch, nn_inputs, nn_outputs)
 
-    allocate(nn_inputs(nfeatures, ns))
-
-    nlev = nlay+1
-
-    ! if clouds:
-    !     for iexp in range(nexp):
-    !        for icol in range(ncol):
-    !            y[i,:] = np.concatenate((y0[iexp,icol,:], y1[iexp,icol,:]))
-    !            x[i,:] = np.concatenate((x_gasopt[iexp,icol,:], mu0[iexp,icol], 
-    !                     sfc_alb[iexp,icol], lwp[iexp,icol,:], iwp[iexp,icol,:]))
-    !            i = i + 1
-
+    do icol = 1,ncol
+      fluxes%flux_up(:,icol) = nn_outputs(1:nlev,icol)
+      fluxes%flux_dn(:,icol) = nn_outputs(nlev+1:2*nlev,icol)
+    end do
 
   end subroutine predict_nn_radscheme_sw
 
+  ! Interface for NN emulation of shortwave REFLECTANCE-TRANSMITTANCE computations (sw_two_stream)
+  ! Inputs are vectors of (tau,ssa,g,mu0) and outputs are vectors of (rdif,tdif,rdir,tdir)
+  subroutine predict_nn_reftrans(ncol, nlay, ngpt,  &
+                                neural_net, optical_props, mu0, &
+                                reftrans_variables)
+    use, intrinsic :: ISO_C_BINDING
+    integer,                      intent(in)    :: ngpt,nlay,ncol
+    type(network_type),           intent(in)    :: neural_net 
+    class(ty_optical_props_2str), intent(in   ), target :: optical_props  ! inputs: tau, ssa, g
+    real(wp), dimension(ncol),    intent(in)    :: mu0            ! also input
+    real(wp), dimension(ngpt,nlay,ncol,4), &      ! outputs: Rdif,Tdif,Rdir,Tdir
+                                  intent(inout), target :: reftrans_variables 
+    ! local vars
+    integer :: nbatch, is, icol, ilay, igpt
+    ! after scaling inputs by **(1/2), min max scaling 
+    real(sp), dimension(4)   :: xmin =  (/ 0.005, 0.0, 0.0, 0.0 /)
+    real(sp), dimension(4)   :: xmax =  (/ 18.5,  1.0,  0.54999859,  1.0 /)
+    real(sp), dimension (:,:), allocatable :: nn_input ! (nbatch, 4), where nbatch=ngpt*nlay*ncol
+    ! real(sp), dimension (ngpt*nlay*ncol,4) :: nn_input
+    real(sp), dimension(:), contiguous, pointer     :: input
+    real(sp), dimension(:,:),   contiguous, pointer     :: nn_output   
+    ! integer                                           :: ilay, icol, nobs
+    ! nobs = nlay*ncol
+    
+#ifdef USE_TIMING
+    ret =  gptlstart('prep_input')
+#endif
+    
+    nbatch = ngpt*nlay*ncol
+    allocate(nn_input(nbatch,4))
+    
+    ! Copy input arrays into place and do scaling: because all xmin values are 0, min max scaling is just divide
+    call C_F_POINTER (C_LOC(optical_props%tau), input, [nbatch])
+    nn_input(:,1) = (sqrt(sqrt(input)) - xmin(1)) / xmax(1)
+    call C_F_POINTER (C_LOC(optical_props%ssa), input, [nbatch])
+    nn_input(:,2) = input  ! / xmax(2)
+    call C_F_POINTER (C_LOC(optical_props%g), input, [nbatch])
+    nn_input(:,3) = input / xmax(3)
+    
+    is = 1
+    do icol = 1, ncol
+      do ilay = 1, nlay
+        do igpt = 1, ngpt
+          nn_input(is,4) = mu0(icol) / xmax(4)
+          is = is +1
+        end do
+      end do
+    end do
 
+    call C_F_POINTER (C_LOC(reftrans_variables), nn_output, [nbatch,4])
+
+    call neural_net % output_sgemm_flat_byrows(4, 4, nbatch, nn_input, nn_output)
+
+    ! print *,"mean,max,min Rdif", mean(nn_output(:,1)), maxval(nn_output(:,1)), minval(nn_output(:,1))
+    ! print *,"mean,max,min Tdif", mean(nn_output(:,2)), maxval(nn_output(:,2)), minval(nn_output(:,2))
+    ! print *,"mean,max,min  Rdir", mean(nn_output(:,3)), maxval(nn_output(:,3)), minval(nn_output(:,3))
+    ! print *,"mean,max,min  Tdir", mean(nn_output(:,4)), maxval(nn_output(:,4)), minval(nn_output(:,4))
+
+#ifdef USE_TIMING
+    ret =  gptlstop('prep_input')
+#endif
+
+  end subroutine predict_nn_reftrans
 
   function rmse(x1,x2) result(res)
     implicit none 

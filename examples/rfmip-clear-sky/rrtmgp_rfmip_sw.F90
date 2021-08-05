@@ -3,7 +3,7 @@
 ! Contacts: Robert Pincus and Eli Mlawer
 ! email:  rrtmgp@aer.com
 !
-! Copyright 2015-2018,  Atmospheric and Environmental Research and
+! Copyright 2015-2018,  Optical_propspheric and Environmental Research and
 ! Regents of the University of Colorado.  All right reserved.
 !
 ! Use and duplication is permitted under the terms of the
@@ -53,14 +53,14 @@ program rrtmgp_rfmip_sw
   !
   use mo_rte_util_array,     only: zero_array
   !
-  ! Optical properties of the atmosphere as array of values
+  ! Optical properties of the optical_propsphere as array of values
   !   In the longwave we include only absorption optical depth (_1scl)
   !   Shortwave calculations use optical depth, single-scattering albedo, asymmetry parameter (_2str)
   !
   ! use mo_optical_props,      only: ty_optical_props_arry, make_2str, make_1scl
   use mo_optical_props,      only: ty_optical_props_2str
   !
-  ! Gas optics: maps physical state of the atmosphere to optical properties
+  ! Gas optics: maps physical state of the optical_propsphere to optical properties
   !
   use mo_gas_optics_rrtmgp,  only: ty_gas_optics_rrtmgp
   !
@@ -84,10 +84,10 @@ program rrtmgp_rfmip_sw
   !
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
-                                   unblock_and_write_3D, unblock_and_write_3D_sp, unblock, &
-                                   read_and_block_sw_bc, determine_gas_names, unblock_and_write2                             
+                                   unblock, read_and_block_sw_bc, determine_gas_names                        
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
+  use easy_netcdf
   use mod_network    
 #ifdef USE_OPENACC  
   use cublas
@@ -126,7 +126,7 @@ program rrtmgp_rfmip_sw
   !
   character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                         kdist_file = 'coefficients_sw.nc'
-  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
+  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file, nndev_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
   logical 		       :: top_at_1, do_scattering
   integer            :: b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, iTime3, ret, i, istat
@@ -147,7 +147,12 @@ program rrtmgp_rfmip_sw
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
   real(wp), dimension(:),             allocatable :: temparray
   real(wp), dimension(:,:,:,:),         allocatable :: reftrans_variables
-  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux, use_reftrans_nn=.false.
+  real(sp), dimension(:,:,:,:),         allocatable :: tau_sw, ssa_sw, Rdif_save, Tdif_save, Rdir_save, Tdir_save
+  real(wp),                             allocatable :: mu0_save(:,:)
+
+  logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux, use_reftrans_nn=.false., save_inputs_outputs=.false.
+    ! ecRAD type netCDF IO
+  type(netcdf_file)                      :: nndev_file_netcdf, flux_file_netcdf
   !
   ! Classes used by rte+rrtmgp
   !
@@ -188,11 +193,14 @@ program rrtmgp_rfmip_sw
   do_gpt_flux = .false.
 
   use_reftrans_nn = .true.
+  save_inputs_outputs = .false.
 
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
-  modelfile_reftrans      = "../../neural/data/reftrans-8.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-12-sqrt2.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-8-8-pow8.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt.txt" 
 
   if (use_rrtmgp_nn) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau
@@ -361,6 +369,21 @@ program rrtmgp_rfmip_sw
 
   ! --------------------------------------------------
   allocate(reftrans_variables(ngpt,nlay,block_size,4))
+  if (save_inputs_outputs) then
+    ! allocate(input_names(ninputs)) ! temperature + pressure + gases
+    ! allocate(nn_input(   ninputs, nlay, block_size, nblocks))
+    ! ! number of dry air molecules
+    ! allocate(col_dry(nlay, block_size, nblocks), vmr_h2o(nlay, block_size, nblocks)) 
+    allocate(tau_sw(ngpt, nlay, block_size, nblocks), ssa_sw(ngpt, nlay, block_size, nblocks))
+    ! allocate(toa_flux_save(k_dist%get_ngpt(), block_size, nblocks))
+    allocate(mu0_save(block_size,nblocks))!, sfc_alb_spec_save(ngpt,block_size,nblocks))
+    ! and output
+    ! if (save_reftrans) then
+      allocate(Rdif_save(ngpt,nlay,block_size,nblocks), Tdif_save(ngpt,nlay,block_size,nblocks))
+      allocate(Rdir_save(ngpt,nlay,block_size,nblocks), Tdir_save(ngpt,nlay,block_size,nblocks))
+      ! allocate(reftrans_variables(ngpt,nlay,block_size,4))
+    ! end if
+  end if
 
   if (use_rrtmgp_nn) then
     print *, "starting clear-sky shortwave computations, using neural networks as RRTMGP kernel"
@@ -391,7 +414,7 @@ do i = 1, 4
       fluxes%gpt_flux_dn_dir => gpt_flux_dn_dir(:,:,:,b)
     end if
     !
-    ! Compute the optical properties of the atmosphere and the Planck source functions
+    ! Compute the optical properties of the optical_propsphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
     !
 #ifdef USE_TIMING
@@ -458,11 +481,17 @@ do i = 1, 4
 
 
     ! test reftrans-NN
-    
-    call predict_nn_reftrans(block_size, nlay, ngpt,  &
-                                nn_reftrans, optical_props, mu0, &
-                                reftrans_variables)
-
+    if (use_reftrans_nn) then
+#ifdef USE_TIMING
+    ret =  gptlstart('predict_nn_reftrans')
+#endif
+      call predict_nn_reftrans(block_size, nlay, ngpt,  &
+                                  nn_reftrans, optical_props, mu0, &
+                                  reftrans_variables)
+#ifdef USE_TIMING
+    ret =  gptlstop('predict_nn_reftrans')
+#endif                    
+    end if
     !
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
     !    via ty_fluxes_broadband
@@ -486,17 +515,32 @@ do i = 1, 4
                               toa_flux,        &
                               sfc_alb_spec,    &
                               sfc_alb_spec,    &
-                              fluxes))
+                              fluxes))!,          &
+                              ! reftrans_vars=reftrans_variables))    
     end if     
-    
-    print *,"2 mean,max,min Rdif", mean_3d(reftrans_variables(:,:,:,1)), &
-      maxval(reftrans_variables(:,:,:,1)), minval(reftrans_variables(:,:,:,1))
-    print *,"2 mean,max,min Tdif", mean_3d(reftrans_variables(:,:,:,2)), &
-    maxval(reftrans_variables(:,:,:,2)), minval(reftrans_variables(:,:,:,2))
-    print *,"2 mean,max,min  Rdir", mean_3d(reftrans_variables(:,:,:,3)), &
-    maxval(reftrans_variables(:,:,:,3)), minval(reftrans_variables(:,:,:,3))
-    print *,"2 mean,max,min  Tdir", mean_3d(reftrans_variables(:,:,:,4)), &
-    maxval(reftrans_variables(:,:,:,4)), minval(reftrans_variables(:,:,:,4))
+    if (save_inputs_outputs) then
+      ! Save TOA flux, mu0 and sfc_alb
+      mu0_save(:,b) = mu0
+      ! toa_flux_save(:,:,b) = toa_flux
+      ! sfc_alb_spec_save(:,:,b) = sfc_alb_spec 
+      ! if (save_reftrans) then
+        Rdif_save(:,:,:,b) = reftrans_variables(:,:,:,1)
+        Tdif_save(:,:,:,b) = reftrans_variables(:,:,:,2)
+        Rdir_save(:,:,:,b) = reftrans_variables(:,:,:,3)
+        Tdir_save(:,:,:,b) = reftrans_variables(:,:,:,4)
+      ! end if
+
+        tau_sw(:,:,:,b)     = optical_props%tau
+        ssa_sw(:,:,:,b)     = optical_props%ssa 
+    end if
+    ! print *,"2 mean,max,min Rdif", mean_3d(reftrans_variables(:,:,:,1)), &
+    !   maxval(reftrans_variables(:,:,:,1)), minval(reftrans_variables(:,:,:,1))
+    ! print *,"2 mean,max,min Tdif", mean_3d(reftrans_variables(:,:,:,2)), &
+    ! maxval(reftrans_variables(:,:,:,2)), minval(reftrans_variables(:,:,:,2))
+    ! print *,"2 mean,max,min  Rdir", mean_3d(reftrans_variables(:,:,:,3)), &
+    ! maxval(reftrans_variables(:,:,:,3)), minval(reftrans_variables(:,:,:,3))
+    ! print *,"2 mean,max,min  Tdir", mean_3d(reftrans_variables(:,:,:,4)), &
+    ! maxval(reftrans_variables(:,:,:,4)), minval(reftrans_variables(:,:,:,4))
         
 #ifdef USE_TIMING
     ret =  gptlstop('rte_sw')
@@ -751,6 +795,171 @@ do i = 1, 4
 
   end if
 
+
+  ! Save inputs and outputs for neural network gas optics development?
+  if(save_inputs_outputs) then 
+    nndev_file = 'inp_outp_RFMIP.nc'
+    print *, "Attempting to save full RTE and RRTMGP input/output to ", nndev_file
+    ! Create file
+    call nndev_file_netcdf%create(trim(nndev_file),is_hdf5_file=.true.)
+
+    ! Put global attributes
+    call nndev_file_netcdf%put_global_attributes( &
+         &   title_str="Input - output from computations with RTE+RRTMGP, can be used as training data for machine learning", &
+         &   input_str=rfmip_file, comment_str = trim("Clear-sky computation which only includes gases"))
+
+    ! Define dimensions
+    call nndev_file_netcdf%define_dimension("expt", nexp)
+    call nndev_file_netcdf%define_dimension("site", ncol)
+    call nndev_file_netcdf%define_dimension("layer", nlay)
+    call nndev_file_netcdf%define_dimension("level", nlay+1)
+    ! call nndev_file_netcdf%define_dimension("feature", ninputs)
+    call nndev_file_netcdf%define_dimension("gpt", ngpt)
+    call nndev_file_netcdf%define_dimension("bnd", nbnd)
+
+    ! ! RRTMGP inputs
+    ! nn_input_str = 'Features:'
+    ! do b  = 1, size(input_names)
+    !   nn_input_str = trim(nn_input_str) // " " // trim(input_names(b)) 
+    ! end do
+    ! if (preprocess_rrtmgp_inputs) then
+    !   cmt = "preprocessed inputs for RRTMGP shortwave gas optics"
+    ! else 
+    !   cmt = "inputs for RRTMGP shortwave gas optics"
+    ! end if
+    ! call nndev_file_netcdf%define_variable("rrtmgp_sw_input", &
+    ! &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
+    ! &   long_name =cmt, comment_str=nn_input_str, &
+    ! &   data_type_name="float")
+
+  
+    call nndev_file_netcdf%define_variable("tau_sw_gas", &
+    &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+    &   long_name="gas optical depth", data_type_name="float")
+    call nndev_file_netcdf%define_variable("ssa_sw_gas", &
+    &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+    &   long_name="gas single scattering albedo", data_type_name="float")
+
+    ! call nndev_file_netcdf%define_variable("col_dry", &
+    ! &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
+    ! &   long_name="layer number of dry air molecules")
+
+    ! if(save_reftrans) then
+      call nndev_file_netcdf%define_variable("rdif", &
+      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+      &   long_name="diffuse reflectance", data_type_name="float")
+  
+      call nndev_file_netcdf%define_variable("tdif", &
+      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+      &   long_name="diffuse transmittance", data_type_name="float")
+
+      call nndev_file_netcdf%define_variable("rdir", &
+      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+      &   long_name="direct reflectance", data_type_name="float")
+  
+      call nndev_file_netcdf%define_variable("tdir", &
+      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+      &   long_name="direct transmittance", data_type_name="float")
+    ! end if
+
+    call nndev_file_netcdf%end_define_mode()
+
+    ! This function also deallocates its input 
+    ! call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_input)
+    ! ! print *," min max col dry", minval(col_dry), maxval(col_dry)
+    ! call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
+    ! print *, "RRTMGP inputs (gas concs + T + p) were successfully saved"
+
+
+    call unblock_and_write(trim(nndev_file), 'tau_sw_gas', tau_sw)
+    call unblock_and_write(trim(nndev_file), 'ssa_sw_gas', ssa_sw)
+    ! print *, "Optical properties (RRTMGP output) were successfully saved"
+
+    call nndev_file_netcdf%close()
+
+    call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
+
+    call nndev_file_netcdf%define_variable("rsu", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
+    &   long_name="upwelling shortwave flux")
+
+    call nndev_file_netcdf%define_variable("rsd", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
+    &   long_name="downwelling shortwave flux")
+
+    call nndev_file_netcdf%define_variable("rsd_dir", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
+    &   long_name="direct downwelling shortwave flux")
+
+    call nndev_file_netcdf%define_variable("toa_flux", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="gpt", &
+    &   long_name="top-of-optical_propsphere incoming flux")
+
+    call nndev_file_netcdf%define_variable("sfc_alb", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="gpt", &
+    &   long_name="surface albedo")
+
+    call nndev_file_netcdf%define_variable("mu0", &
+    &   dim2_name="expt", dim1_name="site", &
+    &   long_name="cosine of solar zenith angle")
+
+    call nndev_file_netcdf%end_define_mode()
+
+    call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
+    call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)
+    call unblock_and_write(trim(nndev_file), 'rsd_dir', flux_dn_dir)
+
+    ! call unblock_and_write(trim(nndev_file), 'toa_flux', toa_flux_save)
+    ! call unblock_and_write(trim(nndev_file), 'sfc_alb', sfc_alb_spec_save)
+    call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
+    ! if(save_reftrans) then
+      call unblock_and_write(trim(nndev_file), 'rdif', Rdif_save)
+      call unblock_and_write(trim(nndev_file), 'tdif', Tdif_save)
+      call unblock_and_write(trim(nndev_file), 'rdir', Rdir_save)
+      call unblock_and_write(trim(nndev_file), 'tdir', Tdir_save)
+    ! end if
+
+    ! if (do_gpt_flux) then
+
+    !   call nndev_file_netcdf%close()
+    !   call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
+
+    !   call nndev_file_netcdf%define_variable("rsu_gpt", &
+    !   &   dim4_name="expt", dim3_name="site", &
+    !   &   dim2_name="level", dim1_name="gpt", &
+    !   &   long_name="upwelling shortwave flux by g-point", &
+    !   &   data_type_name="float")
+
+    !   call nndev_file_netcdf%define_variable("rsd_gpt", &
+    !   &   dim4_name="expt", dim3_name="site", &
+    !   &   dim2_name="level", dim1_name="gpt", &
+    !   &   long_name="downwelling shortwave flux by g-point", &
+    !   &   data_type_name="float")
+
+    !   call nndev_file_netcdf%define_variable("rsd_dir_gpt", &
+    !   &   dim4_name="expt", dim3_name="site", &
+    !   &   dim2_name="level", dim1_name="gpt", &
+    !   &   long_name="direct downwelling shortwave flux by g-point", &
+    !   &   data_type_name="float")
+
+    !   call nndev_file_netcdf%end_define_mode()
+
+    !   call unblock_and_write(trim(nndev_file), 'rsu_gpt', gpt_flux_up)
+    !   call unblock_and_write(trim(nndev_file), 'rsd_gpt', gpt_flux_dn)
+    !   call unblock_and_write(trim(nndev_file), 'rsd_dir_gpt', gpt_flux_dn_dir)
+
+    ! end if 
+
+    print *, "RTE outputs were successfully saved"
+
+    call nndev_file_netcdf%close()
+
+    print *, "-------------------------------------------------------------------------"
+
+  end if
+
+
+
   deallocate(flux_up, flux_dn)
   print *, "SUCCESS!"
 
@@ -762,16 +971,18 @@ do i = 1, 4
     use, intrinsic :: ISO_C_BINDING
     integer,                      intent(in)    :: ngpt,nlay,ncol
     type(network_type),           intent(in)    :: neural_net 
-    class(ty_optical_props_2str), intent(in   ) :: optical_props  ! inputs: tau, ssa, g
+    class(ty_optical_props_2str), intent(in   ), target :: optical_props  ! inputs: tau, ssa, g
     real(wp), dimension(ncol),    intent(in)    :: mu0            ! also input
     real(wp), dimension(ngpt,nlay,ncol,4), &      ! outputs: Rdif,Tdif,Rdir,Tdir
-                                  intent(inout) :: reftrans_variables 
+                                  intent(inout), target :: reftrans_variables 
     ! local vars
     integer :: nbatch, is, icol, ilay, igpt
     ! after scaling inputs by **(1/2), min max scaling 
-    real(sp), dimension(4)   :: xmin =  (/ 0.0, 0.0, 0.0, 0.0 /)
-    real(sp), dimension(4)   :: xmax =  (/ 180.0,  1.0,  0.54999859,  0.99999514 /)
-    real(sp), dimension (:,:), allocatable :: nn_input ! (nbatch, 4), where nbatch=ngpt*nlay*ncol
+    ! real(sp), dimension(4)   :: xmin =  (/ 0.005, 0.0, 0.0, 0.0 /)
+    ! real(sp), dimension(4)   :: xmax =  (/ 18.5,  1.0,  0.54999859,  1.0 /)
+    real(sp), dimension(5)   :: xmin =  (/ -20.723267, 0.0, 0.0, 0.0, 0.0 /)
+    real(sp), dimension(5)   :: xmax =  (/ 9.0,  1.0,  0.7,  0.99999514, 1.0 /)
+    real(sp), allocatable :: nn_input(:,:), Tnoscat(:) ! (nbatch, 4), where nbatch=ngpt*nlay*ncol
     ! real(sp), dimension (ngpt*nlay*ncol,4) :: nn_input
     real(sp), dimension(:), contiguous, pointer     :: input
     real(sp), dimension(:,:),   contiguous, pointer     :: nn_output   
@@ -783,60 +994,72 @@ do i = 1, 4
 #endif
     
     nbatch = ngpt*nlay*ncol
-    allocate(nn_input(nbatch,4))
-    
+    ! allocate(nn_input(nbatch,4))
+
+
+    allocate(nn_input(nbatch,5))
+    allocate(Tnoscat(nbatch))
+
     ! print *," tau 1", optical_props%tau(1,1,1)
 
     ! Copy input arrays into place and do scaling: because all xmin values are 0, min max scaling is just divide
 
     call C_F_POINTER (C_LOC(optical_props%tau), input, [nbatch])
-    nn_input(:,1) = sqrt(input) / xmax(1)
+    ! nn_input(:,1) = (sqrt(sqrt(input)) - xmin(1)) / xmax(1)
+    nn_input(:,1) = (log(input) - xmin(1))  / (xmax(1) - xmin(1))
+
+    Tnoscat = input
+
     call C_F_POINTER (C_LOC(optical_props%ssa), input, [nbatch])
     nn_input(:,2) = input  ! / xmax(2)
     call C_F_POINTER (C_LOC(optical_props%g), input, [nbatch])
     nn_input(:,3) = input / xmax(3)
     
+    is = 1
     do icol = 1, ncol
       do ilay = 1, nlay
         do igpt = 1, ngpt
-          nn_input(is,4) = mu0(icol) / xmax(4)
+          nn_input(is,4) = mu0(icol)
+          is = is +1
         end do
       end do
     end do
 
+    nn_input(:,5) = exp(-Tnoscat*(1/nn_input(:,4)))
+
     call C_F_POINTER (C_LOC(reftrans_variables), nn_output, [nbatch,4])
-
-
-    call neural_net % output_sgemm_byrows(4, 4, nbatch, nn_input, nn_output)
-
-    print *,"mean,max,min Rdif", mean(nn_output(:,1)), maxval(nn_output(:,1)), minval(nn_output(:,1))
-    print *,"mean,max,min Tdif", mean(nn_output(:,2)), maxval(nn_output(:,2)), minval(nn_output(:,2))
-    print *,"mean,max,min  Rdir", mean(nn_output(:,3)), maxval(nn_output(:,3)), minval(nn_output(:,3))
-    print *,"mean,max,min  Tdir", mean(nn_output(:,4)), maxval(nn_output(:,4)), minval(nn_output(:,4))
-
-    ! is = 1
-    ! do icol = 1, ncol
-    !   do ilay = 1, nlay
-    !     do igpt = 1, ngpt
-    !       nn_input(is,1) = optical_props%tau(igpt,ilay,icol)
-    !       nn_input(is,2) = optical_props%ssa(igpt,ilay,icol)
-    !       nn_input(is,3) = optical_props%g(igpt,ilay,icol)
-    !       nn_input(is,4) = mu0(icol)
-    !       is = is + 1
-    !       ! reftrans_variables(igpt,ilay,icol,1) = optical_props%tau(igpt,ilay,icol)
-    !       ! reftrans_variables(igpt,ilay,icol,2) = optical_props%ssa(igpt,ilay,icol)
-    !       ! reftrans_variables(igpt,ilay,icol,3) = optical_props%g(igpt,ilay,icol)
-    !       ! reftrans_variables(igpt,ilay,icol,4) = mu0(icol)
-
-    !     end do
-    !   end do
-    ! end do
-
-
-
 #ifdef USE_TIMING
     ret =  gptlstop('prep_input')
 #endif
+    ! print *," min max inp 1", minval(nn_input(:,1)), maxval(nn_input(:,1))
+    ! print *," min max inp 2", minval(nn_input(:,2)), maxval(nn_input(:,2))
+    ! print *," min max inp 3", minval(nn_input(:,3)), maxval(nn_input(:,3))
+    ! print *," min max inp 4", minval(nn_input(:,4)), maxval(nn_input(:,4))
+    ! print *, "minmax Tnoscat", minval(nn_input(:,5) ), maxval(nn_input(:,5) )
+
+#ifdef USE_TIMING
+    ret =  gptlstart('kernel')
+#endif
+    ! call neural_net % output_sgemm_flat_byrows(4, 4, nbatch, nn_input, nn_output)
+    call neural_net % output_sgemm_flat_byrows(size(nn_input,2), size(nn_output,2), nbatch, nn_input, nn_output)
+
+#ifdef USE_TIMING
+    ret =  gptlstop('kernel')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('postproc')
+#endif
+    nn_output = nn_output**2
+
+    nn_output = min(1.0_wp, nn_output)
+#ifdef USE_TIMING
+    ret =  gptlstop('postproc')
+#endif
+    ! print *,"mean,max,min Rdif", mean(nn_output(:,1)), maxval(nn_output(:,1)), minval(nn_output(:,1))
+    ! print *,"mean,max,min Tdif", mean(nn_output(:,2)), maxval(nn_output(:,2)), minval(nn_output(:,2))
+    ! print *,"mean,max,min  Rdir", mean(nn_output(:,3)), maxval(nn_output(:,3)), minval(nn_output(:,3))
+    ! print *,"mean,max,min  Tdir", mean(nn_output(:,4)), maxval(nn_output(:,4)), minval(nn_output(:,4))
+
 
   end subroutine predict_nn_reftrans
 
@@ -1072,10 +1295,18 @@ do i = 1, 4
     ret =  gptlstop('(nobs*ngpt,8) X (8,4) GEMM')  ! = (nbatch, 4)
 #endif
 
+deallocate(output2, wt2)
+
+allocate(output2(224,nbatch))
+
 #ifdef USE_TIMING
   ret =  gptlstart('exp')
   output2 = exp(output2)
   ret =  gptlstop('exp')
+
+  ret =  gptlstart('log')
+  output2 = log(output2)
+  ret =  gptlstop('log')
 
   ret =  gptlstart('ss')
   output2 = output2/ (abs(output2) + 1)
