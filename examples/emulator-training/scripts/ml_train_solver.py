@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Python framework for developing neural network emulators of 
-RRTMGP gas optics scheme
+Python framework for developing neural networks to replace radiative
+transfer computations, either fully or just one component
 
-This program takes existing input-output data generated with RRTMGP and
-user-specified hyperparameters such as the number of neurons, 
-scales the data if requested, and trains a neural network. 
+This code is for emulating RTE (the solver)
 
-Alternatively, an automatic tuning method can be used for
-finding a good set of hyperparameters (expensive).
+This program takes existing input-output data generated with RTE+RRTMGP and
+user-specified hyperparameters such as the number of neurons, optionally
+scales the data, and trains a neural network. 
 
-Right now just a placeholder, pasted some of the code I used in my paper
+Temporary code
 
 Contributions welcome!
 
@@ -161,56 +160,64 @@ x_tr, x_test, y_tr, y_test = train_test_split(x, y, test_size=1 - train_ratio)
 # validation is now 15% of the initial data set
 x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio)) 
 
+# Ready for training
 
-mymetrics   = ['mean_absolute_error']
-valfunc     = 'val_mean_absolute_error'
-activ       = 'softsign'
-activ       = 'relu'
-# activ           ='tanh'
-# activ           ='sigmoid'
+train_keras = True
 
-epochs      = 100000
-patience    = 25
-lossfunc    = losses.mean_squared_error
-ninputs     = x_tr.shape[1]
-lr          = 0.001
-# lr          = 0.0001 
-# lr          = 0.0002 
-batch_size  = 256
-batch_size  = 512
-neurons = [182, 182]
-
-optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
-# optim = optimizers.Adam(lr=lr)
-
-# Create model
-model = create_model(nx=ninputs,ny=ny,neurons=neurons,activ=activ,kernel_init='he_uniform')
-# Compile model
-model.compile(loss=lossfunc, optimizer=optim,
-              metrics=mymetrics,  context= ["gpu(0)"])
-model.summary()
-
-# Create earlystopper
-earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
-
-# START TRAINING
-history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                    validation_data=(x_val,y_val), callbacks=[earlystopper])
-gc.collect()
-
-# TEST
-
-
-
-y_pred      = model.predict(x);  
-y_pred      = reverse_scale_outputs_gpt_lay(y_pred,y_mean,y_sigma)
-
-plot_hist2d(y_raw,y_pred,20,True)      #  0.975
-
-
-y_bb_pred = broadband_reduce(y_pred) 
-
-plot_hist2d(y_bb,y_bb_pred,20,True)      #  0.979
+if train_keras:
+    from tensorflow.keras import losses, optimizers
+    from tensorflow.keras.callbacks import EarlyStopping
+    from ml_trainfuncs_keras import create_model_mlp, savemodel
     
-diff = np.abs(y_bb-y_bb_pred)
-np.max(diff)
+    mymetrics   = ['mean_absolute_error']
+    valfunc     = 'val_mean_absolute_error'
+    activ       = 'softsign'
+    activ       = 'relu'
+    # activ           ='tanh'
+    # activ           ='sigmoid'
+    
+    epochs      = 100000
+    patience    = 25
+    lossfunc    = losses.mean_squared_error
+    ninputs     = x_tr.shape[1]
+    lr          = 0.001
+    # lr          = 0.0001 
+    # lr          = 0.0002 
+    batch_size  = 256
+    batch_size  = 512
+    neurons = [182, 182]
+    
+    optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
+    # optim = optimizers.Adam(lr=lr)
+    
+    # Create model
+    model = create_model_mlp(nx=ninputs,ny=ny,neurons=neurons,activ=activ,kernel_init='he_uniform')
+    # Compile model
+    model.compile(loss=lossfunc, optimizer=optim,
+                  metrics=mymetrics,  context= ["gpu(0)"])
+    model.summary()
+    
+    # Create earlystopper
+    earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
+    
+    # START TRAINING
+    history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                        validation_data=(x_val,y_val), callbacks=[earlystopper])
+    gc.collect()
+    
+    # TEST
+    
+    
+    
+    y_pred      = model.predict(x);  
+    y_pred      = reverse_scale_outputs_gpt_lay(y_pred,y_mean,y_sigma)
+    
+    # plot_hist2d(y_raw,y_pred,20,True)      #  0.975
+    
+    
+    y_bb_pred = broadband_reduce(y_pred) 
+    
+    plot_hist2d(y_bb,y_bb_pred,20,True)      #  0.979
+        
+    diff = np.abs(y_bb-y_bb_pred)
+    np.max(diff)

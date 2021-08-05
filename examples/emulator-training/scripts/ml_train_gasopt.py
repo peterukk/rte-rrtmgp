@@ -1,15 +1,14 @@
 """
-Python framework for developing neural network emulators of 
-RRTMGP gas optics scheme
+Python framework for developing neural networks to replace radiative
+transfer computations, either fully or just one component
+
+This code is for emulating RRTMGP (gas optics)
 
 This program takes existing input-output data generated with RRTMGP and
-user-specified hyperparameters such as the number of neurons, 
-scales the data if requested, and trains a neural network. 
+user-specified hyperparameters such as the number of neurons, optionally
+scales the data, and trains a neural network. 
 
-Alternatively, an automatic tuning method can be used for
-finding a good set of hyperparameters (expensive).
-
-Right now just a placeholder, pasted some of the code I used in my paper
+Temporary code
 
 Contributions welcome!
 
@@ -27,21 +26,15 @@ from sklearn.model_selection import train_test_split
 
 
 
-# Okay, I really need to switch to OOP in my Python code.
-# To take this train program as an example, it could use OOP (classes/functions) for
-# - input scaling 
-#  --- takes data, optional min max values (if not uses data values)
-#  --- power scaling yes/no for set inputs? use some criteria?
-#  ---- returns scaled outputs, coefficients
-# - output scaling
-# ---- takes data, optional coefficients, or uses data values
-# ---- specify method: regular standard scaling or alternative
-# ---- returns scaled inputs, coefficients
-
-
 # ----------------------------------------------------------------------------
 # ----------------- TEMP. CODE, GAS OPTICS EMULATION  ------------------------
 # ----------------------------------------------------------------------------
+
+#  ----------------- File paths -----------------
+fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2011-2013_noclouds.nc"
+fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+
+# ----------- config ------------
 
 # Do the inputs need pre-processing? Might have already been scaled (within the Fortran code)
 scale_inputs = True
@@ -51,11 +44,11 @@ scale_outputs = True
 
 predictand = 'tau_sw_abs'
 
-#  ----------------- File paths -----------------
 
-
-fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2011-2013_noclouds.nc"
-fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+# Which ML library to use: select either 'pytorch',
+# or 'tf-keras' for Tensorflow with Keras frontend
+ml_library = 'pytorch'
+# ml_library = 'tf-keras'
 
 # LOAD DATA
 # Training + validation data
@@ -93,12 +86,15 @@ x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=1 - train_ratio)
 
 
 
-train_pytorch = False
-if train_pytorch:
+# PYTORCH TRAINING
+if (ml_library=='pytorch'):
+    from torch import nn
     import torch
     import pytorch_lightning as pl
     from torch.utils.data import DataLoader, TensorDataset
-    from ml_trainfuncs_pytorch import MLP
+    from ml_trainfuncs_pytorch import MLP#, MLP_cpu
+    os.environ['MKL_THREADING_LAYER'] = 'GNU'
+    
     
     batch_size = 256
         
@@ -121,39 +117,29 @@ if train_pytorch:
     trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
                 val_dataloaders=DataLoader(data_val,batch_size=batch_size))
 
+    # Test model
+    y_pred = mlp(x_test_torch)
+    y_pred = y_pred.detach().numpy()
 
 
-    # PREDICT FOR TEST DATA
-    #trainer.predict(mlp,dataloaders=data_val)
-    nfac = 8
+    np.corrcoef(y_test.flatten(),y_pred.flatten())
     
-    ns_test = x_test.shape[0]
-    ysc_test_pred = mlp.predict_step(x_test_torch,batch_idx=np.arange(0,ns_test))
-    ysc_test_pred = ysc_test_pred.detach().numpy()
+    y_pred = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
+    y_pred = y_pred * (np.repeat(col_dry_test[:,np.newaxis],ny,axis=1))
     
+    plot_hist2d(y_raw_test,y_pred,20,True)        # 
+    plot_hist2d_T(y_raw,y_pred,20,True)      #  
     
-    np.corrcoef(y_test.flatten(),ysc_test_pred.flatten())
+  
+# TENSORFLOW-KERAS TRAINING
+elif (ml_library=='tf-keras'):
     
-    y_test_pred = preproc_pow_gptnorm_reverse(ysc_test_pred, nfac, y_mean, y_sigma)
-    y_test_pred = y_test_pred * (np.repeat(col_dry_test[:,np.newaxis],ny,axis=1))
-    
-    plot_hist2d(y_raw_test,y_test_pred,20,True)        # 
-    plot_hist2d_T(y_raw,y_test_pred,20,True)      #  
-    
-
-
-train_keras = True
-
-if train_keras:
-    
-    from keras import losses, optimizers
-    from keras.callbacks import EarlyStopping
+    from tensorflow.keras import losses, optimizers
+    from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel
     
     import warnings
     warnings.filterwarnings("ignore")
-    
-    
     
     
     mymetrics   = ['mean_absolute_error']
@@ -191,13 +177,6 @@ if train_keras:
     history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
                         validation_data=(x_val,y_val), callbacks=[earlystopper])
     gc.collect()
-    
-    
-    # y_test_nn       = model.predict(x_test);  
-    # y_test_nn       = preproc_pow_gptnorm_reverse(y_test_nn, nfac, y_mean, y_sigma)
-    # tau_test_nn     = y_test_nn * (np.repeat(col_dry_test[:,np.newaxis],ny,axis=1))
-    # plot_hist2d(tau_test,tau_test_nn,20,True)        # 
-    # plot_hist2d_T(tau_test,tau_test_nn,20,True)      #  
     
     
     y_nn       = model.predict(x);  

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Python framework for developing neural network emulators of 
-RRTMGP gas optics scheme
+Python framework for developing neural networks to replace radiative
+transfer computations, either fully or just one component
 
-This program takes existing input-output data generated with RRTMGP and
-user-specified hyperparameters such as the number of neurons, 
-scales the data if requested, and trains a neural network. 
+This code is for emulating RTE+RRTMGP (entire radiation scheme)
 
-Alternatively, an automatic tuning method can be used for
-finding a good set of hyperparameters (expensive).
+This program takes existing input-output data generated with RTE+RRTMGP and
+user-specified hyperparameters such as the number of neurons, optionally
+scales the data, and trains a neural network. 
 
-Right now just a placeholder, pasted some of the code I used in my paper
+Temporary code
 
 Contributions welcome!
 
@@ -43,6 +42,10 @@ x_raw_test, y_raw_test = load_inp_outp_rte_rrtmgp_sw(fpath, 'rsu_rsd')
 scale_inputs = True
 scale_outputs = True
 
+ny = y_raw.shape[1]  # ny = ngpt
+# y.shape (14400, 122)
+nx = x_raw.shape[1]
+
 if scale_inputs:
     x,xmax,xmin = preproc_rrtmgp_inputs(x_raw)
     x_test      = preproc_rrtmgp_inputs(x_raw_test)
@@ -51,14 +54,13 @@ else:
     x = x_raw
     
 if scale_outputs: 
-    ngpt = y_raw.shape[1]      # y.shape (14400, 122)
-    y_mean = np.zeros(ngpt)
-    y_sigma = np.zeros(ngpt)
-    for igpt in range(ngpt):
+    y_mean = np.zeros(ny)
+    y_sigma = np.zeros(ny)
+    for igpt in range(ny):
         y_mean[igpt] = y_raw[:,igpt].mean()
         # y_sigma[igpt] = y_raw[:,igpt].std()
-    # y_mean = np.repeat(y_raw.mean(),ngpt)
-    y_sigma = np.repeat(y_raw.std(),ngpt)  # 467.72
+    # y_mean = np.repeat(y_raw.mean(),ny)
+    y_sigma = np.repeat(y_raw.std(),ny)  # 467.72
 
     nfac = 1
 
@@ -78,9 +80,8 @@ x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=val_ratio)
 train_keras = True
 
 if train_keras:
-    
-    from keras import losses, optimizers
-    from keras.callbacks import EarlyStopping
+    from tensorflow.keras import losses, optimizers
+    from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel
     
     mymetrics   = ['mean_absolute_error']
@@ -93,7 +94,6 @@ if train_keras:
     epochs      = 100000
     patience    = 25
     lossfunc    = losses.mean_squared_error
-    ninputs     = x_tr.shape[1]
     # lr          = 0.001
     # lr          = 0.0001 
     lr          = 0.0002 
@@ -107,7 +107,7 @@ if train_keras:
     # optim = optimizers.Adam(lr=lr)
     
     # Create model
-    model = create_model_mlp(nx=ninputs,ny=ngpt,neurons=neurons,activ=activ,kernel_init='he_uniform')
+    model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ=activ,kernel_init='he_uniform')
     # Compile model
     model.compile(loss=lossfunc, optimizer=optim,
                   metrics=mymetrics,  context= ["gpu(0)"])

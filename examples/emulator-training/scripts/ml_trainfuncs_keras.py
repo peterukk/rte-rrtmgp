@@ -18,8 +18,8 @@ Contributions welcome!
 @author: Peter Ukkonen
 """
 
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Activation, Flatten,Input
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten,Input
 import numpy as np
 import h5py
 
