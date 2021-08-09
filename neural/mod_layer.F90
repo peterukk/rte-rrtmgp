@@ -62,6 +62,9 @@ contains
       case('sigmoid')
         self % activation             => sigmoid
         self % bias_and_activation    => sigmoid_mat_b
+      case('hard_sigmoid')
+        self % activation             => hard_sigmoid
+        self % bias_and_activation    => hard_sigmoid_mat_b
       case('softsign')
         self % activation             => softsign
         self % bias_and_activation    => softsign_mat_b

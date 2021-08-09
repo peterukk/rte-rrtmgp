@@ -46,9 +46,9 @@
 ! the number 2 in outputs comes from upwelling+downwelling flux; direct downwelling may be needed as well
 !
 ! Fortran program arguments (k_distribution file and cloud_optics file are fixed):
-! ml_allsky_sw [block_size] [input file] [emulate] [NN model files] [optional file to save NN inputs/outputs]"
+! ml_allsky_sw [block_size] [input file] [component to emulate] [NN model file(s)]"
 !
-! Developed by Peter Ukkonen
+! Developed by Peter Ukkonen (built on allsky example, and existing RTE+RRTMGP code by Robert Pincus)
 !
 ! -------------------------------------------------------------------------------------------------
 !
@@ -167,9 +167,10 @@ program rrtmgp_rfmip_sw
   character(len=4)    ::  block_size_char
   character(len=6)    ::  emulated_component
   character(len=32 ), dimension(:),     allocatable :: kdist_gas_names, input_file_gas_names, input_names
-  ! Neural network variables  
+  ! Neural network objects/variables  
   ! 1-2 neural network models depending on emulated component (2 for RRTMGP)
-  type(network_type), dimension(:),     allocatable :: neural_nets      
+  type(network_type), dimension(:),     allocatable :: nn_models   
+  type(network_type)                                :: nn_model    
   character (len = 80)                              :: nn_modelfile_1, nn_modelfile_2 
                                         ! RRMTGP-NN-SW: first model is for tau, second for tau_rayleigh
   real(sp), dimension(:,:,:,:),         allocatable :: nn_input ! (nfeatures,nlay,block_size,nblocks)
@@ -184,11 +185,6 @@ program rrtmgp_rfmip_sw
   ! Optical properties for NN development - eiher combined from gas and clouds, or just gas (described by tau and ssa)
   real(sp), dimension(:,:,:,:),         allocatable :: tau_sw, ssa_sw, g_sw 
   real(wp), dimension(:,:,:),           allocatable :: col_dry, vmr_h2o
-  ! RTE inputs for NN development
-  real(wp),                             allocatable :: toa_flux_save(:,:,:), sfc_alb_spec_save(:,:,:), mu0_save(:,:)
-  ! RTE outputs for NN development
-  real(wp), dimension(:,:,:,:),         allocatable :: reftrans_variables
-  real(sp), dimension(:,:,:,:),         allocatable :: Rdif_save, Tdif_save, Rdir_save, Tdir_save
   !
   ! Cloud variables
   !
@@ -198,7 +194,7 @@ program rrtmgp_rfmip_sw
   !
   ! various logical to control program
   logical :: use_rrtmgp_nn=.false., use_rte_nn=.false., use_rtegpt_nn=.false., use_reftrans_nn = .false., use_rte_rrtmgp_nn =.false.
-  logical :: include_clouds=.true., compare_flux=.false., save_inputs_outputs = .false., do_gpt_flux, save_reftrans, preprocess_rrtmgp_inputs
+  logical :: include_clouds=.true., compare_flux=.false., save_inputs_outputs = .false., do_gpt_flux, save_flux
   !
   ! Derived types from the RTE and RRTMGP libraries
   !
@@ -218,7 +214,7 @@ program rrtmgp_rfmip_sw
   real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
   real(wp) :: def_tsi_s, factor, rel_val, rei_val
   ! ecRAD type netCDF IO
-  type(netcdf_file)                      :: nndev_file_netcdf, flux_file_netcdf
+  type(netcdf_file)  :: flux_file_netcdf
 
   ! Initialize GPU kernel - important not to include this substantial overhead in timing
 #ifdef USE_OPENACC  
@@ -233,14 +229,10 @@ program rrtmgp_rfmip_sw
   !  ------------ I/O and settings -----------------
   ! Compute fluxes per g-point?
   do_gpt_flux = .true.
-  ! When writing inputs and outputs for ML training, save also reflectance-transmittance variables?
-  save_reftrans = .true.
-  ! When writing RRTMGP inputs for ML training, preprocess inputs like in Ukkonen 2020?
-  preprocess_rrtmgp_inputs = .false.
+  ! Save fluxes to netCDF file?
+  save_flux   = .false.
 
   print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] (4 args: use reference code) "
-  print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [input-output file] ", &
-      " (5 args: ref. code, save training data)"
   print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [emulated component] ", &
       "[NN model file(s)] (6-7 args, replace a component with NN)"
   print *, "Provide 'none' for cloud coeff. file to skip clouds (clear-sky computation)"
@@ -255,36 +247,29 @@ program rrtmgp_rfmip_sw
   call get_command_argument(3, kdist_file)
   call get_command_argument(4, cloud_optics_file)
   if (trim(cloud_optics_file)=='none' ) include_clouds =.false.
-
-  if (nargs == 5) then
-    call get_command_argument(5, nndev_file)
-    save_inputs_outputs = .true.
-  end if
-  
+  if(nargs == 5) print *, "provide 4 (reference code) or 6-7 arguments (emulation mode), not 5"
   if(nargs > 5) then
     call get_command_argument(5, emulated_component) 
     call get_command_argument(6, nn_modelfile_1)
 
+    print *, "program called in EMULATION MODE, using neural nets to emulate ", emulated_component
+
     if (emulated_component == 'rrtmgp') then
-      use_rrtmgp_nn      = .true.
+      use_rrtmgp_nn         = .true.
       if (nargs < 7) then
         call stop_on_err("Need to supply two model files to emulate RRTMGP (absorption and Rayleigh cross-section models, respectively")
       else
         call get_command_argument(7, nn_modelfile_2)
       end if
     else if (emulated_component == 'both') then
-      use_rte_rrtmgp_nn  = .true.
+      use_rte_rrtmgp_nn     = .true.
     else if (emulated_component == 'rte') then
-      use_rte_nn         = .true.
-    ! else if (emulated_component == 'rte-gptvec') then
-    !   use_rte_nn         = .true.
-    else if (emulated_component == 'rte-gptscal') then
-      use_rtegpt_nn         = .true.
+      use_rte_nn            = .true.
     else if (emulated_component == 'rte-reftrans') then
-      use_reftrans_nn         = .true.
+      use_reftrans_nn       = .true.
     else
       call stop_on_err("If nargs>5, third argument specifies which code to replace with NNs and must be one of the following: & 
-      &'both', 'rrtmgp', 'rte',' 'rte-gptvec', 'rte-gptscal', 'rte-reftrans'")
+      &'both', 'rrtmgp', 'rte',' 'rte-reftrans'")
     end if
   end if
 
@@ -292,15 +277,19 @@ program rrtmgp_rfmip_sw
   ! nn_modelfile_1           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   ! nn_modelfile_2           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
   if (use_rrtmgp_nn) then
-    allocate(neural_nets(2))
+    allocate(nn_models(2))
     print *, "-------- Loading gas optics neural networks ---------"
 	  print *, 'loading shortwave absorption model from ', nn_modelfile_1
-    call neural_nets(1) % load(nn_modelfile_1)
+    call nn_models(1) % load(nn_modelfile_1)
     print *, 'loading rayleigh model from ', nn_modelfile_2
-    call neural_nets(2) % load(nn_modelfile_2)
-    ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
+    call nn_models(2) % load(nn_modelfile_2)
+    ninputs = size(nn_models(1) % layers(1) % w_transposed, 2)
     print *, "Number of NN inputs: ", ninputs
   end if  
+  if (use_reftrans_nn) then
+    print *, 'loading reflectance-transmittance model from ', nn_modelfile_1
+    call nn_model % load(nn_modelfile_1)
+  end if
   ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_rrtmgp_nn_constants.F90
 
   ! How big is the problem? Does it fit into blocks of the size we've specified?
@@ -474,27 +463,6 @@ program rrtmgp_rfmip_sw
   ! Device allocation happens inside procedures
   call stop_on_err(atmos%alloc_2str(block_size, nlay, k_dist))
 
-  if (save_inputs_outputs) then
-    allocate(input_names(ninputs)) ! temperature + pressure + gases
-    allocate(nn_input(   ninputs, nlay, block_size, nblocks))
-    ! number of dry air molecules
-    allocate(col_dry(nlay, block_size, nblocks), vmr_h2o(nlay, block_size, nblocks)) 
-    allocate(tau_sw(ngpt, nlay, block_size, nblocks), ssa_sw(ngpt, nlay, block_size, nblocks))
-    if (include_clouds) then
-      allocate(g_sw(ngpt, nlay, block_size, nblocks))
-    end if
-  end if
-  ! Additional RTE input
-  if (save_inputs_outputs) then
-    allocate(toa_flux_save(k_dist%get_ngpt(), block_size, nblocks))
-    allocate(mu0_save(block_size,nblocks), sfc_alb_spec_save(ngpt,block_size,nblocks))
-    ! and output
-    if (save_reftrans) then
-      allocate(Rdif_save(ngpt,nlay,block_size,nblocks), Tdif_save(ngpt,nlay,block_size,nblocks))
-      allocate(Rdir_save(ngpt,nlay,block_size,nblocks), Tdir_save(ngpt,nlay,block_size,nblocks))
-      allocate(reftrans_variables(ngpt,nlay,block_size,4))
-    end if
-  end if
 #ifdef USE_TIMING
   !
   ! Initialize timers
@@ -526,7 +494,7 @@ program rrtmgp_rfmip_sw
   ret =  gptlstart('clear_sky_total (SW)')
 #endif
 #ifdef USE_OPENMP
-  !$OMP PARALLEL shared(neural_nets, k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,atmos)
+  !$OMP PARALLEL shared(nn_models, k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,atmos)
   !$OMP DO 
 #endif
   do b = 1, nblocks
@@ -543,7 +511,9 @@ program rrtmgp_rfmip_sw
     end if
 
     if (use_rte_rrtmgp_nn) then 
-      ! Use emulator for whole radiation scheme?
+      !Use emulator for whole radiation scheme
+
+
     else
     
       !
@@ -573,7 +543,7 @@ program rrtmgp_rfmip_sw
                                           t_lay(:,:,b),       &
                                           gas_conc_array(b),  &
                                           atmos,      &
-                                          toa_flux, neural_nets=neural_nets))
+                                          toa_flux, neural_nets=nn_models))
       else
         call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
                                           p_lev(:,:,b),       &
@@ -581,31 +551,6 @@ program rrtmgp_rfmip_sw
                                           gas_conc_array(b),  &
                                           atmos,      &
                                           toa_flux))
-      end if
-
-      ! Save RRTMGP inputs and outputs for NN training? 
-      if (save_inputs_outputs)  then
-        ! Compute NN inputs: this is just a 3D array (ninputs,nlay,ncol),
-        ! where the inner dimension vector consists of (tlay, play, vmr_h2o, vmr_o3, vmr_co2...)
-        ! if last argument (preprocess) is true, inputs are scaled to 0...1, and 
-        ! play, H2O and O3 are additionally power-scaled, like in RRTMGP-NN
-        ! For convenience the NN inputs are computed here using a procedure (ensures that the outputs
-        ! correspond to inputs, and allows the user to specify which gases are used by changing _gas_names)
-        call stop_on_err(get_gasopt_nn_inputs(                  &
-                      block_size, nlay, ninputs,                        &
-                      p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),      &
-                      nn_input(:,:,:,b), input_names, preprocess_rrtmgp_inputs))
-        ! column dry amount, needed to normalize outputs (could also be computed within Python)
-        call stop_on_err(gas_conc_array(b)%get_vmr('h2o', vmr_h2o(:,:,b)))
-        call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
-
-        ! For RRTMGP emulators, training outputs are gas optical properties, so CLOUDS are NOT
-        ! included (assumed that user turns off include_clouds when generating gas optics training data)
-        if (.not. include_clouds) then
-          tau_sw(:,:,:,b)     = atmos%tau
-          ssa_sw(:,:,:,b)     = atmos%ssa 
-          ! tau_sw_ray(:,:,:,b)  = (atmos%ssa * atmos%tau)
-        end if
       end if
 
       ! print *, "mean tau after gas optics", mean_3d(atmos%tau)
@@ -617,13 +562,7 @@ program rrtmgp_rfmip_sw
 
         call stop_on_err(clouds%delta_scale())
         call stop_on_err(clouds%increment(atmos))
-        
         ! print *, "mean tau after adding cloud optics", mean_3d(atmos%tau)
-        if (save_inputs_outputs)  then
-            tau_sw(:,:,:,b)     = atmos%tau
-            ssa_sw(:,:,:,b)     = atmos%ssa 
-            g_sw(:,:,:,b)       = atmos%g 
-        end if
       end if
 #ifdef USE_TIMING
       ret =  gptlstop('clouds_deltascale_increment')
@@ -669,35 +608,33 @@ program rrtmgp_rfmip_sw
 #ifdef USE_TIMING
       ret =  gptlstart('rte_sw')
 #endif
-      if (save_inputs_outputs .and. save_reftrans) then
-        call stop_on_err(rte_sw(atmos,   &
-                                top_at_1,        &
-                                mu0,             &
-                                toa_flux,        &
-                                sfc_alb_spec,  sfc_alb_spec,  &
-                                fluxes, &
-                                reftrans_vars=reftrans_variables))
-      else
-        call stop_on_err(rte_sw(atmos,   &
-                                top_at_1,        &
-                                mu0,             &
-                                toa_flux,        &
-                                sfc_alb_spec, sfc_alb_spec,  &
-                                fluxes))
-      end if
-      if (save_inputs_outputs) then
-        ! Save TOA flux, mu0 and sfc_alb
-        mu0_save(:,b) = mu0
-        toa_flux_save(:,:,b) = toa_flux
-        sfc_alb_spec_save(:,:,b) = sfc_alb_spec 
-        if (save_reftrans) then
-          Rdif_save(:,:,:,b) = reftrans_variables(:,:,:,1)
-          Tdif_save(:,:,:,b) = reftrans_variables(:,:,:,2)
-          Rdir_save(:,:,:,b) = reftrans_variables(:,:,:,3)
-          Tdir_save(:,:,:,b) = reftrans_variables(:,:,:,4)
+      ! Emulate entire solver?
+      if (use_rte_nn) then
+        ! call predict_nn_radscheme_sw(block_size, nlay, nx_gasopt, & 
+        !                         rrtmgp_inputs, & ! RRTMGP inputs (gas concentrations + T + p)
+        !                         lwp, iwp, & ! cloud liquid and ice water paths
+        !                         mu0, surface_albedo(:,b),  & ! RTE inputs; no inc. flux because its assumed constant across columns
+        !                         neural_net,    & ! pre-trained neural network 
+        !                         fluxes)
+      else 
+        ! Emulate reflectance-transmittance computations?
+        if (use_reftrans_nn) then
+            ! call stop_on_err(rte_sw(atmos,   &
+            !                         top_at_1,        &
+            !                         mu0,             &
+            !                         toa_flux,        &
+            !                         sfc_alb_spec,  sfc_alb_spec,  &
+            !                         fluxes, &
+            !                         neural_net=nn_model))
+        else ! reference
+            call stop_on_err(rte_sw(atmos,   &
+                                    top_at_1,        &
+                                    mu0,             &
+                                    toa_flux,        &
+                                    sfc_alb_spec, sfc_alb_spec,  &
+                                    fluxes))
         end if
       end if
-            
 #ifdef USE_TIMING
       ret =  gptlstop('rte_sw')
 #endif
@@ -730,202 +667,6 @@ program rrtmgp_rfmip_sw
   print *, "Finished with computations!"
   print *, "-------------------------------------------------------------------------"
 
-  ! Save inputs and outputs for neural network gas optics development?
-  if(save_inputs_outputs) then 
-    print *, "Attempting to save full RTE and RRTMGP input/output to ", nndev_file
-    ! Create file
-    call nndev_file_netcdf%create(trim(nndev_file),is_hdf5_file=.true.)
-
-    ! Put global attributes
-    if (include_clouds) then 
-      cmt = "All-sky computation which includes gases and clouds"
-    else
-      cmt = "Clear-sky computation which only includes gases"
-    end if
-    call nndev_file_netcdf%put_global_attributes( &
-         &   title_str="Input - output from computations with RTE+RRTMGP, can be used as training data for machine learning", &
-         &   input_str=input_file, comment_str = trim(cmt))
-
-    ! Define dimensions
-    call nndev_file_netcdf%define_dimension("expt", nexp)
-    call nndev_file_netcdf%define_dimension("site", ncol)
-    call nndev_file_netcdf%define_dimension("layer", nlay)
-    call nndev_file_netcdf%define_dimension("level", nlay+1)
-    call nndev_file_netcdf%define_dimension("feature", ninputs)
-    call nndev_file_netcdf%define_dimension("gpt", ngpt)
-    call nndev_file_netcdf%define_dimension("bnd", nbnd)
-
-    ! RRTMGP inputs
-    nn_input_str = 'Features:'
-    do b  = 1, size(input_names)
-      nn_input_str = trim(nn_input_str) // " " // trim(input_names(b)) 
-    end do
-    if (preprocess_rrtmgp_inputs) then
-      cmt = "preprocessed inputs for RRTMGP shortwave gas optics"
-    else 
-      cmt = "inputs for RRTMGP shortwave gas optics"
-    end if
-    call nndev_file_netcdf%define_variable("rrtmgp_sw_input", &
-    &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
-    &   long_name =cmt, comment_str=nn_input_str, &
-    &   data_type_name="float")
-
-    if(include_clouds) then
-      call nndev_file_netcdf%define_variable("tau_sw", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="optical depth", data_type_name="float")
-      call nndev_file_netcdf%define_variable("ssa_sw", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="single scattering albedo", data_type_name="float")
-      call nndev_file_netcdf%define_variable("g_sw", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="asymmetry parameter", data_type_name="float")
-      call nndev_file_netcdf%define_variable("cloud_lwp", &
-      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-      &   long_name="cloud liquid water path", units_str="g/kg")
-      call nndev_file_netcdf%define_variable("cloud_iwp", &
-      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-      &   long_name="cloud ice water path", units_str="g/kg")
-      call nndev_file_netcdf%define_variable("cloud_fraction", &
-      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-      &   long_name="cloud fraction")
-    else
-      call nndev_file_netcdf%define_variable("tau_sw_gas", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="gas optical depth", data_type_name="float")
-      call nndev_file_netcdf%define_variable("ssa_sw_gas", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="gas single scattering albedo", data_type_name="float")
-    end if
-    call nndev_file_netcdf%define_variable("col_dry", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-    &   long_name="layer number of dry air molecules")
-
-    if(save_reftrans) then
-      call nndev_file_netcdf%define_variable("rdif", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="diffuse reflectance", data_type_name="float")
-  
-      call nndev_file_netcdf%define_variable("tdif", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="diffuse transmittance", data_type_name="float")
-
-      call nndev_file_netcdf%define_variable("rdir", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="direct reflectance", data_type_name="float")
-  
-      call nndev_file_netcdf%define_variable("tdir", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="direct transmittance", data_type_name="float")
-    end if
-
-    call nndev_file_netcdf%end_define_mode()
-
-    ! This function also deallocates its input 
-    call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_input)
-    ! print *," min max col dry", minval(col_dry), maxval(col_dry)
-    call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
-    print *, "RRTMGP inputs (gas concs + T + p) were successfully saved"
-
-    if(include_clouds) then
-      call unblock_and_write(trim(nndev_file), 'tau_sw', tau_sw)
-      call unblock_and_write(trim(nndev_file), 'ssa_sw', ssa_sw)
-      call unblock_and_write(trim(nndev_file), 'g_sw',   g_sw)
-      print *, "Optical properties (output from RRTMGP+cloud optics) were successfully saved"
-      call unblock_and_write(trim(nndev_file), 'cloud_lwp', lwp)
-      call unblock_and_write(trim(nndev_file), 'cloud_iwp', iwp)
-      call unblock_and_write(trim(nndev_file), 'cloud_fraction', cloud_fraction)
-    else 
-      call unblock_and_write(trim(nndev_file), 'tau_sw_gas', tau_sw)
-      call unblock_and_write(trim(nndev_file), 'ssa_sw_gas', ssa_sw)
-      print *, "Optical properties (RRTMGP output) were successfully saved"
-    end if
-
-    call nndev_file_netcdf%close()
-
-    call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
-
-    call nndev_file_netcdf%define_variable("rsu", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
-    &   long_name="upwelling shortwave flux")
-
-    call nndev_file_netcdf%define_variable("rsd", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
-    &   long_name="downwelling shortwave flux")
-
-    call nndev_file_netcdf%define_variable("rsd_dir", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
-    &   long_name="direct downwelling shortwave flux")
-
-    call nndev_file_netcdf%define_variable("toa_flux", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="gpt", &
-    &   long_name="top-of-atmosphere incoming flux")
-
-    call nndev_file_netcdf%define_variable("sfc_alb", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="gpt", &
-    &   long_name="surface albedo")
-
-    call nndev_file_netcdf%define_variable("mu0", &
-    &   dim2_name="expt", dim1_name="site", &
-    &   long_name="cosine of solar zenith angle")
-
-    call nndev_file_netcdf%end_define_mode()
-
-    call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
-    call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)
-    call unblock_and_write(trim(nndev_file), 'rsd_dir', flux_dn_dir)
-
-    call unblock_and_write(trim(nndev_file), 'toa_flux', toa_flux_save)
-    call unblock_and_write(trim(nndev_file), 'sfc_alb', sfc_alb_spec_save)
-    call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
-
-    if(save_reftrans) then
-      print *, "max Rdif", maxval(Rdif_save), "max Tdif", maxval(Tdif_save)
-      print *, "max Rdir", maxval(Rdir_save), "max Tdir", maxval(Tdir_save)
-      call unblock_and_write(trim(nndev_file), 'rdif', Rdif_save)
-      call unblock_and_write(trim(nndev_file), 'tdif', Tdif_save)
-      call unblock_and_write(trim(nndev_file), 'rdir', Rdir_save)
-      call unblock_and_write(trim(nndev_file), 'tdir', Tdir_save)
-    end if
-
-    if (do_gpt_flux) then
-
-      call nndev_file_netcdf%close()
-      call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
-
-      call nndev_file_netcdf%define_variable("rsu_gpt", &
-      &   dim4_name="expt", dim3_name="site", &
-      &   dim2_name="level", dim1_name="gpt", &
-      &   long_name="upwelling shortwave flux by g-point", &
-      &   data_type_name="float")
-
-      call nndev_file_netcdf%define_variable("rsd_gpt", &
-      &   dim4_name="expt", dim3_name="site", &
-      &   dim2_name="level", dim1_name="gpt", &
-      &   long_name="downwelling shortwave flux by g-point", &
-      &   data_type_name="float")
-
-      call nndev_file_netcdf%define_variable("rsd_dir_gpt", &
-      &   dim4_name="expt", dim3_name="site", &
-      &   dim2_name="level", dim1_name="gpt", &
-      &   long_name="direct downwelling shortwave flux by g-point", &
-      &   data_type_name="float")
-
-      call nndev_file_netcdf%end_define_mode()
-
-      call unblock_and_write(trim(nndev_file), 'rsu_gpt', gpt_flux_up)
-      call unblock_and_write(trim(nndev_file), 'rsd_gpt', gpt_flux_dn)
-      call unblock_and_write(trim(nndev_file), 'rsd_dir_gpt', gpt_flux_dn_dir)
-
-    end if 
-
-    print *, "RTE outputs were successfully saved"
-
-    call nndev_file_netcdf%close()
-
-    print *, "-------------------------------------------------------------------------"
-
-  end if
 
   !
   ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
@@ -943,10 +684,8 @@ program rrtmgp_rfmip_sw
   print *, "mean of flux_up is:", mean_3d(flux_up)    ! mean of flux_up is:   41.835381782065106 
   !  if(do_gpt_flux) print *, "mean of gpt_flux_up for gpt=1 is:", mean_3d(gpt_flux_up(1,:,:,:))
 
-  ! Save fluxes? This is separated from writing all inputs and outputs, because we might want to 
-  ! evaluate the fluxes predicted with neural networks
-  ! if (save_flux) then
-  if (.not. save_inputs_outputs) then
+  ! Save fluxes?  we might want to evaluate the fluxes predicted with neural networks
+  if (save_flux) then
     flx_file = 'fluxes/rsud_RTE-RRTMGP.nc'
       ! Create file
     call flux_file_netcdf%create(trim(flx_file),override_file=.true.)
@@ -1109,6 +848,9 @@ program rrtmgp_rfmip_sw
     integer :: nlev, nbatch, nx, ny, ib, ix
     integer :: i1e, i2s, i2e, i3s, i3e, i4, i5
 
+#ifdef USE_TIMING
+    ret =  gptlstart('predict_radscheme_preprocess')
+#endif
     ! number of samples (profiles)
     nbatch = ncol 
     ! number of features (inputs)
@@ -1138,14 +880,20 @@ program rrtmgp_rfmip_sw
       nn_inputs(i4,icol)        = mu0(icol)
       nn_inputs(i5,icol)        = sfc_alb(icol)
     end do
-
-    call neural_net % output_sgemm_flat(nx, ny, nbatch, nn_inputs, nn_outputs)
-
+#ifdef USE_TIMING
+    ret =  gptlstop('predict_radscheme_preprocess')
+#endif
+    ! call neural_net % output_sgemm_flat(nx, ny, nbatch, nn_inputs, nn_outputs)
+#ifdef USE_TIMING
+    ret =  gptlstart('predict_radscheme_postprocess')
+#endif
     do icol = 1,ncol
       fluxes%flux_up(:,icol) = nn_outputs(1:nlev,icol)
       fluxes%flux_dn(:,icol) = nn_outputs(nlev+1:2*nlev,icol)
     end do
-
+#ifdef USE_TIMING
+    ret =  gptlstop('predict_radscheme_preprocess')
+#endif
   end subroutine predict_nn_radscheme_sw
 
   ! Interface for NN emulation of shortwave REFLECTANCE-TRANSMITTANCE computations (sw_two_stream)
