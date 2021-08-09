@@ -32,6 +32,15 @@ contains
     x = exp(-x**2)
   end subroutine gaussian
 
+  pure subroutine tanhf(x) 
+    ! Tangent hyperbolic activation subroutine.
+    ! Same as the intrinsic tanh, but must be
+    ! defined here so that we can use procedure
+    ! pointer with it.
+    real(sp), intent(inout) :: x(:)
+    x = tanh(x)
+  end subroutine tanhf
+
   pure subroutine relu(x) 
     !! REctified Linear Unit (RELU) activation subroutine.
     real(sp), intent(inout) :: x(:)
@@ -90,15 +99,6 @@ contains
     end if
   end subroutine
 
-  pure subroutine tanhf(x) 
-    ! Tangent hyperbolic activation subroutine.
-    ! Same as the intrinsic tanh, but must be
-    ! defined here so that we can use procedure
-    ! pointer with it.
-    real(sp), intent(inout) :: x(:)
-    x = tanh(x)
-  end subroutine tanhf
-
   pure subroutine softsign(x)
     real(sp), intent(inout) :: x(:)
     x = x / (abs(x) + 1)
@@ -122,6 +122,34 @@ contains
         do i = 1, size(x,dim=1)
           x(i,j) = x(i,j) + b(j)
           x(i,j) = x(i,j) / (abs(x(i,j)) + 1)
+        end do
+      end do
+    end if
+  end subroutine
+
+  pure subroutine hard_sigmoid(x)
+    real(sp), intent(inout) :: x(:)
+    x = max(0.0_sp, min(1.0_sp, 0.2_sp*x + 0.5_sp))
+  end subroutine
+
+  pure subroutine hard_sigmoid_mat_b(x,b)
+    real(sp), intent(inout) :: x(:,:) 
+    real(sp), intent(in)    :: b(:) !
+    integer :: i,j
+    if (size(x,dim=1) == size(b)) then
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(i)
+          x(i,j) = max(0.0_sp, min(1.0_sp, 0.2_sp*x(i,j) + 0.5_sp))
+        end do
+      end do
+    else 
+      !$acc parallel loop collapse(2) default(present)
+      do j = 1, size(x,dim=2)
+        do i = 1, size(x,dim=1)
+          x(i,j) = x(i,j) + b(j)
+          x(i,j) = max(0.0_sp, min(1.0_sp, 0.2_sp*x(i,j) + 0.5_sp))
         end do
       end do
     end if

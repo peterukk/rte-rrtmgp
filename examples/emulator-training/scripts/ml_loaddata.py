@@ -408,11 +408,6 @@ def load_inp_outp_reftrans(fname,half_clouds=False):
 @njit(parallel=True)
 def reftrans(tau,w0,g,mu0):
     ns = tau.shape[0]
-    
-    # tau = np.array(tau,dtype=np.float64)
-    # w0  = np.array(w0,dtype=np.float64)
-    # g   = np.array(g,dtype=np.float64)
-    # mu0 = np.array(mu0,dtype=np.float64)
 
     Tdir = np.zeros(ns,dtype=np.float64)
     Rdir = np.zeros(ns,dtype=np.float64)

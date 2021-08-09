@@ -105,11 +105,15 @@ VPATH = ../:$(RRTMGP_ROOT)/extensions/cloud_optics
 #
 ADDITIONS = mo_simple_netcdf.o easy_netcdf.o mo_io_rfmipstyle_generic.o mo_load_coefficients.o mo_cloud_optics.o mo_load_cloud_coefficients.o
 
-all: ml_allsky_sw
+all: allsky_sw_gendata allsky_sw_testmodels
 
-ml_allsky_sw:   ml_allsky_sw.o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+allsky_sw_gendata:   allsky_sw_gendata.o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
 
-ml_allsky_sw.o: ml_allsky_sw.F90 $(ADDITIONS)
+allsky_sw_gendata.o: allsky_sw_gendata.F90 $(ADDITIONS)
+
+allsky_sw_testmodels:   allsky_sw_testmodels.o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+
+allsky_sw_testmodels.o: allsky_sw_testmodels.F90 $(ADDITIONS)
 
 easy_netcdf.o: easy_netcdf.F90
 
@@ -123,4 +127,4 @@ mo_load_cloud_coefficients.o: mo_simple_netcdf.o mo_cloud_optics.o mo_load_cloud
 
 
 clean:
-	-rm ml_allsky_sw *.o *.mod *.optrpt
+	-rm allsky_sw_gendata allsky_sw_testmodels *.o *.mod *.optrpt

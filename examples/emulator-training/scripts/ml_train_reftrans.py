@@ -53,7 +53,7 @@ balance_samples = True
 # generating corresponding outputs on the fly? For REFTRANS computations this 
 # is very doable because there's only 4 inputs; additionally the 
 # reftrans routine can easily be coded in Python
-synthetic_data_supplement = False
+synthetic_data_supplement = True
 
 # Use independent clear-sky RFMIP profiles for testing? Doesn't reflect
 # the training data which includes cloudy samples, but may be interesting 
@@ -80,9 +80,9 @@ x_raw, y_raw  = load_inp_outp_reftrans(fpath, balance_samples)
 
 # this "real" data is large, lets pick random samples
 if balance_samples:
-    frac = 0.06
+    frac = 0.08
 else:
-    frac = 0.02
+    frac = 0.03
 nrows = x_raw.shape[0]
 inds_rand = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
 x_raw = x_raw[inds_rand,:]; y_raw = y_raw[inds_rand,:]
@@ -126,7 +126,7 @@ if synthetic_data_supplement:
     minmax_ssa  = (0.35, 1.0)
     minmax_tau  = (1e-3, 100.0)
     minmax_g    = (0.4, 0.8)
-    nsamples    = np.int(1e6)
+    nsamples    = np.int(5e5)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
     x_raw = np.concatenate((x_raw,x_raw2),axis=0)
@@ -315,11 +315,26 @@ if (ml_library=='pytorch'):
     if scale_outputs:
         y_pred      = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
         
-        
-    # from pytorch2keras import pytorch_to_keras
-    # # we should specify shape of the input tensor
-    # k_model = pytorch_to_keras(mlp, input_var, [(10, 32, 32,)], verbose=True) 
-            
+    # # SAVE MODEL TO NEURAL-FORTRAN ASCII MODEL FILE
+    # # Proved to be tricky..first convert to ONNX
+    # import onnx
+    # from onnx2keras import onnx_to_keras   
+    # torch.onnx.export(mlp, x_test_torch, "tmp.onnx") 
+    # onnx_model = onnx.load('tmp.onnx')
+    # # Convert ONNX model to functional keras model
+    # k_model_func = onnx_to_keras(onnx_model, ['input.1'])
+    # # I couldn't figure out how to convert this to a Sequential keras model, so 
+    # # we need to create one manually and then load the weights..
+    # from tensorflow.keras.models import Sequential
+    # from tensorflow.keras.layers import Dense
+    # from ml_trainfuncs_keras import savemodel
+    # k_model_seq = Sequential()
+    # k_model_seq.add(Dense(nneur, input_dim=nx, activation='softsign'))
+    # k_model_seq.add(Dense(ny, activation='relu'))
+    # k_model_seq.set_weights(k_model_func.get_weights())
+    # # Finally we can use save to a Neural-Fortran ascii model file
+    # savemodel(fname, k_model_seq)
+
 # TENSORFLOW-KERAS TRAINING
 elif (ml_library=='tf-keras'):
     
@@ -342,7 +357,9 @@ elif (ml_library=='tf-keras'):
     # Activation in last layer
     # activ_last = 'softsign'
     # activ_last = 'relu'
-    activ_last = 'sigmoid'
+    # activ_last = 'sigmoid'
+    activ_last = 'hard_sigmoid'
+
     # activ_last   = 'linear'
     
     epochs      = 100000
@@ -353,9 +370,10 @@ elif (ml_library=='tf-keras'):
     # batch_size  = 512
     batch_size  = 1024
     # neurons     = [16,16]
-    # neurons     = [8,8]
-    neurons     = [12]
-    
+    neurons     = [8,8]
+    # neurons     = [12]
+    # neurons     = [8]
+     
     # optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
     optim = optimizers.Adam(lr=lr)
     
@@ -384,8 +402,11 @@ elif (ml_library=='tf-keras'):
         y_pred = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
   
     # SAVE MODEL
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt.h5"
+    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt.h5"
+    kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-logtau-sqrt-hardsig.h5"
+
     savemodel(kerasfile, model)
+    
 
     # from keras.models import load_model
     # kerasfile = rootdir+"soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"

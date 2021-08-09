@@ -192,7 +192,7 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
-  use_reftrans_nn = .true.
+  use_reftrans_nn = .false.
   save_inputs_outputs = .false.
 
   ! Neural network models
@@ -201,6 +201,9 @@ program rrtmgp_rfmip_sw
   modelfile_reftrans      = "../../neural/data/reftrans-12-sqrt2.txt" 
   modelfile_reftrans      = "../../neural/data/reftrans-8-8-pow8.txt" 
   modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt.txt" 
+  ! modelfile_reftrans      = "../../neural/data/reftrans-8-logtau-sqrt.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt-hardsig.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-8-8-logtau-sqrt-hardsig.txt" 
 
   if (use_rrtmgp_nn) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau
@@ -213,7 +216,6 @@ program rrtmgp_rfmip_sw
   if (use_reftrans_nn) then
 	  print *, 'loading reflectance-transmittance model from ', modelfile_reftrans
     call nn_reftrans % load(modelfile_reftrans)
-
   end if
 
   print *, "Usage: rrtmgp_rfmip_sw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [optional gas optics input_output file]"
@@ -1006,8 +1008,13 @@ do i = 1, 4
 
     call C_F_POINTER (C_LOC(optical_props%tau), input, [nbatch])
     ! nn_input(:,1) = (sqrt(sqrt(input)) - xmin(1)) / xmax(1)
+#ifdef USE_TIMING
+    ret =  gptlstart('log')
+#endif
     nn_input(:,1) = (log(input) - xmin(1))  / (xmax(1) - xmin(1))
-
+#ifdef USE_TIMING
+    ret =  gptlstop('log')
+#endif
     Tnoscat = input
 
     call C_F_POINTER (C_LOC(optical_props%ssa), input, [nbatch])
@@ -1051,7 +1058,7 @@ do i = 1, 4
 #endif
     nn_output = nn_output**2
 
-    nn_output = min(1.0_wp, nn_output)
+    ! nn_output = min(1.0_wp, nn_output)
 #ifdef USE_TIMING
     ret =  gptlstop('postproc')
 #endif
@@ -1297,7 +1304,7 @@ do i = 1, 4
 
 deallocate(output2, wt2)
 
-allocate(output2(224,nbatch))
+allocate(output2(4*224,nbatch))
 
 #ifdef USE_TIMING
   ret =  gptlstart('exp')
@@ -1308,13 +1315,32 @@ allocate(output2(224,nbatch))
   output2 = log(output2)
   ret =  gptlstop('log')
 
+  ret =  gptlstart('tanh')
+  output2 = tanh(output2)
+  ret =  gptlstop('tanh')
+
   ret =  gptlstart('ss')
   output2 = output2/ (abs(output2) + 1)
   ret =  gptlstop('ss')
 
+  ret =  gptlstart('ss-sig')
+  output2 = 0.5 * ((output2/ (abs(output2) + 1))+1)
+  ret =  gptlstop('ss-sig')
+
   ret =  gptlstart('relu')
   output2 = max(output2,0.0_wp)
   ret =  gptlstop('relu')
+
+  ret =  gptlstart('recip-sqrt')
+  output2 =  output2 / (sqrt(1 + output2**2))
+  ret =  gptlstop('recip-sqrt')
+
+  ret =  gptlstart('hard_sig')
+  output2 = max(0.0_wp, min(1.0_wp, (0.2*output2 + 0.5)))
+  
+  ret =  gptlstop('hard_sig')
+
+
 #endif
 
 #endif 

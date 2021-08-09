@@ -30,7 +30,8 @@ examples/all-sky/ref
 examples/all-sky/rrtmgp-allsky.nc
 
 examples/emulator-training/data_training/
-examples/emulator-training/ml_allsky_sw
+examples/emulator-training/allsky_sw_gendata
+examples/emulator-training/allsky_sw_testmodels
 examples/emulator-training/scripts/CAMS_download_and_preprocess/tmp/*
 examples/emulator-training/scripts/lightning_logs/*
 examples/emulator-training/fluxes/*
