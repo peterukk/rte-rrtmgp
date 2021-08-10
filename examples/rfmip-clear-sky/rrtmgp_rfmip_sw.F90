@@ -201,9 +201,9 @@ program rrtmgp_rfmip_sw
   modelfile_reftrans      = "../../neural/data/reftrans-12-sqrt2.txt" 
   modelfile_reftrans      = "../../neural/data/reftrans-8-8-pow8.txt" 
   modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt.txt" 
-  ! modelfile_reftrans      = "../../neural/data/reftrans-8-logtau-sqrt.txt" 
-  modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt-hardsig.txt" 
-  modelfile_reftrans      = "../../neural/data/reftrans-8-8-logtau-sqrt-hardsig.txt" 
+  modelfile_reftrans      = "../../neural/data/reftrans-8-logtau-sqrt-hardsig.txt" 
+  ! modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt-hardsig.txt" 
+  ! modelfile_reftrans      = "../../neural/data/reftrans-8-8-logtau-sqrt-hardsig.txt" 
 
   if (use_rrtmgp_nn) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau

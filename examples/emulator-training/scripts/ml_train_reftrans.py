@@ -34,10 +34,10 @@ warnings.filterwarnings("ignore")
 # ----------------------------------------------------------------------------
 
 #  ----------------- File paths -----------------
-#fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"  
-#fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
+fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"  
+fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
 
-fpath  ='/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc'
+# fpath  ='/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc'
 
 # ----------- config ------------
 
@@ -102,7 +102,7 @@ else:
 if synthetic_data_supplement:
     minmax_ssa  = (0.0, 1.0)
     minmax_g    = (0.0, 0.55)
-    minmax_mu0  = (0.0, 1.0)
+    minmax_mu0  = (1e-3, 1.0)
 
     # The observed distribution has mostly small tau values
     minmax_tau  = (0.1, 20.0)
@@ -337,16 +337,50 @@ if (ml_library=='pytorch'):
 
 # TENSORFLOW-KERAS TRAINING
 elif (ml_library=='tf-keras'):
-    
+    import tensorflow as tf
+    from tensorflow.python.client import device_lib
     from tensorflow.keras import losses, optimizers
     from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel
-
+    
+    # switch from GPU to CPU
+    # from tensorflow.python.eager import context
+    # _ = tf.Variable([1])
+    # context._context = None
+    # context._create_context()
+    # # my_devices = tf.config.experimental.list_physical_devices(device_type='CPU')
+    # # tf.config.experimental.set_visible_devices(devices= my_devices, device_type='CPU')
+    # tf.config.experimental.set_visible_devices([], 'GPU')
+    # device_lib.list_local_devices()
+    
     mymetrics   = ['mean_absolute_error']
     valfunc     = 'val_mean_absolute_error'
     
-    gpu=False
-    
+    use_gpu = False
+
+    if use_gpu:
+        devstr = '/gpu:0'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
+    else:
+        num_cpu_threads = 12
+        devstr = '/cpu:0'
+        # Maximum number of threads to use for OpenMP parallel regions.
+        os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
+        # Without setting below 2 environment variables, it didn't work for me. Thanks to @cjw85 
+        os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_cpu_threads)
+        os.environ["TF_NUM_INTEROP_THREADS"] = str(1)
+        os.environ['KMP_BLOCKTIME'] = '1' 
+
+        tf.config.threading.set_intra_op_parallelism_threads(
+            num_cpu_threads
+        )
+        tf.config.threading.set_inter_op_parallelism_threads(
+            1
+        )
+        tf.config.set_soft_device_placement(True)
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+        
     # First hidden layer (input layer) activation
     activ0      = 'softsign'
     # activ0       = 'relu'
@@ -370,30 +404,40 @@ elif (ml_library=='tf-keras'):
     # batch_size  = 512
     batch_size  = 1024
     # neurons     = [16,16]
-    neurons     = [8,8]
-    # neurons     = [12]
-    # neurons     = [8]
-     
+    # neurons     = [8,8]
+    # neurons     = [10]
+    # neurons     = [4,4] #nope
+    # neurons     = [6,6]
+    neurons = [12]
+
     # optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
     optim = optimizers.Adam(lr=lr)
     
     # Create model
+    # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+    #                          activ_last = activ_last, kernel_init='he_uniform')
     model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
-                             activ_last = activ_last, kernel_init='he_uniform')
+                             activ_last = activ_last, kernel_init='lecun_uniform')
+    
     # Compile model
-    if gpu:
-        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics, context= ["gpu(0)"])
-    else:
-        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
+    model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
 
     model.summary()
     
     # Create earlystopper
     earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
+    callbacks = [earlystopper]
+
+    # Profiling
+    # from datetime import datetime
+    # log_dir="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    # tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch = 3)
+    # callbacks = [callbacks[0], tensorboard_callback]
     
     # START TRAINING
-    history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                        validation_data=(x_val,y_val), callbacks=[earlystopper])
+    with tf.device(devstr):
+        history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                            validation_data=(x_val,y_val), callbacks=callbacks)
     gc.collect()
     
     # PREDICT OUTPUTS FOR TEST DATA
@@ -402,8 +446,8 @@ elif (ml_library=='tf-keras'):
         y_pred = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
   
     # SAVE MODEL
-    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt.h5"
-    kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-logtau-sqrt-hardsig.h5"
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt-hardsig.h5"
+    # kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-hardsig.h5"
 
     savemodel(kerasfile, model)
     
