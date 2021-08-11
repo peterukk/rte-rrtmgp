@@ -31,11 +31,14 @@ module mo_io_rfmipstyle_generic
   use mo_simple_netcdf, only: read_field, write_field, get_dim_size
   use easy_netcdf
   use netcdf
+  use, intrinsic :: ISO_C_BINDING
 
   implicit none
 
   interface unblock_and_write
-    module procedure unblock_and_write_2D, unblock_and_write_3D, unblock_and_write_4D_dp, unblock_and_write_4D_sp
+    module procedure unblock_and_write_2D_dp, unblock_and_write_2D_sp, &
+      unblock_and_write_3D_dp, unblock_and_write_3D_sp, &
+      unblock_and_write_4D_dp, unblock_and_write_4D_sp
   end interface
 
   private
@@ -693,14 +696,14 @@ contains
   ! Reshape values (nominally fluxes) from RTE order (ncol, nblocks)
   !   to RFMIP order (ncol, nexp), then write them to a user-specified variable
   !   in an existing netCDF file.
-  subroutine unblock_and_write_2D(fileName, varName, values)
+  subroutine unblock_and_write_2D_dp(fileName, varName, values)
     character(len=*),           intent(in   ) :: fileName, varName
-    real(wp), dimension(:,:),  & ! [blocksize, nblocks]
+    real(dp), dimension(:,:),  & ! [blocksize, nblocks]
                                 intent(in   ) :: values
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks
-    real(wp), dimension(:), allocatable :: temp1d
+    real(sp), dimension(:), allocatable :: temp1d
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
     blocksize = size(values,1)
@@ -721,21 +724,81 @@ contains
 
     ncid = nf90_close(ncid)
     deallocate(temp1d)
-  end subroutine unblock_and_write_2D
+  end subroutine unblock_and_write_2D_dp
+
+  subroutine unblock_and_write_2D_sp(fileName, varName, values)
+    character(len=*),           intent(in   ) :: fileName, varName
+    real(sp), dimension(:,:),  intent(in   ) :: values
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks
+    real(sp), dimension(:), allocatable :: temp1d
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
+    blocksize = size(values,1)
+    nblocks   = size(values,2)
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
+
+    allocate(temp1d(ncol_l*nexp_l))
+    do b = 1, nblocks
+      temp1d(((b-1)*blocksize+1):(b*blocksize)) = values(1:blocksize,b)
+    end do
+    !
+    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
+    !
+    if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
+    call stop_on_err(write_field(ncid, varName,  &
+                                 reshape(temp1d, shape = [ncol_l, nexp_l])))
+
+    ncid = nf90_close(ncid)
+    deallocate(temp1d)
+  end subroutine unblock_and_write_2D_sp
 
   !
   ! Reshape values (nominally fluxes) from RTE order (nlev, ncol, nblocks)
   !   to RFMIP order (nlev, ncol, nexp), then write them to a user-specified variable
   !   in an existing netCDF file.
   !
-  subroutine unblock_and_write_3D(fileName, varName, values)
+  subroutine unblock_and_write_3D_dp(fileName, varName, values)
     character(len=*),           intent(in   ) :: fileName, varName
-    real(wp), dimension(:,:,:),  & ! [nlay/+1, blocksize, nblocks]
+    real(dp), dimension(:,:,:),  & ! [nlay/+1, blocksize, nblocks]
                                 intent(in   ) :: values
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks
-    real(wp), dimension(:,:), allocatable :: temp2d
+    real(sp), dimension(:,:), allocatable :: temp2d
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
+    nlev      = size(values,1)
+    blocksize = size(values,2)
+    nblocks   = size(values,3)
+    ! if(nlev /= nlay_l+1)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
+
+    allocate(temp2D(nlev, ncol_l*nexp_l))
+    do b = 1, nblocks
+      temp2D(1:nlev, ((b-1)*blocksize+1):(b*blocksize)) = values(1:nlev,1:blocksize,b)
+    end do
+
+    if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
+      
+    call stop_on_err(write_field(ncid, varName,  &
+                                 reshape(temp2d, shape = [nlev, ncol_l, nexp_l])))
+
+    ncid = nf90_close(ncid)
+    deallocate(temp2d)
+  end subroutine unblock_and_write_3D_dp
+
+  subroutine unblock_and_write_3D_sp(fileName, varName, values)
+    character(len=*),           intent(in   ) :: fileName, varName
+    real(sp), dimension(:,:,:),  & ! [nlay/+1, blocksize, nblocks]
+                                intent(in   ) :: values
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks
+    real(sp), dimension(:,:), allocatable :: temp2d
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
     nlev      = size(values,1)
@@ -758,7 +821,7 @@ contains
 
     ncid = nf90_close(ncid)
     deallocate(temp2d)
-  end subroutine unblock_and_write_3D
+  end subroutine unblock_and_write_3D_sp
 
 
   subroutine unblock_and_write_4D_dp(fileName, varName, values)
@@ -768,29 +831,28 @@ contains
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks, nfirst, ibnd
-    real(wp), dimension(:,:,:), allocatable :: temp3D
+    real(sp), dimension(:,:,:), allocatable, target :: temp3D
+    real(sp), dimension(:,:,:,:), contiguous, pointer  :: output4D
+
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
     nfirst      = size(values,1)
     nlev      = size(values,2)
     blocksize = size(values,3)
     nblocks   = size(values,4)
-    !if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
     if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
-
-    allocate(temp3D(nfirst, nlev, ncol_l*nexp_l))
-
-    do b = 1, nblocks
-       temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
-    end do
-    !
-    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
-    !
 
     if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
-    call stop_on_err(write_field(ncid, varName,  &
-                                 reshape(temp3D, shape = [nfirst, nlev, ncol_l, nexp_l])))
+
+    allocate(temp3D(nfirst, nlev, ncol_l*nexp_l))
+    do b = 1, nblocks
+       temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
+    end do
+    
+    call C_F_POINTER (C_LOC(temp3D), output4D, [nfirst, nlev, ncol_l, nexp_l])
+
+    call stop_on_err(write_field(ncid, varName,  output4D))
 
     ncid = nf90_close(ncid)
     deallocate(temp3D)
@@ -803,32 +865,24 @@ contains
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks, nfirst, ibnd
-    real(sp), dimension(:,:,:), allocatable :: temp3D
+    real(sp), dimension(:,:,:,:), contiguous, pointer  :: output4D
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write: Haven't read problem size yet.")
-    nfirst      = size(values,1)
+    nfirst    = size(values,1)
     nlev      = size(values,2)
     blocksize = size(values,3)
     nblocks   = size(values,4)
-    !if(nlev /= nlay_l)                   call stop_on_err('unblock_and_write: array values has the wrong number of levels')
     if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock_and_write: array values has the wrong number of blocks/size')
-
-    allocate(temp3D(nfirst, nlev, ncol_l*nexp_l))
-
-    do b = 1, nblocks
-       temp3D(:, :, ((b-1)*blocksize+1):(b*blocksize)) = values(:,:,1:blocksize,b)
-    end do
-    !
-    ! Check that output arrays are sized correctly : blocksize, nlay, (ncol * nexp)/blocksize
-    !
 
     if(nf90_open(trim(fileName), NF90_WRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("unblock_and_write: can't find file " // trim(fileName))
-    call stop_on_err(write_field(ncid, varName,  &
-                                 reshape(temp3D, shape = [nfirst, nlev, ncol_l, nexp_l])))
+
+    call C_F_POINTER (C_LOC(values), output4D, [nfirst, nlev, ncol_l, nexp_l])
+
+    call stop_on_err(write_field(ncid, varName,  output4D))
 
     ncid = nf90_close(ncid)
-    deallocate(temp3D)
+
   end subroutine unblock_and_write_4D_sp
 
   function write_4D_sp(ncid, varName, var) result(err_msg)

@@ -37,6 +37,7 @@ module mo_rte_sw
   use mo_rte_solver_kernels, &
                             only: apply_BC, sw_solver_noscat, sw_solver_2stream
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
+  use mod_network,          only: network_type
 #ifdef USE_TIMING
   !
   ! Timing library
@@ -56,7 +57,7 @@ contains
                   mu0, inc_flux,                   &
                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
                   fluxes, inc_flux_dif, &
-                  reftrans_vars & !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+                  reftrans_vars, neural_net & !!TEMPORARY CODE FOR ML EXPERIMENTS!!
                   ) result(error_msg)
     class(ty_optical_props_arry), intent(in   ) :: optical_props           ! Optical properties provided as arrays
     logical,                      intent(in   ) :: top_at_1        ! Is the top of the domain at index 1?
@@ -71,6 +72,8 @@ contains
     real(wp), dimension(:,:), optional, target, &
                                   intent(in   ) :: inc_flux_dif    ! incident diffuse flux at top of domain [W/m2] (ngpt, ncol)
     real(wp), dimension(:,:,:,:), optional, intent(inout) :: reftrans_vars  !!TEMPORARY CODE FOR ML EXPERIMENTS!!
+    type(network_type),           optional, intent(in)    :: neural_net 
+
     ! logical,                  optional, &
     !                               intent(in   ) :: do_gpt_flux    ! Compute fluxes at g-points, not only broadband fluxes
 
@@ -241,13 +244,15 @@ contains
                                   optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
                                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
                                   fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, &
-                                  fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir, reftrans_variables=reftrans_vars)
+                                  fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir, &
+                                  reftrans_variables=reftrans_vars, neural_net=neural_net)
           else
             call sw_solver_2stream(ngpt, nlay, ncol, logical(top_at_1, wl), &
                                   inc_flux, inc_diff_flux,                 &
                                   optical_props%tau, optical_props%ssa, optical_props%g, mu0,      &
                                   sfc_alb_dir_gpt, sfc_alb_dif_gpt,        &
-                                  fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, reftrans_variables=reftrans_vars)
+                                  fluxes%flux_up, fluxes%flux_dn, fluxes%flux_dn_dir, &
+                                  reftrans_variables=reftrans_vars, neural_net=neural_net)
           end if
 
         class is (ty_optical_props_nstr)

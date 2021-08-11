@@ -19,11 +19,10 @@ Contributions welcome!
 import os,gc
 import numpy as np
 
-from ml_loaddata import load_inp_outp_reftrans, preproc_minmax_inputs_reftrans, \
+from ml_loaddata import load_inp_outp_reftrans, preproc_minmax_inputs, \
     preproc_pow_gptnorm, preproc_pow_gptnorm_reverse, gen_synthetic_inp_outp_reftrans
 from ml_eval_funcs import plot_hist2d
 
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 import warnings
@@ -34,13 +33,19 @@ warnings.filterwarnings("ignore")
 # ----------------------------------------------------------------------------
 
 #  ----------------- File paths -----------------
-fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"  
-fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
-
+# fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"  
+# fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
 # fpath  ='/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc'
 
-# ----------- config ------------
+# fpath_tr    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds.nc"
+# fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds.nc"
+# fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds.nc"
 
+fpath_tr    = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
+fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+fpath_test  = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_RFMIP_noclouds.nc"
+
+# ----------- config ------------
 scale_inputs = True
 scale_outputs = True
 
@@ -55,49 +60,69 @@ balance_samples = True
 # reftrans routine can easily be coded in Python
 synthetic_data_supplement = True
 
-# Use independent clear-sky RFMIP profiles for testing? Doesn't reflect
-# the training data which includes cloudy samples, but may be interesting 
-test_on_RFMIP = False
-if not test_on_RFMIP: fpath_rfmip=None
-
 # Add no-scattering transmittance as a NN input?
 add_Tnoscat = True
 
 # Which ML library to use: select either 'pytorch',
 # or 'tf-keras' for Tensorflow with Keras frontend
-ml_library = 'pytorch'
-# ml_library = 'tf-keras'
+# ml_library = 'pytorch'
+ml_library = 'tf-keras'
 
-# Data evaluation: plot distributions of input and output data
+# Data visualization: plot distributions of input and output data
 plot_distributions = False
+
+# Model training: use CPU or GPU?
+use_gpu = False
 
 # Model evaluation: plot scatterplots of individual outputs
 plot_eval = False
 
+# ----------- config ------------
 
+
+# LOAD DATA
+x_tr_raw,   y_tr_raw    = load_inp_outp_reftrans(fpath_tr, balance_samples)
+
+if (fpath_val != None and fpath_test != None): # If val and test data exists
+    x_val_raw,  y_val_raw   = load_inp_outp_reftrans(fpath_val, balance_samples)
+    x_test_raw, y_test_raw  = load_inp_outp_reftrans(fpath_test)
     
-x_raw, y_raw  = load_inp_outp_reftrans(fpath, balance_samples)
+else: # if we only have one dataset, split manually
+    from sklearn.model_selection import train_test_split
+    train_ratio = 0.70
+    validation_ratio = 0.15
+    test_ratio = 0.15
+    testval_ratio = test_ratio/(test_ratio + validation_ratio)
+    # first split into two, training and test+val
+    x_tr_raw, x_test_raw, y_tr_raw, y_test_raw = \
+        train_test_split(x_tr_raw, y_tr_raw, test_size=1-train_ratio)
+    # then split the latter into to testing and val
+    x_val_raw, x_test_raw, y_val_raw, y_test_raw = \
+        train_test_split(x_test_raw, y_test_raw, test_size=testval_ratio) 
+        
+        
+# this data is too large for reftrans emulation since it's the number of samples
+# is ngpt * nlay * ncol = 224 * 60 * ncol, which easily reaches tens of millions
+# with CAMS data
 
-# this "real" data is large, lets pick random samples
+# lets extract random samples
 if balance_samples:
     frac = 0.08
 else:
     frac = 0.03
-nrows = x_raw.shape[0]
-inds_rand = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
-x_raw = x_raw[inds_rand,:]; y_raw = y_raw[inds_rand,:]
 
+nrows       = x_tr_raw.shape[0]
+inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
+x_tr_raw = x_tr_raw[inds_rand,:]; y_tr_raw = y_tr_raw[inds_rand,:]
+nrows       = x_val_raw.shape[0]
+inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
+x_val_raw   = x_val_raw[inds_rand,:]; y_val_raw = y_val_raw[inds_rand,:]
+nrows       = x_test_raw.shape[0]
+inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
+x_test_raw  = x_test_raw[inds_rand,:]; y_test_raw = y_test_raw[inds_rand,:]
 
-if test_on_RFMIP:
-    x_raw_test,y_raw_test  = load_inp_outp_reftrans(fpath_rfmip)
-    test_frac = 0.08
-    nrows = x_raw_test.shape[0]
-    inds_rand = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
-    x_raw_test = x_raw_test[inds_rand,:]; y_raw_test = y_raw_test[inds_rand,:]
-else:
-    # random 20% of original data for testing 
-    test_frac = 0.20
-    x_raw, x_raw_test, y_raw, y_raw_test = train_test_split(x_raw, y_raw, test_size=test_frac)
+print( "{:e} training samples remain after trimming".format(x_tr_raw.shape[0]))
+
 
 if synthetic_data_supplement:
     minmax_ssa  = (0.0, 1.0)
@@ -109,8 +134,8 @@ if synthetic_data_supplement:
     nsamples    = np.int(5e5)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                 minmax_mu0)
-    x_raw = np.concatenate((x_raw,x_raw2),axis=0)
-    y_raw = np.concatenate((y_raw,y_raw2),axis=0)
+    x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
+    y_tr_raw = np.concatenate((y_tr_raw,y_raw2),axis=0)
     
     # Clear-sky conditions: g is zero
     minmax_tau  = (1e-09, 120000.00)
@@ -118,9 +143,8 @@ if synthetic_data_supplement:
     minmax_g    = None
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
-    x_raw = np.concatenate((x_raw,x_raw2),axis=0)
-    y_raw = np.concatenate((y_raw,y_raw2),axis=0)
-    minmax_g    = (0.0, 0.55)
+    x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
+    y_tr_raw = np.concatenate((y_tr_raw,y_raw2),axis=0)
     
     # larger g values
     minmax_ssa  = (0.35, 1.0)
@@ -129,8 +153,8 @@ if synthetic_data_supplement:
     nsamples    = np.int(5e5)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
-    x_raw = np.concatenate((x_raw,x_raw2),axis=0)
-    y_raw = np.concatenate((y_raw,y_raw2),axis=0)
+    x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
+    y_tr_raw = np.concatenate((y_tr_raw,y_raw2),axis=0)
     
     # EVEN LARGER g values
     minmax_ssa  = (0.9, 1.0)
@@ -141,125 +165,136 @@ if synthetic_data_supplement:
     nsamples    = np.int(5e5)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
-    x_raw = np.concatenate((x_raw,x_raw2),axis=0)
-    y_raw = np.concatenate((y_raw,y_raw2),axis=0)
-    
+    x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
+    y_tr_raw = np.concatenate((y_tr_raw,y_raw2),axis=0)
+    print( "{:e} training samples after adding synthetic data".format(x_tr_raw.shape[0]))
+
 # Add Tnoscat as input if requested
 if add_Tnoscat:
-    tnoscat = np.exp(-x_raw[:,0]*(1/x_raw[:,3]))
-    x_raw = np.hstack((x_raw,np.reshape(tnoscat,(x_raw.shape[0],1))))
+    tnoscat = np.exp(-x_tr_raw[:,0]*(1/x_tr_raw[:,3]))
+    x_tr_raw = np.hstack((x_tr_raw,np.reshape(tnoscat,(x_tr_raw.shape[0],1))))
     
-    tnoscat_test = np.exp(-x_raw_test[:,0]* (1/x_raw_test[:,3]))
-    x_raw_test = np.hstack((x_raw_test,np.reshape(tnoscat_test,(x_raw_test.shape[0],1)))) 
+    tnoscat = np.exp(-x_val_raw[:,0]*(1/x_val_raw[:,3]))
+    x_val_raw = np.hstack((x_val_raw,np.reshape(tnoscat,(x_val_raw.shape[0],1))))
+    
+    tnoscat = np.exp(-x_test_raw[:,0]* (1/x_test_raw[:,3]))
+    x_test_raw = np.hstack((x_test_raw,np.reshape(tnoscat,(x_test_raw.shape[0],1)))) 
+    
+# Number of inputs and outputs    
+nx = x_tr_raw.shape[1]
+ny = y_tr_raw.shape[1]    
     
 # Ensure outputs are positive 
-y_raw[y_raw<0.0] = 0.0
-y_raw_test[y_raw_test<0.0] = 0.0
+y_tr_raw[y_tr_raw<0.0] = 0.0
+y_val_raw[y_val_raw<0.0] = 0.0
+y_test_raw[y_test_raw<0.0] = 0.0
 
 
 if scale_inputs:
-    # Square-root scaling of optical depth, what factor (**1/nfac)?
-    # nfac_tau = 4
-    # xmin = np.array([0.005, 0, 0, 0]) #n fac 4
-    # xmax = np.array([18.5,  1,  0.54999859,  1])# nfac 4
-    # xmax = np.array([4.0,  1,  0.54999859,  0.99999514]) # nfac 8
-    x = np.copy(x_raw)
-    x_test = np.copy(x_raw_test)
+    x_tr        = np.copy(x_tr_raw)
+    x_val       = np.copy(x_val_raw)
+    x_test      = np.copy(x_test_raw)
     
+    # Square-root scaling of optical depth, what factor (**1/nfac)?
+    # nfac = 4
+    # x_tr[:,0]   = x_tr[:,0]**(1/nfac) 
+    # x_val[:,0]  = x_val[:,0]**(1/nfac) 
+    # x_test[:,0] = x_test[:,0]**(1/nfac) 
+    # if add_Tnoscat:
+    #     xmin = np.array([0.0,0,0,0,0])
+    #     xmax = np.array([18.5,1,1,1,1])
+    # else:
+    #     xmin = np.array([0.0,0,0,0])
+    #     xmax = np.array([18.5,1,1,1])
+
     # log scaling instead 
-    nfac_tau = 1    
-    x[:,0] = np.log(x[:,0]);  x_test[:,0] = np.log(x_test[:,0])
+    nfac = 1
+    x_tr[:,0]   = np.log(x_tr[:,0]); 
+    x_val[:,0]  = np.log(x_val[:,0])
+    x_test[:,0] = np.log(x_test[:,0])
     if add_Tnoscat:
         xmin = np.array([-20.723267, 0, 0, 0, 0])
-        # xmax = np.array([11.695239,  1,  0.54999859,  0.99999514, 1.0])
-        xmax = np.array([9.0,  1,  0.7,  0.99999514, 1.0])
+        # xmax = np.array([9.0,  1,  0.7,  0.99999514, 1.0])
+        xmax = np.array([9.0,  1,  1.0,  1.0, 1.0])
 
     else:
         xmin = np.array([-20.723267, 0, 0, 0])
         xmax = np.array([11.695239,  1,  0.54999859,  0.99999514])
         
-    # x,xmin,xmax = preproc_minmax_inputs_reftrans(x_raw,nfac_tau)
-    
-    x       = preproc_minmax_inputs_reftrans(x, nfac_tau, (xmin,xmax))
-    x_test  = preproc_minmax_inputs_reftrans(x_test, nfac_tau, (xmin,xmax))
+    # x_tr,xmin,xmax = preproc_minmax_inputs(x_tr, nfac_tau)
+    x_tr    = preproc_minmax_inputs(x_tr,   nfac, (xmin,xmax))
+    x_val   = preproc_minmax_inputs(x_val,  nfac, (xmin,xmax))
+    x_test  = preproc_minmax_inputs(x_test, nfac, (xmin,xmax))
 else:
-    x = x_raw
-    x_test = x_raw_test
+    x_tr    = x_tr_raw
+    x_val   = x_val_raw
+    x_test  = x_test_raw
     
 if scale_outputs:
-    ny = y_raw.shape[1]    
-    # original
     nfac = 2
     # nfac = 4
-    # nfac = 8
-
-    # y_mean = np.zeros(ny)
-    # y_sigma = np.zeros(ny)
-    # for i in range(ny):
-    #     y_mean[i] = (y_raw[:,i]**(1/nfac)).mean()
-    #     # y_sigma[i] = (y_raw[:,i]**(1/nfac)).std()
-    #     y_sigma[i] = (y_raw[:,:]**(1/nfac)).std() 
     
+    # y_mean = np.array([0.04795693, 0.53649735, 0.06000423, 0.01418009]),
+    #       dtype=np.float32)
+    # y_sigma = np.array([0.3273185, 0.3273185, 0.3273185, 0.3273185],
+    #       dtype=np.float32)
+    
+    y_mean = np.zeros(ny)
+    y_sigma = np.zeros(ny)
+    for i in range(ny):
+        # y_mean[i] = (y_tr_raw[:,i]**(1/nfac)).mean()
+        y_sigma[i] = (y_tr_raw[:,i]**(1/nfac)).std()
+        # y_sigma[i] = (y_tr_raw[:,:]**(1/nfac)).std() 
+    
+    # No standard-scaling, just square root scaling
     y_mean  = np.repeat(0.0,ny)
-    y_sigma = np.repeat(1, ny)
+    # y_sigma = np.repeat(1, ny)
     
-    y       = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
-    y_test  = preproc_pow_gptnorm(y_raw_test, nfac, y_mean, y_sigma)
+    y_tr    = preproc_pow_gptnorm(y_tr_raw, nfac, y_mean, y_sigma)
+    y_val   = preproc_pow_gptnorm(y_val_raw, nfac, y_mean, y_sigma)
+    y_test  = preproc_pow_gptnorm(y_test_raw, nfac, y_mean, y_sigma)
 else:
-    y       = y_raw
-    y_test  = y_raw_test
+    y_tr    = y_tr_raw    
+    y_val   = y_val_raw
+    y_test  = y_test_raw
     
-# y_mean = np.array([0.04795693, 0.53649735, 0.06000423, 0.01418009]),
-#       dtype=np.float32)
-
-# y_sigma = np.array([0.3273185, 0.3273185, 0.3273185, 0.3273185],
-#       dtype=np.float32)
 
 
 gc.collect()
-(ns,ny) = y.shape
-nx = x.shape[1]
-
-# Validation data as a subset of the training data
-val_ratio = 0.25
-x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=0.25)
 
           
 # Inspect distributions of input and output variables?
-
 if plot_distributions:
     # fig, ax = plt.subplots()
     # ax.hist(x_raw[:,0], bins=np.logspace(start=-6, stop=6, num=10))
-    # ax.set_xscale('log'); ax.set_title("Tau")
+    # ax.set_xscale('log'); ax.set_title("Optical depth (raw)")
     # ax.set_xticks([1e-6, 1e-4, 1e-2, 1e0, 1e2, 1e4, 1e6])
-    
-    xvars = ['tau scaled','ssa','g','mu']
-    yvars = ['Rdif','Tdif','Rdir','Tdir']
+    xvars = ['tau scaled','ssa', 'g',    'mu']
+    yvars = ['Rdif',      'Tdif','Rdir','Tdir']
     fig, ax = plt.subplots(2,2)
     fig2, ax2 = plt.subplots(2,2)
     i = 0
     for ix in range(2):
         for iy in range(2):
-
-            ax[ix,iy].hist(x[:,i])
+            ax[ix,iy].hist(x_tr[:,i])
             ax[ix,iy].set_yscale('log')
             ax[ix,iy].set_title("{}".format(xvars[i]))
             
-            ax2[ix,iy].hist(y_raw[:,i])
+            ax2[ix,iy].hist(y_tr[:,i])
             ax2[ix,iy].set_yscale('log')
-            ax2[ix,iy].set_xlim([0.0,1.0])
+            # ax2[ix,iy].set_xlim([0.0,1.0])
             ax2[ix,iy].set_title("{}".format(yvars[i]))
             i = i + 1
     # Tdir values are low compared to Wiebkes master thesis??
     # x vals for higher Tdir: tau 1.5, ssa 1, g 0.993, mu 0.615
 
-    # for i in range(4):
-    #     print("i={} : y_tr {} y_test {}".format(i,y_tr[:,i].std(),y_test[:,i].std()))
+    for i in range(4):
+        print("i={} : y_tr {} y_test {}".format(i,y_tr[:,i].std(),y_test[:,i].std()))
 
 
 # Ready for training
 
-# PYTORCH TRAINING
+# PYTORCH
 if (ml_library=='pytorch'):
     from torch import nn
     import torch
@@ -296,15 +331,15 @@ if (ml_library=='pytorch'):
     
     mlp = MLP(nx=nx,ny=ny,learning_rate=lr,SequentialModel=mymodel)
 
-    # trainer = pl.Trainer(gpus=0, deterministic=True, max_epochs=30)
-    # trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
-    #             val_dataloaders=DataLoader(data_val,batch_size=batch_size))
-
     mc = pl.callbacks.ModelCheckpoint(monitor='val_loss',every_n_epochs=2)
     
-    trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
-            num_processes=8) 
-            #plugins=pl.plugins.DDPPlugin(find_unused_parameters=False))
+    if use_gpu:
+        trainer = pl.Trainer(gpus=0, deterministic=True)
+    else:
+        num_cpu_threads = 8
+        trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
+                num_processes=  num_cpu_threads) 
+                #plugins=pl.plugins.DDPPlugin(find_unused_parameters=False))
     
     trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
             val_dataloaders=DataLoader(data_val,batch_size=batch_size))
@@ -335,7 +370,7 @@ if (ml_library=='pytorch'):
     # # Finally we can use save to a Neural-Fortran ascii model file
     # savemodel(fname, k_model_seq)
 
-# TENSORFLOW-KERAS TRAINING
+# TENSORFLOW-KERAS
 elif (ml_library=='tf-keras'):
     import tensorflow as tf
     from tensorflow.python.client import device_lib
@@ -356,14 +391,12 @@ elif (ml_library=='tf-keras'):
     mymetrics   = ['mean_absolute_error']
     valfunc     = 'val_mean_absolute_error'
     
-    use_gpu = False
-
     if use_gpu:
         devstr = '/gpu:0'
         os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
     else:
-        num_cpu_threads = 12
+        num_cpu_threads = 4
         devstr = '/cpu:0'
         # Maximum number of threads to use for OpenMP parallel regions.
         os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
@@ -389,12 +422,11 @@ elif (ml_library=='tf-keras'):
     activ       =  activ0
     
     # Activation in last layer
+    # activ_last   = 'linear'
     # activ_last = 'softsign'
-    # activ_last = 'relu'
+    activ_last = 'relu'
     # activ_last = 'sigmoid'
     activ_last = 'hard_sigmoid'
-
-    # activ_last   = 'linear'
     
     epochs      = 100000
     patience    = 15
@@ -404,24 +436,20 @@ elif (ml_library=='tf-keras'):
     # batch_size  = 512
     batch_size  = 1024
     # neurons     = [16,16]
-    # neurons     = [8,8]
-    # neurons     = [10]
-    # neurons     = [4,4] #nope
-    # neurons     = [6,6]
-    neurons = [12]
+    neurons     = [8,8] # not quite fast enough, but accurate
+    neurons     = [6,6]
+    # neurons     = [12]
+    # neurons     = [4,4] # nope
+    # neurons = [8]
 
-    # optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
     optim = optimizers.Adam(lr=lr)
     
-    # Create model
+    # Create and compile model
     # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
     #                          activ_last = activ_last, kernel_init='he_uniform')
     model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
                              activ_last = activ_last, kernel_init='lecun_uniform')
-    
-    # Compile model
     model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
-
     model.summary()
     
     # Create earlystopper
@@ -446,8 +474,8 @@ elif (ml_library=='tf-keras'):
         y_pred = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
   
     # SAVE MODEL
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt-hardsig.h5"
-    # kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-hardsig.h5"
+    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-logtau-sqrt-hardsig.h5"
+    kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-6-6-logtau-sqrt-hardsig.h5"
 
     savemodel(kerasfile, model)
     
@@ -462,9 +490,9 @@ else:
 
 # EVALUATE
 for i in range(4):
-    r = np.corrcoef(y_raw_test[:,i],y_pred[:,i])[0,1]
-    print("R2 i={}: {}".format(i,r**2))   
+    r = np.corrcoef(y_test_raw[:,i],y_pred[:,i])[0,1]
+    print("R2 i={}: {} ; maxdiff {}".format(i,r**2,np.max(np.abs(y_test_raw[:,i]-y_pred[:,i]))))   
     if plot_eval:
-        plot_hist2d(y_raw_test[:,i],y_pred[:,i],20,True) 
+        plot_hist2d(y_test_raw[:,i],y_pred[:,i],20,True) 
     
  # y_pred[:,i].mean(), y_pred[:,i].max(), y_pred[:,i].min()
