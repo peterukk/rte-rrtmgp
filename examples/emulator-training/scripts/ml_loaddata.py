@@ -602,7 +602,10 @@ def preproc_minmax_inputs(x, xcoeffs=None):
         else:
             (xmin,xmax) = xcoeffs
             for i in range(x.shape[1]):
-                x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
+                if (xmax[i] - xmin[i]) == 0.0:
+                    x_scaled[:,i] = 0.0
+                else:
+                    x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
             return x_scaled
 
 # Preprocess RRTMGP inputs (p,T, gas concs)

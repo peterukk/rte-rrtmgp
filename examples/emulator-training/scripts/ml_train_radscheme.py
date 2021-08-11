@@ -23,7 +23,8 @@ import numpy as np
 from ml_loaddata import load_inp_outp_radscheme, preproc_minmax_inputs, \
     preproc_pow_gptnorm, preproc_pow_gptnorm_reverse
 from ml_eval_funcs import plot_hist2d
- 
+import matplotlib.pyplot as plt
+
 
 # ----------------------------------------------------------------------------
 # ----------------- RTE+RRTMGP EMULATION  ------------------------
@@ -33,6 +34,10 @@ from ml_eval_funcs import plot_hist2d
 fpath       = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds.nc"
 fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds.nc"
 fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+
+fpath       = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
+fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+fpath_test   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
 
 # ----------- config ------------
 
@@ -184,7 +189,7 @@ elif (ml_library=='tf-keras'):
     activ       =  activ0    
     # Activation for last layer
     activ_last   = 'linear'
-    activ_last   = 'relu'
+    # activ_last   = 'relu'
 
 
     epochs      = 100000
