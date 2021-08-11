@@ -97,8 +97,6 @@ xmax = np.array([3.1476846e+02, 1.1551140e+01, 4.3200806e-01, 5.6353424e-02,
 xcoeffs = (xmin,xmax)
 
 # Scale data, depending on choices 
-# x,y             = scale_gasopt(x_raw, y_raw, col_dry, scale_inputs, 
-#         scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
 x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
         scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
 # val
