@@ -141,10 +141,13 @@ def load_inp_outp_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     
     return x,y,col_dry
 
-def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
+def load_inp_outp_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True):
     # Load data for training a RADIATION SCHEME (RTE+RRTMGP) emulator,
     # where inputs are vertical PROFILES of atmospheric conditions (T,p, gas concentrations)
     # and outputs (predictand) are PROFILES of broadband fluxes (upwelling and downwelling)
+    # argument scale_p_h2o_o3 determines whether specific gas optics inputs
+    # (pressure, H2O and O3 )  are power-scaled similarly to Ukkonen 2020 paper
+    # for a more normal distribution
     
     dat = Dataset(fname)
     
@@ -153,6 +156,12 @@ def load_inp_outp_rte_rrtmgp_sw(fname, predictand, clouds=True):
             
     # temperature, pressure, and gas concentrations...
     x_gasopt = dat.variables['rrtmgp_sw_input'][:].data  # (nexp,ncol,nlay,ngas+2)
+    if scale_p_h2o_o3:
+        # Log-scale pressure, power-scale H2O and O3
+        x_gasopt[:,:,:,1] = np.log(x_gasopt[:,:,:,1])
+        x_gasopt[:,:,:,2] = x_gasopt[:,:,:,2]**(1.0/4) 
+        x_gasopt[:,:,:,3] = x_gasopt[:,:,:,3]**(1.0/4)
+    
     (nexp,ncol,nlay,nx) = x_gasopt.shape
     # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
     sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
@@ -583,13 +592,18 @@ def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
 
     return y
 
-def preproc_minmax_inputs(x):
+def preproc_minmax_inputs(x, xcoeffs=None):
         x_scaled = np.copy(x)
-        scaler = MinMaxScaler()  
-        scaler.fit(x_scaled)
-        x_scaled = scaler.transform(x_scaled)  
-
-        return x_scaled, scaler.data_min_, scaler.data_max_
+        if xcoeffs is None:
+            scaler = MinMaxScaler()  
+            scaler.fit(x_scaled)
+            x_scaled = scaler.transform(x_scaled)  
+            return x_scaled, scaler.data_min_, scaler.data_max_
+        else:
+            (xmin,xmax) = xcoeffs
+            for i in range(x.shape[1]):
+                x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
+            return x_scaled
 
 # Preprocess RRTMGP inputs (p,T, gas concs)
 def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
@@ -640,19 +654,3 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         return x, y, xmin, xmax
     else: return x,y
     
-# Preprocess inputs to reflectance-transmittance computations
-def preproc_minmax_inputs_reftrans(x,nfac=4, xcoeffs=None):
-        x_scaled = np.copy(x)
-        # Power-scale optical depth
-        x_scaled[:,0] = x_scaled[:,0]**(1/nfac) 
-
-        if xcoeffs is None:
-            scaler = MinMaxScaler()  
-            scaler.fit(x_scaled)
-            x_scaled = scaler.transform(x_scaled)  
-            return x_scaled, scaler.data_min_, scaler.data_max_
-        else:
-            (xmin,xmax) = xcoeffs
-            for i in range(x.shape[1]):
-                x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
-            return x_scaled

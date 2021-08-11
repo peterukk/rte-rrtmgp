@@ -19,9 +19,8 @@ Contributions welcome!
 import os
 import gc
 import numpy as np
-
 from ml_loaddata import load_inp_outp_rte_sw,  preproc_minmax_inputs
-from sklearn.model_selection import train_test_split
+from ml_eval_funcs import plot_hist2d
 
 def broadband_reduce(y):
     ns,ny = y.shape
@@ -62,26 +61,31 @@ def reverse_scale_outputs_gpt(y_sc, y_mean, y_sigma):
     y = np.reshape(y,(ns,ny))
     return y
 
-def scale_outputs_gpt_lay(y_raw):
+def scale_outputs_gpt_lay(y_raw, y_coeffs=None):
     ns,ny = y_raw.shape
     ngpt = 224
     ncol = np.int(ns / ngpt)
-    y_sc = np.copy(y_raw)
-    y_sc = np.reshape(y_sc,(ncol,ngpt*ny))
+    y = np.copy(y_raw)
+    y = np.reshape(y,(ncol,ngpt*ny))
+    coeffs_provided = True
     
-    ny2 = y_sc.shape[1]
-    
-    y_mean = np.zeros(ny2)
+    ny2 = y.shape[1]
+    if (y_coeffs == None):
+        coeffs_provided = False
+        y_sigma = np.repeat(y.std(),ny2)  # 467.72    
+        y_mean = np.zeros(ny2)
+        for i in range(ny2):
+            y_mean[i] = np.mean(y[:,i])
+    else:
+        y_mean, y_sigma = y_coeffs
     for i in range(ny2):
-        y_mean[i] = np.mean(y_sc[:,i])
-        
-    y_sigma = np.repeat(y_sc.std(),ny2)  # 467.72
-    
-    for i in range(ny2):
-        y_sc[:,i] = (y_sc[:,i] - y_mean[i]) / y_sigma[i]
+        y[:,i] = (y[:,i] - y_mean[i]) / y_sigma[i]
 
-    y_sc = np.reshape(y_sc,(ns,ny))
-    return y_sc, y_mean, y_sigma
+    y = np.reshape(y,(ns,ny))
+    if coeffs_provided:
+        return y
+    else:
+        return y, y_mean, y_sigma
 
 def reverse_scale_outputs_gpt_lay(y_sc, y_mean, y_sigma):
     ns,ny = y_sc.shape
@@ -96,33 +100,72 @@ def reverse_scale_outputs_gpt_lay(y_sc, y_mean, y_sigma):
     y = np.reshape(y,(ns,ny))
     return y
 # ----------------------------------------------------------------------------
-# ----------------- TEMP. CODE, RTE EMULATION  ------------------------
-# ----------------------------------------------------------------------------
 
-# --- QUICK TRAINING EXERCISE FOR WHOLE SCHEME
+
 #  ----------------- File paths -----------------
-dat_file = "ml_data_g224_withclouds_CAMS_2018_RFMIPstyle.nc"     
-dat_dir = '/media/peter/samlinux/data/data_training/'
-dat_path = dat_dir + dat_file
+fpath_tr    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds.nc"
+fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds.nc"
+fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds.nc"
 
-x_raw, y_raw, y_bb = load_inp_outp_rte_sw(dat_path)
+# ----------- config ------------
 
-scale_inputs = True
-scale_outputs = True
+scale_inputs    = True
+scale_outputs   = True
+
+# Which ML library to use: select either 'pytorch',
+# or 'tf-keras' for Tensorflow with Keras frontend
+# ml_library = 'pytorch'
+ml_library = 'tf-keras'
+
+# Model training: use GPU or CPU?
+use_gpu = False
+
+# ----------- config ------------
+
+# Load data
+x_tr_raw, y_tr_raw, y_tr_bb = load_inp_outp_rte_sw(fpath_tr)
+# y_tr_bb is broadband flux
+
+if (fpath_val != None and fpath_test != None): # If val and test data exists
+    x_val_raw, y_val_raw, y_val_bb   = load_inp_outp_rte_sw(fpath_val)
+    x_test_raw,y_test_raw,y_test_bb  = load_inp_outp_rte_sw(fpath_test)
+else: # if we only have one dataset, split manually
+    from sklearn.model_selection import train_test_split
+    train_ratio = 0.70
+    validation_ratio = 0.15
+    test_ratio = 0.15
+    testval_ratio = test_ratio/(test_ratio + validation_ratio)
+    # first split into two, training and test+val
+    x_tr_raw, x_test_raw, y_tr_raw, y_test_raw = \
+        train_test_split(x_tr_raw, y_tr_raw, test_size=1-train_ratio)
+    # then split the latter into to testing and val
+    x_val_raw, x_test_raw, y_val_raw, y_test_raw = \
+        train_test_split(x_test_raw, y_test_raw, test_size=testval_ratio) 
+
 
 if scale_inputs:
-    x,xmax,xmin = preproc_minmax_inputs(x_raw)
+    x_tr        = np.copy(x_tr_raw)
+    x_val       = np.copy(x_val_raw)
+    x_test      = np.copy(x_test_raw)
+    
+    x_tr, xmin,xmax = preproc_minmax_inputs(x_tr_raw)
+    x_val           = preproc_minmax_inputs(x_val_raw,  (xmin,xmax)) 
+    x_test          = preproc_minmax_inputs(x_test_raw, (xmin,xmax)) 
 else:
-    x = x_raw
+    x_tr    = x_tr_raw
+    x_val   = x_val_raw
+    x_test  = x_test_raw
     
 if scale_outputs: 
     
     # Scale by GPT+LAY 
-    y,y_mean,y_sigma = scale_outputs_gpt_lay(y_raw)
+    y_tr, y_mean, y_sigma = scale_outputs_gpt_lay(y_tr_raw)
     
+    y_val  = scale_outputs_gpt_lay(y_val_raw, (y_mean, y_sigma))
+    y_test = scale_outputs_gpt_lay(y_test_raw, (y_mean, y_sigma))
+
     # Scale by GPT
     # y,y_mean,y_sigma = scale_outputs_gpt(y_raw)
-    
     
     # Original
     # ny = y_raw.shape[1]      # y.shape (14400, 122)
@@ -138,44 +181,96 @@ if scale_outputs:
     # nfac = 1
     # y  = preproc_pow_gptnorm(y_raw, nfac, y_mean, y_sigma)
 else:
-    y = y_raw
+    y_tr    = y_tr_raw    
+    y_val   = y_val_raw
+    y_test  = y_test_raw
 
 gc.collect()
-(ns,ny) = y.shape
+# Number of inputs and outputs    
+nx = x_tr_raw.shape[1]
+ny = y_tr_raw.shape[1]    
 # Ready for training
 
 
-import warnings
-warnings.filterwarnings("ignore")
 
-train_ratio = 0.75
-validation_ratio = 0.15
-test_ratio = 0.10
+# PYTORCH TRAINING
+if (ml_library=='pytorch'):
+    from torch import nn
+    import torch
+    import pytorch_lightning as pl
+    from torch.utils.data import DataLoader, TensorDataset
+    from ml_trainfuncs_pytorch import MLP#, MLP_cpu
+    os.environ['MKL_THREADING_LAYER'] = 'GNU'
+    
+    lr          = 0.001
+    batch_size  = 512
+    nneur       = 160
+    mymodel = nn.Sequential(
+          nn.Linear(nx, nneur),
+          nn.Softsign(), # first hidden layer
+          nn.Linear(nneur, nneur),
+          nn.Softsign(), # second hidden layer
+          nn.Linear(nneur, ny) # output layer
+        )
+    
+    x_tr_torch = torch.from_numpy(x_tr); y_tr_torch = torch.from_numpy(y_tr)
+    data_tr  =  TensorDataset(x_tr_torch,y_tr_torch)
+    
+    x_val_torch = torch.from_numpy(x_val); y_val_torch = torch.from_numpy(y_val)
+    data_val    = TensorDataset(x_val_torch,y_val_torch)
+    
+    x_test_torch = torch.from_numpy(x_test); y_test_torch = torch.from_numpy(y_test)
+    data_test    = TensorDataset(x_test_torch,y_test_torch)
+    
+    mlp = MLP(nx=nx,ny=ny,learning_rate=lr,SequentialModel=mymodel)
 
-# train is now 75% of the entire data set
-# the _junk suffix means that we drop that variable completely
-x_tr, x_test, y_tr, y_test = train_test_split(x, y, test_size=1 - train_ratio)
 
-# test is now 10% of the initial data set
-# validation is now 15% of the initial data set
-x_val, x_test, y_val, y_test = train_test_split(x_test, y_test, test_size=test_ratio/(test_ratio + validation_ratio)) 
+    mc = pl.callbacks.ModelCheckpoint(monitor='val_loss',every_n_epochs=2)
+    
+    if use_gpu:
+        trainer = pl.Trainer(gpus=0, deterministic=True)
+    else:
+        num_cpu_threads = 8
+        trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
+                num_processes=  num_cpu_threads) 
+                #plugins=pl.plugins.DDPPlugin(find_unused_parameters=False))
+    
+    # START TRAINING
+    trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
+            val_dataloaders=DataLoader(data_val,batch_size=batch_size))
 
-# Ready for training
+    # PREDICT OUTPUTS FOR TEST DATA
+    def eval_valdata():
+        y_pred = mlp(x_val_torch)
+        y_pred = y_pred.detach().numpy()
+        # np.corrcoef(y_test.flatten(),y_pred.flatten())
+        y_pred    = reverse_scale_outputs_gpt_lay(y_pred,y_mean,y_sigma)
+        y_pred_bb = broadband_reduce(y_pred) 
+        plot_hist2d(y_test_bb,y_pred_bb,20,True)      #  0.979
+    
+    eval_valdata()
 
-train_keras = True
-
-if train_keras:
+  
+# TENSORFLOW-KERAS TRAINING
+elif (ml_library=='tf-keras'):
+    import tensorflow as tf
     from tensorflow.keras import losses, optimizers
     from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel
     
     mymetrics   = ['mean_absolute_error']
     valfunc     = 'val_mean_absolute_error'
-    activ       = 'softsign'
-    activ       = 'relu'
-    # activ           ='tanh'
-    # activ           ='sigmoid'
     
+    # Model architecture
+    # First hidden layer (input layer) activation
+    activ0      = 'softsign'
+    # activ0       = 'relu'
+    # Activation in other hidden layers
+    activ       =  activ0    
+    # Activation for last layer
+    activ_last   = 'linear'
+    
+
     epochs      = 100000
     patience    = 25
     lossfunc    = losses.mean_squared_error
@@ -185,39 +280,56 @@ if train_keras:
     # lr          = 0.0002 
     batch_size  = 256
     batch_size  = 512
-    neurons = [182, 182]
+    neurons     = [182, 182]
     
-    optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
-    # optim = optimizers.Adam(lr=lr)
+    if use_gpu:
+        devstr = '/gpu:0'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
+    else:
+        num_cpu_threads = 4
+        devstr = '/cpu:0'
+        # Maximum number of threads to use for OpenMP parallel regions.
+        os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
+        # Without setting below 2 environment variables, it didn't work for me. Thanks to @cjw85 
+        os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_cpu_threads)
+        os.environ["TF_NUM_INTEROP_THREADS"] = str(1)
+        os.environ['KMP_BLOCKTIME'] = '1' 
+
+        tf.config.threading.set_intra_op_parallelism_threads(
+            num_cpu_threads
+        )
+        tf.config.threading.set_inter_op_parallelism_threads(
+            1
+        )
+        tf.config.set_soft_device_placement(True)
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     
-    # Create model
-    model = create_model_mlp(nx=ninputs,ny=ny,neurons=neurons,activ=activ,kernel_init='he_uniform')
-    # Compile model
-    model.compile(loss=lossfunc, optimizer=optim,
-                  metrics=mymetrics,  context= ["gpu(0)"])
+    optim = optimizers.Adam(lr=lr)
+    
+    # Create and compile model
+    # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+    #                          activ_last = activ_last, kernel_init='he_uniform')
+    model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+                             activ_last = activ_last, kernel_init='lecun_uniform')
+    model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
     model.summary()
     
-    # Create earlystopper
+    # Create earlystopper and possibly other callbacks
     earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
+    callbacks = [earlystopper]
+    
     
     # START TRAINING
-    history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                        validation_data=(x_val,y_val), callbacks=[earlystopper])
-    gc.collect()
-    
-    # TEST
-    
-    
-    
-    y_pred      = model.predict(x);  
-    y_pred      = reverse_scale_outputs_gpt_lay(y_pred,y_mean,y_sigma)
-    
-    # plot_hist2d(y_raw,y_pred,20,True)      #  0.975
-    
-    
-    y_bb_pred = broadband_reduce(y_pred) 
-    
-    plot_hist2d(y_bb,y_bb_pred,20,True)      #  0.979
+    with tf.device(devstr):
+        history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                            validation_data=(x_val,y_val), callbacks=callbacks)    
         
-    diff = np.abs(y_bb-y_bb_pred)
-    np.max(diff)
+    # TEST
+    y_pred    = model.predict(x_test);  
+    y_pred    = reverse_scale_outputs_gpt_lay(y_pred,y_mean,y_sigma)
+    y_pred_bb = broadband_reduce(y_pred) 
+    plot_hist2d(y_test_bb,y_pred_bb,20,True)      #  0.979
+    
+    diff = np.abs(y_test_bb - y_pred_bb)
+    print("max diff {}".format(np.max(diff)))

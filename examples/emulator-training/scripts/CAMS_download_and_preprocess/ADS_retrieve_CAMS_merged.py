@@ -99,13 +99,16 @@ def get_dict_egg4_ml(year,month):
 # -------------------------------------------------------------------
 
 # dl_dir = '/media/peter/samlinux/data/CAMS/'
+    
+# download temp files to 
+# examples/emulator-training/scripts/CAMS_download_and_preprocess/tmp
 this_dir = os.getcwd() + "/"
 dl_dir   = this_dir + "tmp/"
 
 os.chdir(this_dir)
 
 # Specify which year to download, everything else is fixed
-year = "2016"
+year = "2017"
 
 c = cdsapi.Client()
 

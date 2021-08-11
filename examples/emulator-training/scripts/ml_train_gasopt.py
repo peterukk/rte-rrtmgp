@@ -22,7 +22,6 @@ from ml_loaddata import ymeans_sw_abs, ysigma_sw_abs, load_inp_outp_rrtmgp, \
     preproc_pow_gptnorm_reverse,scale_gasopt
 from ml_eval_funcs import plot_hist2d, plot_hist2d_T
 
-from sklearn.model_selection import train_test_split
 
 
 
@@ -31,8 +30,13 @@ from sklearn.model_selection import train_test_split
 # ----------------------------------------------------------------------------
 
 #  ----------------- File paths -----------------
-fpath = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2011-2013_noclouds.nc"
-fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+fpath    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_noclouds.nc"
+fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_noclouds.nc"
+fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+
+# Just one dataset
+# fpath_val = None
+# fpath_test = None
 
 # ----------- config ------------
 
@@ -42,19 +46,41 @@ scale_inputs = True
 # Do the outputs need pre-processing?
 scale_outputs = True
 
+# Choose one of the following predictands (target output)
+# 'tau_lw', 'planck_frac', 'tau_sw_abs', 'tau_sw_ray', 'tau_sw', 'ssa_sw'
 predictand = 'tau_sw_abs'
-
 
 # Which ML library to use: select either 'pytorch',
 # or 'tf-keras' for Tensorflow with Keras frontend
 ml_library = 'pytorch'
 # ml_library = 'tf-keras'
 
-# LOAD DATA
-# Training + validation data
-x_raw,y_raw,col_dry = load_inp_outp_rrtmgp(fpath, predictand) 
-# Test data
-x_raw_test,y_raw_test,col_dry_test = load_inp_outp_rrtmgp(fpath_test, predictand)
+# Model training: use CPU or GPU?
+use_gpu = False
+
+# ----------- config ------------
+
+# LOAD DATA given three separate datasets for training - validation - testing
+# Training data
+x_tr_raw,y_tr_raw,col_dry_tr        = load_inp_outp_rrtmgp(fpath, predictand) 
+
+if (fpath_val != None and fpath_test != None): # If val and test data exists
+    x_val_raw, y_val_raw, col_dry_val   = load_inp_outp_rrtmgp(fpath_val, predictand)
+    x_test_raw,y_test_raw,col_dry_test  = load_inp_outp_rrtmgp(fpath_test, predictand)
+else: # if we only have one dataset, split manually
+    from sklearn.model_selection import train_test_split
+    train_ratio = 0.70
+    validation_ratio = 0.15
+    test_ratio = 0.15
+    testval_ratio = test_ratio/(test_ratio + validation_ratio)
+    # first split into two, training and test+val
+    x_tr_raw, x_test_raw, y_tr_raw, y_test_raw = \
+        train_test_split(x_tr_raw, y_tr_raw, test_size=1-train_ratio)
+    # then split the latter into to testing and val
+    x_val_raw, x_test_raw, y_val_raw, y_test_raw = \
+        train_test_split(x_test_raw, y_test_raw, test_size=testval_ratio) 
+
+
 
 # SCALE DATA
 # y coefficients
@@ -71,19 +97,23 @@ xmax = np.array([3.1476846e+02, 1.1551140e+01, 4.3200806e-01, 5.6353424e-02,
 xcoeffs = (xmin,xmax)
 
 # Scale data, depending on choices 
-x,y             = scale_gasopt(x_raw, y_raw, col_dry, scale_inputs, 
+# x,y             = scale_gasopt(x_raw, y_raw, col_dry, scale_inputs, 
+#         scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
+x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
         scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
-x_test,y_test   = scale_gasopt(x_raw_test, y_raw_test, col_dry_test, scale_inputs, 
+# val
+x_val,y_val     = scale_gasopt(x_val_raw, y_val_raw, col_dry_val, scale_inputs, 
+        scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
+# test
+x_test,y_test   = scale_gasopt(x_test_raw, y_test_raw, col_dry_test, scale_inputs, 
         scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
   
-nx = x.shape[1]
-ny = y.shape[1] # ngpt
-
+nx = x_tr.shape[1]
+ny = y_tr.shape[1] # = number of g-points
 
 # Split first dataset into training and validation
-train_ratio = 0.75
-x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=1 - train_ratio)
-
+# train_ratio = 0.75
+# x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=1 - train_ratio)
 
 
 # PYTORCH TRAINING
@@ -95,9 +125,17 @@ if (ml_library=='pytorch'):
     from ml_trainfuncs_pytorch import MLP#, MLP_cpu
     os.environ['MKL_THREADING_LAYER'] = 'GNU'
     
+    lr          = 0.001
+    batch_size  = 512
+    nneur       = 16
+    mymodel = nn.Sequential(
+          nn.Linear(nx, nneur),
+          nn.Softsign(), # first hidden layer
+          nn.Linear(nneur, nneur),
+          nn.Softsign(), # second hidden layer
+          nn.Linear(nneur, ny) # output layer
+        )
     
-    batch_size = 256
-        
     x_tr_torch = torch.from_numpy(x_tr); y_tr_torch = torch.from_numpy(y_tr)
     data_tr  =  TensorDataset(x_tr_torch,y_tr_torch)
     
@@ -107,85 +145,128 @@ if (ml_library=='pytorch'):
     x_test_torch = torch.from_numpy(x_test); y_test_torch = torch.from_numpy(y_test)
     data_test    = TensorDataset(x_test_torch,y_test_torch)
     
-    mlp = MLP(nx=nx,ny=ny)
-    #trainer = pl.Trainer(auto_scale_batch_size='power', gpus=0, deterministic=True, max_epochs=5)
+    mlp = MLP(nx=nx,ny=ny,learning_rate=lr,SequentialModel=mymodel)
+
+
+    mc = pl.callbacks.ModelCheckpoint(monitor='val_loss',every_n_epochs=2)
     
-    trainer = pl.Trainer(gpus=0, deterministic=True, max_epochs=100)
-    #trainer = pl.Trainer(gpus=0, deterministic=True, max_epochs=5,num_processes=3)
+    if use_gpu:
+        trainer = pl.Trainer(gpus=0, deterministic=True)
+    else:
+        num_cpu_threads = 8
+        trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
+                num_processes=  num_cpu_threads) 
+                #plugins=pl.plugins.DDPPlugin(find_unused_parameters=False))
     
-    
+    # START TRAINING
     trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
-                val_dataloaders=DataLoader(data_val,batch_size=batch_size))
+            val_dataloaders=DataLoader(data_val,batch_size=batch_size))
 
-    # Test model
-    y_pred = mlp(x_test_torch)
-    y_pred = y_pred.detach().numpy()
-
-
-    np.corrcoef(y_test.flatten(),y_pred.flatten())
+    # PREDICT OUTPUTS FOR TEST DATA
+    def eval_valdata():
+        y_pred = mlp(x_val_torch)
+        y_pred = y_pred.detach().numpy()
     
-    y_pred = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
-    y_pred = y_pred * (np.repeat(col_dry_test[:,np.newaxis],ny,axis=1))
+        # np.corrcoef(y_test.flatten(),y_pred.flatten())
+        
+        y_pred = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
+        if predictand not in ['planck_frac', 'ssa_sw']:
+            y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
+        
+        plot_hist2d(y_val_raw,y_pred,20,True)   # 
+        plot_hist2d_T(y_val_raw,y_pred,20,True)      # Transmittance  
     
-    plot_hist2d(y_raw_test,y_pred,20,True)        # 
-    plot_hist2d_T(y_raw,y_pred,20,True)      #  
+    eval_valdata()
     
   
 # TENSORFLOW-KERAS TRAINING
 elif (ml_library=='tf-keras'):
-    
+    import tensorflow as tf
     from tensorflow.keras import losses, optimizers
     from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel
     
-    import warnings
-    warnings.filterwarnings("ignore")
-    
+    # Model architecture
+    # First hidden layer (input layer) activation
+    activ0      = 'softsign'
+    # activ0       = 'relu'
+    # Activation in other hidden layers
+    activ       =  activ0    
+    # Activation for last layer
+    activ_last   = 'linear'
+    # Number of neurons in each hidden layer
+    neurons     = [16,16]
     
     mymetrics   = ['mean_absolute_error']
     valfunc     = 'val_mean_absolute_error'
-    activ       = 'softsign'
     # fpath       = rootdir+'data/tmp/tmp.h5'
     epochs      = 800
     patience    = 15
     lossfunc    = losses.mean_squared_error
-    
     lr          = 0.001 
     batch_size  = 1024
-    
-    neurons = [16,16]
+    neurons     = [16,16]
     
     # batch_size  = 3*batch_size
     # lr          = 2 * lr
     
-    optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
+    if use_gpu:
+        devstr = '/gpu:0'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
+    else:
+        num_cpu_threads = 4
+        devstr = '/cpu:0'
+        # Maximum number of threads to use for OpenMP parallel regions.
+        os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
+        # Without setting below 2 environment variables, it didn't work for me. Thanks to @cjw85 
+        os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_cpu_threads)
+        os.environ["TF_NUM_INTEROP_THREADS"] = str(1)
+        os.environ['KMP_BLOCKTIME'] = '1' 
+
+        tf.config.threading.set_intra_op_parallelism_threads(
+            num_cpu_threads
+        )
+        tf.config.threading.set_inter_op_parallelism_threads(
+            1
+        )
+        tf.config.set_soft_device_placement(True)
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     
-    # Create model
-    model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ=activ,kernel_init='he_uniform')
-    
-    model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics, 
-                  context= ["gpu(0)"])
+    # optim = optimizers.Adam(lr=lr,rescale_grad=1/batch_size) 
+    optim = optimizers.Adam(lr=lr)
+
+    # Create and compile model
+    # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+    #                          activ_last = activ_last, kernel_init='he_uniform')
+    model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+                             activ_last = activ_last, kernel_init='lecun_uniform')
+    model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
     model.summary()
-    
-    
-    gc.collect()
-    # Create earlystopper
+
+    # Create earlystopper and possibly other callbacks
     earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
-    
+    callbacks = [earlystopper]
+
     # START TRAINING
-    
-    history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                        validation_data=(x_val,y_val), callbacks=[earlystopper])
-    gc.collect()
-    
-    
-    y_nn       = model.predict(x);  
-    y_nn       = preproc_pow_gptnorm_reverse(y_nn, nfac, y_mean, y_sigma)
-    y_raw_nn   = y_nn * (np.repeat(col_dry[:,np.newaxis],ny,axis=1))
-    
-    plot_hist2d(y_raw,y_raw_nn,20,True)        # 
-    plot_hist2d_T(y_raw,y_raw_nn,20,True)      #  
-    
+    with tf.device(devstr):
+        history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                            validation_data=(x_val,y_val), callbacks=callbacks)    
+        
+    # PREDICT OUTPUTS FOR TEST DATA
+    def eval_valdata():
+        y_pred       = model.predict(x_val);  
+        y_pred       = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
+        
+        y_pred = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
+        if predictand not in ['planck_frac', 'ssa_sw']:
+            y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
+            
+        plot_hist2d(y_val_raw,  y_pred,20,True)   # 
+        plot_hist2d_T(y_val_raw,y_pred,20,True)      # Transmittance  
+        
+    eval_valdata()
+
     # SAVE MODEL
     # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"
     # savemodel(kerasfile, model)

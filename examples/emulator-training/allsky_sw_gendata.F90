@@ -181,7 +181,7 @@ program rrtmgp_rfmip_sw
   ! RRTMGP inputs for NN development
   real(sp), dimension(:,:,:,:),         allocatable :: nn_gasopt_input ! (nfeatures,nlay,block_size,nblocks)
   ! RTE inputs for NN development
-  real(wp),                             allocatable :: toa_flux_save(:,:,:), sfc_alb_spec_save(:,:,:), mu0_save(:,:)
+  real(sp),                             allocatable :: toa_flux_save(:,:,:), sfc_alb_spec_save(:,:,:), mu0_save(:,:)
   ! RTE outputs for NN development
   real(wp), dimension(:,:,:,:),         allocatable :: reftrans_variables
   real(sp), dimension(:,:,:,:),         allocatable :: Rdif_save, Tdif_save, Rdir_save, Tdir_save
@@ -486,15 +486,12 @@ program rrtmgp_rfmip_sw
       fluxes%gpt_flux_dn_dir => gpt_flux_dn_dir(:,:,:,b)
     end if
 
-    
       !
       ! Compute the optical properties of clouds
       !
       if (include_clouds) then
-
         call stop_on_err( cloud_optics%cloud_optics(lwp(:,:,b), iwp(:,:,b), &
                           rel(:,:,b), rei(:,:,b), clouds))
-           
       end if
       !
       ! Compute the optical properties of the atmosphere and the Planck source functions
@@ -635,6 +632,7 @@ program rrtmgp_rfmip_sw
   !$acc exit data delete(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
   !$acc exit data delete(sfc_alb_spec, mu0, toa_flux, def_tsi)
   call atmos%finalize() ! Also deallocates arrays on device
+  deallocate(reftrans_variables)
 
 #ifdef USE_OPENACC  
   istat = cublasDestroy(h) 
@@ -733,23 +731,29 @@ program rrtmgp_rfmip_sw
 
     call nndev_file_netcdf%end_define_mode()
 
-    ! This function also deallocates its input 
     call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_gasopt_input)
+    deallocate(nn_gasopt_input)
     ! print *," min max col dry", minval(col_dry), maxval(col_dry)
     call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
+    deallocate(col_dry)
     print *, "RRTMGP inputs (gas concs + T + p) were successfully saved"
 
     if(include_clouds) then
       call unblock_and_write(trim(nndev_file), 'tau_sw', tau_sw)
+      deallocate(tau_sw)
       call unblock_and_write(trim(nndev_file), 'ssa_sw', ssa_sw)
+      deallocate(ssa_sw)
       call unblock_and_write(trim(nndev_file), 'g_sw',   g_sw)
+      deallocate(g_sw)
       print *, "Optical properties (output from RRTMGP+cloud optics) were successfully saved"
       call unblock_and_write(trim(nndev_file), 'cloud_lwp', lwp)
       call unblock_and_write(trim(nndev_file), 'cloud_iwp', iwp)
       call unblock_and_write(trim(nndev_file), 'cloud_fraction', cloud_fraction)
+      deallocate(lwp, iwp, cloud_fraction)
     else 
       call unblock_and_write(trim(nndev_file), 'tau_sw_gas', tau_sw)
       call unblock_and_write(trim(nndev_file), 'ssa_sw_gas', ssa_sw)
+      deallocate(tau_sw,ssa_sw)
       print *, "Optical properties (RRTMGP output) were successfully saved"
     end if
 
@@ -790,14 +794,21 @@ program rrtmgp_rfmip_sw
     call unblock_and_write(trim(nndev_file), 'toa_flux', toa_flux_save)
     call unblock_and_write(trim(nndev_file), 'sfc_alb', sfc_alb_spec_save)
     call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
+    deallocate(toa_flux_save, sfc_alb_spec_save, mu0_save)
 
     if(save_reftrans) then
-      print *, "max Rdif", maxval(Rdif_save), "max Tdif", maxval(Tdif_save)
-      print *, "max Rdir", maxval(Rdir_save), "max Tdir", maxval(Tdir_save)
+      print *,  "minmax Rdif", minval(Rdif_save), maxval(Rdif_save), &
+                "minmax Tdif", minval(Tdif_save), maxval(Tdif_save)
+      print *,  "minmax Rdir", minval(Rdir_save), maxval(Rdir_save), &
+                "minmax Tdir", minval(Tdir_save), maxval(Tdir_save)
       call unblock_and_write(trim(nndev_file), 'rdif', Rdif_save)
+      deallocate(Rdif_save)
       call unblock_and_write(trim(nndev_file), 'tdif', Tdif_save)
+      deallocate(Tdif_save)
       call unblock_and_write(trim(nndev_file), 'rdir', Rdir_save)
+      deallocate(Rdir_save)
       call unblock_and_write(trim(nndev_file), 'tdir', Tdir_save)
+      deallocate(Tdir_save)
     end if
 
     if (do_gpt_flux) then
@@ -828,6 +839,7 @@ program rrtmgp_rfmip_sw
       call unblock_and_write(trim(nndev_file), 'rsu_gpt', gpt_flux_up)
       call unblock_and_write(trim(nndev_file), 'rsd_gpt', gpt_flux_dn)
       call unblock_and_write(trim(nndev_file), 'rsd_dir_gpt', gpt_flux_dn_dir)
+      deallocate(gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir)
 
     end if 
 
@@ -995,28 +1007,25 @@ program rrtmgp_rfmip_sw
     res = mean1 - mean2
   end function bias
 
-  function mean(x1) result(mean1)
+  function mean(x) result(mean1)
     implicit none 
-    real(wp), dimension(:), intent(in) :: x1
+    real(wp), dimension(:), intent(in) :: x
     real(wp) :: mean1
-    
-    mean1 = sum(x1, dim=1)/size(x1, dim=1)
+    mean1 = sum(x) / size(x)
   end function mean
 
-  function mean_2d(x2) result(mean2)
+  function mean_2d(x) result(mean2)
     implicit none 
-    real(wp), dimension(:,:), intent(in) :: x2
+    real(wp), dimension(:,:), intent(in) :: x
     real(wp) :: mean2
-    
-    mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
+    mean2 = sum(x) / size(x)
   end function mean_2d
 
-  function mean_3d(x3) result(mean3)
+  function mean_3d(x) result(mean3)
     implicit none 
-    real(wp), dimension(:,:,:), intent(in) :: x3
+    real(wp), dimension(:,:,:), intent(in) :: x
     real(wp) :: mean3
-    
-    mean3 = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3))
+    mean3 = sum(x) / size(x)
   end function mean_3d
 
 end program rrtmgp_rfmip_sw
