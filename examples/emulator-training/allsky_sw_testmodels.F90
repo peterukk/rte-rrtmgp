@@ -129,7 +129,7 @@ program rrtmgp_rfmip_sw
   !
   use mo_load_coefficients,  only: load_and_init
   use mo_io_rfmipstyle_generic, only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
-                                   read_and_block_sw_bc, read_and_block_clouds_cams, determine_gas_names                             
+                                   read_and_block_sw_bc, read_and_block_clouds_cams, determine_gas_names, unblock                          
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
   use easy_netcdf
@@ -160,13 +160,16 @@ program rrtmgp_rfmip_sw
   character(len=132)  ::  input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                           kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc', &
                           cloud_optics_file='../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc'
-  character(len=132)  ::  flx_file, timing_file, nndev_file='', nn_input_str, cmt
+  character(len=132)  ::  flx_file, flx_file_ref, timing_file, nndev_file='', nn_input_str, cmt
   integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
   logical             ::  top_at_1, do_scattering
-  integer             ::  b, icol, ilay, igpt, igas, ngas, ninputs, num_gases, ret, i, istat
+  integer             ::  b, icol, ilay, igpt, igas, ngas, ninputs, num_gases, ret, i, istat, ncid
   character(len=4)    ::  block_size_char
-  character(len=6)    ::  emulated_component
+  character(len=12)    ::  emulated_component
   character(len=32 ), dimension(:),     allocatable :: kdist_gas_names, input_file_gas_names, input_names
+  ! Output fluxes
+  real(wp), dimension(:,:,:),         allocatable :: rsu_ref, rsd_ref, rsu_nn, rsd_nn, rsdu_ref, rsdu_nn
+
   ! Neural network objects/variables  
   ! 1-2 neural network models depending on emulated component (2 for RRTMGP)
   type(network_type), dimension(:),     allocatable :: nn_models   
@@ -231,6 +234,8 @@ program rrtmgp_rfmip_sw
   do_gpt_flux = .true.
   ! Save fluxes to netCDF file?
   save_flux   = .false.
+  ! Compare fluxes to reference?
+  compare_flux = .true.
 
   print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] (4 args: use reference code) "
   print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [emulated component] ", &
@@ -247,7 +252,10 @@ program rrtmgp_rfmip_sw
   call get_command_argument(3, kdist_file)
   call get_command_argument(4, cloud_optics_file)
   if (trim(cloud_optics_file)=='none' ) include_clouds =.false.
-  if(nargs == 5) print *, "provide 4 (reference code) or 6-7 arguments (emulation mode), not 5"
+  if(nargs == 5) then
+     print *, "provide 4 (reference code) or 6-7 arguments (emulation mode), not 5"
+     stop
+  end if
   if(nargs > 5) then
     call get_command_argument(5, emulated_component) 
     call get_command_argument(6, nn_modelfile_1)
@@ -318,7 +326,7 @@ program rrtmgp_rfmip_sw
                     'nitrous_oxide ', &
                     'nitrogen      ']!,'no2           ']  
   num_gases = size(kdist_gas_names)
-  print *, "Calculation uses gases: ", (trim(input_file_gas_names(b)) // " ", b = 1, size(input_file_gas_names))
+  print *, "Calculation uses gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
 
   ! How many neural network input features does this correspond to?
   ninputs = 2 ! NN inputs consist of temperature, pressure and..
@@ -339,7 +347,7 @@ program rrtmgp_rfmip_sw
   ! Are the arrays ordered in the vertical with 1 at the top or the bottom of the domain?
   !
   top_at_1 = p_lay(1, 1, 1) < p_lay(nlay, 1, 1)
-
+  print *, "top at 1", top_at_1
   !
   ! Read the gas concentrations and surface properties
   !
@@ -553,7 +561,12 @@ program rrtmgp_rfmip_sw
                                           toa_flux))
       end if
 
-      ! print *, "mean tau after gas optics", mean_3d(atmos%tau)
+      print *, "mean tau", mean_3d(atmos%tau)
+      print *, "mean ssa", mean_3d(atmos%ssa)
+      print *," max, min (tau)",   maxval(atmos%tau), minval(atmos%tau)
+      print *," max, min (ssa)",   maxval(atmos%ssa), minval(atmos%ssa)
+      print *," max, min (g)",   maxval(atmos%g), minval(atmos%g)
+
 #ifdef USE_TIMING
       ret =  gptlstop('gas_optics_sw')
       ret =  gptlstart('clouds_deltascale_increment')
@@ -562,7 +575,7 @@ program rrtmgp_rfmip_sw
 
         call stop_on_err(clouds%delta_scale())
         call stop_on_err(clouds%increment(atmos))
-        ! print *, "mean tau after adding cloud optics", mean_3d(atmos%tau)
+        print *, "mean tau after adding cloud optics", mean_3d(atmos%tau)
       end if
 #ifdef USE_TIMING
       ret =  gptlstop('clouds_deltascale_increment')
@@ -619,13 +632,13 @@ program rrtmgp_rfmip_sw
       else 
         ! Emulate reflectance-transmittance computations?
         if (use_reftrans_nn) then
-            ! call stop_on_err(rte_sw(atmos,   &
-            !                         top_at_1,        &
-            !                         mu0,             &
-            !                         toa_flux,        &
-            !                         sfc_alb_spec,  sfc_alb_spec,  &
-            !                         fluxes, &
-            !                         neural_net=nn_model))
+            call stop_on_err(rte_sw(atmos,   &
+                                    top_at_1,        &
+                                    mu0,             &
+                                    toa_flux,        &
+                                    sfc_alb_spec,  sfc_alb_spec,  &
+                                    fluxes, &
+                                    neural_net=nn_model))
         else ! reference
             call stop_on_err(rte_sw(atmos,   &
                                     top_at_1,        &
@@ -680,13 +693,80 @@ program rrtmgp_rfmip_sw
     end do
   end do
 
-  print *, "mean of flux_down is:", mean_3d(flux_dn)  ! mean of flux_down is:   292.71945410963957     
-  print *, "mean of flux_up is:", mean_3d(flux_up)    ! mean of flux_up is:   41.835381782065106 
+  print *, "mean of flux_down is:", mean_3d(flux_dn)  ! 
+  print *, "mean of flux_up is:", mean_3d(flux_up)    !
+  print *, "mean of flux_net is:", mean_3d(flux_dn - flux_up)    ! 
+
   !  if(do_gpt_flux) print *, "mean of gpt_flux_up for gpt=1 is:", mean_3d(gpt_flux_up(1,:,:,:))
+
+  if (compare_flux) then
+    print *, "--------------------------------------------------------------------------"
+    print *, "-----FLUX AND HEATING RATE ERRORS OF RESULTS COMPARED TO REFERENCE -------"
+
+    allocate(rsd_ref( nlay+1, ncol, nexp))
+    allocate(rsu_ref( nlay+1, ncol, nexp))  
+    allocate(rsdu_ref( nlay+1, ncol, nexp))  
+    allocate(rsd_nn( nlay+1, ncol, nexp))
+    allocate(rsu_nn( nlay+1, ncol, nexp))
+    allocate(rsdu_nn( nlay+1, ncol, nexp))
+
+    flx_file_ref = 'fluxes/rsud_CAMS_2018_REF.nc'
+
+    call unblock(flux_up, rsu_nn)
+    call unblock(flux_dn, rsd_nn)
+
+    rsdu_nn = rsd_nn - rsu_nn
+
+    if(nf90_open(trim(flx_file_ref), NF90_NOWRITE, ncid) /= NF90_NOERR) &
+      call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file_ref))
+
+    rsu_ref = read_field(ncid, "rsu", nlay+1, ncol, nexp)
+    rsd_ref = read_field(ncid, "rsd", nlay+1, ncol, nexp)
+    rsdu_ref = rsd_ref - rsu_ref
+
+    print *, "mean flux REF", mean_3d(rsdu_ref), "mean flux NEW", mean_3d(rsdu_nn)
+
+
+    print *, "------------- UPWELLING -------------- "
+
+    print *, "bias in upwelling flux of new result and RRTMGP, , top-of-atm.:", &
+      bias(reshape(rsu_ref(1,:,1), shape = [1*ncol]),    reshape(rsu_nn(1,:,1), shape = [1*ncol]))
+
+    print *, "-------------- DOWNWELLING --------------"
+
+    print *, "MAE in d.w flux w.r.t reference       ", &
+    mae(reshape(rsd_ref(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsd_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
+
+    print *, "-------------- NET FLUX --------------"
+
+    print *, "MAE in net flux w.r.t reference                ", &
+     mae(reshape(rsdu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
+
+    print *, "RMSE in net fluxes of new result, SURFACE:     ", &
+     rmse(reshape(rsdu_ref(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol]))
+
+    print *, "bias in net fluxes of new result, SURFACE:     ", &
+     bias(reshape(rsdu_ref(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol]))
+
+    print *, "---------"
+
+    print *, "Max-diff in d.w. flux w.r.t reference ", &
+     maxval(abs(rsd_ref(:,:,:)-rsd_nn(:,:,:)))
+ 
+    print *, "Max-diff in u.w. flux w.r.t reference ", &
+     maxval(abs(rsu_ref(:,:,:)-rsu_nn(:,:,:)))
+
+    print *, "Max-diff in net flux w.r.t reference  ", &
+     maxval(abs(rsdu_ref(:,:,:)-rsdu_nn(:,:,:))) 
+
+    deallocate(rsd_ref,rsu_ref,rsd_nn,rsu_nn,rsdu_ref,rsdu_nn)
+
+  end if
+
 
   ! Save fluxes?  we might want to evaluate the fluxes predicted with neural networks
   if (save_flux) then
-    flx_file = 'fluxes/rsud_RTE-RRTMGP.nc'
+    ! flx_file = 'fluxes/rsud_CAMS_2018_REF_clearsky.nc'
       ! Create file
     call flux_file_netcdf%create(trim(flx_file),override_file=.true.)
 

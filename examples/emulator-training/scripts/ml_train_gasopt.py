@@ -21,6 +21,7 @@ import numpy as np
 from ml_loaddata import ymeans_sw_abs, ysigma_sw_abs, load_inp_outp_rrtmgp, \
     preproc_pow_gptnorm_reverse,scale_gasopt
 from ml_eval_funcs import plot_hist2d, plot_hist2d_T
+import matplotlib.pyplot as plt
 
 
 
@@ -33,6 +34,11 @@ from ml_eval_funcs import plot_hist2d, plot_hist2d_T
 fpath    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_noclouds.nc"
 fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_noclouds.nc"
 fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+
+fpath    = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2012-2016_noclouds.nc"
+fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2017_noclouds.nc"
+fpath_test  = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+
 
 # Just one dataset
 # fpath_val = None
@@ -90,11 +96,18 @@ nfac = 8 # first, transform y: y=y**(1/nfac); cheaper and weaker version of
 y_mean  = ymeans_sw_abs # standard scaling after square root transformation
 y_sigma = ysigma_sw_abs
 # x coefficients
-xmin = np.array([1.7894626e+02, 2.3025851e+00, 0.0000000e+00, 2.7871470e-04,
-       3.8346465e-04, 1.5644504e-07, 0.0000000e+00], dtype=np.float32)
-xmax = np.array([3.1476846e+02, 1.1551140e+01, 4.3200806e-01, 5.6353424e-02,
-       7.7934266e-04, 3.5097651e-06, 3.3747145e-07], dtype=np.float32) 
+# xmin = np.array([1.7894626e+02, 2.3025851e+00, 0.0000000e+00, 2.7871470e-04,
+#        3.8346465e-04, 1.5644504e-07, 0.0000000e+00], dtype=np.float32)
+# xmax = np.array([3.1476846e+02, 1.1551140e+01, 4.3200806e-01, 5.6353424e-02,
+#        7.7934266e-04, 3.5097651e-06, 3.3747145e-07], dtype=np.float32) 
+#  tlay play h2o o3 co2 ch4 n2o
+xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3,1.41E-4,2.55E-8, 0.00E0], dtype=np.float32)
+xmax = np.array([ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3,
+         3.6000001E-6, 5.8135214E-7], dtype=np.float32) 
+
 xcoeffs = (xmin,xmax)
+
+
 
 # Scale data, depending on choices 
 x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
@@ -105,6 +118,11 @@ x_val,y_val     = scale_gasopt(x_val_raw, y_val_raw, col_dry_val, scale_inputs,
 # test
 x_test,y_test   = scale_gasopt(x_test_raw, y_test_raw, col_dry_test, scale_inputs, 
         scale_outputs, nfac=nfac, y_mean=y_mean, y_sigma=y_sigma, xcoeffs=xcoeffs)
+
+x_tr[x_tr<0.0] = 0.0
+x_val[x_val<0.0] = 0.0
+x_test[x_test<0.0] = 0.0
+
   
 nx = x_tr.shape[1]
 ny = y_tr.shape[1] # = number of g-points

@@ -2140,7 +2140,7 @@ end subroutine apply_BC_old
     ! nn_output = nn_output**2
     do ivar = 1, 4
       do i = 1, nbatch
-        ! nn_output(i,ivar) = nn_output(i,ivar) * ystds(ivar)
+        nn_output(i,ivar) = nn_output(i,ivar) * ystds(ivar)
         nn_output(i,ivar) = nn_output(i,ivar)**2
       end do
     end do
