@@ -228,9 +228,9 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Compute fluxes per g-point?
-  do_gpt_flux = .true.
+  do_gpt_flux = .false.
   ! When writing inputs and outputs for ML training, save also reflectance-transmittance variables?
-  save_reftrans = .true.
+  save_reftrans = .false.
   ! When writing RRTMGP inputs for ML training, preprocess inputs like in Ukkonen 2020?
   preprocess_rrtmgp_inputs = .false.
 

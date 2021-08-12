@@ -202,8 +202,11 @@ elif (ml_library=='tf-keras'):
     batch_size  = 256
     batch_size  = 512
     neurons     = [182, 182]
-    neurons     = [256,256]
-
+    # neurons     = [256,256] #0.994935
+    neurons     = [128, 128]  #0.99804565
+    neurons     = [64, 64]  # 0.9952047
+    neurons     = [128]     # 0.9980413605
+                   
     if use_gpu:
         devstr = '/gpu:0'
         os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -252,7 +255,8 @@ elif (ml_library=='tf-keras'):
     y_pred      = model.predict(x_test);  
     y_pred      = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean,y_sigma)
     
-    plot_hist2d(y_test_raw,y_pred,20,True)      #  
-        
+    cc = np.corrcoef(y_test_raw.flatten(), y_pred.flatten())
     diff = np.abs(y_test_raw-y_pred)
-    print("max diff {}".format(np.max(diff)))
+    print("r {} max diff {}".format(cc[0,1],np.max(diff)))
+    
+    plot_hist2d(y_test_raw,y_pred,20,True)      #  
