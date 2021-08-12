@@ -1096,7 +1096,132 @@ contains
   ! Equations are developed in Meador and Weaver, 1980,
   !    doi:10.1175/1520-0469(1980)037<0630:TSATRT>2.0.CO;2
   !
-  subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
+!   subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
+!                                 Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
+!     integer,                        intent(in)  :: ngpt_in, nlay_in
+!     real(wp),                       intent(in)  :: mu0
+!     real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
+!     real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+!     ! -----------------------
+!     integer  :: i, j
+
+!     ! Variables used in Meador and Weaver
+!     real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha2, k
+!     ! Ancillary variables
+!     real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+!     real(wp) :: k_gamma3, k_mu, k_mu2, mu0_inv
+!     real(wp) :: term1,term2,term3
+!     ! double precision
+!     real(dp) :: k_gamma4, alpha1(ngpt)
+
+!     ! ---------------------------------
+!     mu0_inv = 1._wp/mu0
+
+!     !
+!     ! Transmittance of direct, unscattered beam. Also used below
+!     !
+! #ifdef USE_TIMING
+!     ret =  gptlstart('tnoscat')
+! #endif
+!     Tnoscat = exp_fast(-tau*mu0_inv)
+! #ifdef USE_TIMING
+!     ret =  gptlstop('tnoscat')
+! #endif
+!     do j = 1, nlay
+!       !$OMP SIMD
+!       do i = 1, ngpt
+!         ! Zdunkowski Practical Improved Flux Method "PIFM"
+!         !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
+!         !
+!         gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
+!         gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
+!         gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
+!         gamma4(i)=  1._wp - gamma3(i)
+
+!         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
+!         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
+
+!         k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_min))
+
+!       end do
+!       exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
+!       !
+!       ! Diffuse reflection and transmission
+!       !
+!       !$OMP SIMD
+!       do i = 1, ngpt
+!         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
+
+!         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
+!         RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
+
+!         ! Equation 25
+!         Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
+
+!         ! Equation 26
+!         Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
+!       end do
+
+!       ! !
+!       ! ! Transmittance of direct, unscattered beam. Also used below
+!       ! !
+!       ! Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
+!       !
+!       ! Direct reflect and transmission
+!       !
+!       !$OMP SIMD
+!       do i = 1, ngpt
+!         k_mu     = k(i) * mu0
+!         k_mu2    = k_mu*k_mu
+!         k_gamma3 = k(i) * gamma3(i)
+!         k_gamma4 = k(i) * gamma4(i)
+!         !
+!         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
+!         !   and rearranging to avoid div by 0.         
+!         RT_term(i) =  w0(i,j) *  &
+!         RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
+!         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
+
+!         Rdir(i,j) = RT_term(i)  *                              &
+!                 (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
+!                    (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
+!              2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
+
+!         ! term1 = (1._dp - k_mu) * (alpha2(i) + k_gamma3)
+!         ! term2 = (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
+!         ! term3 =  2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) 
+
+!         ! Rdir(i,j) = RT_term(i)  *                              &
+!         !         (  term1 -  &
+!         !            term2  - &
+!         !            term3 * Tnoscat(i,j)  )
+
+!         ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
+!         ! this term must be in dp
+!         ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
+
+!         !
+!         ! Equation 15, multiplying top and bottom by exp(-k*tau),
+!         !   multiplying through by exp(-tau/mu0) to
+!         !   prefer underflow to overflow
+!         ! Omitting direct transmittance
+!         ! !
+!         ! Tdir(i,j) = -RT_term(i) *                                                                 &
+!         !             ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+!         !              (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+!         !              2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+!         term1 = (1._dp + k_mu) * (alpha1(i) + k_gamma4) 
+!         term2 = (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i)
+!         term3 = 2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i)
+!         Tdir(i,j) = -RT_term(i) *                                                                 &
+!                     ( (term1-term2)* Tnoscat(i,j) - term3)     
+!       end do
+!     end do
+
+!   end subroutine sw_two_stream
+
+  ! most accurate full double precision version
+  pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
                                 Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
     integer,                        intent(in)  :: ngpt_in, nlay_in
     real(wp),                       intent(in)  :: mu0
@@ -1106,70 +1231,53 @@ contains
     integer  :: i, j
 
     ! Variables used in Meador and Weaver
-    real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha2, k
+    real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
     ! Ancillary variables
-    real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
-    real(wp) :: k_gamma3, k_mu, k_mu2, mu0_inv
-    real(wp) :: term1,term2,term3
-    ! double precision
-    real(dp) :: k_gamma4, alpha1(ngpt)
-
+    real(dp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+    real(dp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
     ! ---------------------------------
     mu0_inv = 1._wp/mu0
 
-    !
-    ! Transmittance of direct, unscattered beam. Also used below
-    !
-#ifdef USE_TIMING
-    ret =  gptlstart('tnoscat')
-#endif
-    Tnoscat = exp_fast(-tau*mu0_inv)
-#ifdef USE_TIMING
-    ret =  gptlstop('tnoscat')
-#endif
     do j = 1, nlay
-      !$OMP SIMD
       do i = 1, ngpt
         ! Zdunkowski Practical Improved Flux Method "PIFM"
-        !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
+        !  (Zdunkowski et al., 1980;  Contributions to Atmodpheric Physics 53, 147-66)
         !
-        gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
-        gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
-        gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
-        gamma4(i)=  1._wp - gamma3(i)
+        gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
+        gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
+        gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
+        gamma4(i)=  1._dp - gamma3(i)
 
         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
 
-        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_min))
+        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-12_wp))
 
       end do
       exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
       !
       ! Diffuse reflection and transmission
       !
-      !$OMP SIMD
       do i = 1, ngpt
         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-        RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
+        RT_term(i) = 1._dp / (k(i) * (1._dp + exp_minus2ktau(i)) + gamma1(i) * (1._dp - exp_minus2ktau(i)) )
 
         ! Equation 25
-        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
+        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
 
         ! Equation 26
-        Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
+        Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
       end do
 
-      ! !
-      ! ! Transmittance of direct, unscattered beam. Also used below
-      ! !
-      ! Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
+      !
+      ! Transmittance of direct, unscattered beam. Also used below
+      !
+      Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
       !
       ! Direct reflect and transmission
       !
-      !$OMP SIMD
       do i = 1, ngpt
         k_mu     = k(i) * mu0
         k_mu2    = k_mu*k_mu
@@ -1179,22 +1287,13 @@ contains
         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
         !   and rearranging to avoid div by 0.         
         RT_term(i) =  w0(i,j) *  &
-        RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
+        RT_term(i) / merge(1._dp - k_mu2, epsilon(1._dp), abs(1._dp - k_mu2) >= epsilon(1._dp))
         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
 
         Rdir(i,j) = RT_term(i)  *                              &
                 (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
                    (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-             2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
-
-        ! term1 = (1._dp - k_mu) * (alpha2(i) + k_gamma3)
-        ! term2 = (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
-        ! term3 =  2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) 
-
-        ! Rdir(i,j) = RT_term(i)  *                              &
-        !         (  term1 -  &
-        !            term2  - &
-        !            term3 * Tnoscat(i,j)  )
+             2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
 
         ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
         ! this term must be in dp
@@ -1205,114 +1304,15 @@ contains
         !   multiplying through by exp(-tau/mu0) to
         !   prefer underflow to overflow
         ! Omitting direct transmittance
-        ! !
-        ! Tdir(i,j) = -RT_term(i) *                                                                 &
-        !             ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-        !              (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-        !              2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
-        term1 = (1._dp + k_mu) * (alpha1(i) + k_gamma4) 
-        term2 = (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i)
-        term3 = 2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i)
+        !
         Tdir(i,j) = -RT_term(i) *                                                                 &
-                    ( (term1-term2)* Tnoscat(i,j) - term3)     
+                    ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+                     (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+                     2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
       end do
     end do
 
   end subroutine sw_two_stream
-
-  ! most accurate full double precision version
-  ! pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
-  !                               Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
-  !   integer,                        intent(in)  :: ngpt_in, nlay_in
-  !   real(wp),                       intent(in)  :: mu0
-  !   real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
-  !   real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
-  !   ! -----------------------
-  !   integer  :: i, j
-
-  !   ! Variables used in Meador and Weaver
-  !   real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
-  !   ! Ancillary variables
-  !   real(dp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
-  !   real(dp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
-  !   ! ---------------------------------
-  !   mu0_inv = 1._wp/mu0
-
-  !   do j = 1, nlay
-  !     do i = 1, ngpt
-  !       ! Zdunkowski Practical Improved Flux Method "PIFM"
-  !       !  (Zdunkowski et al., 1980;  Contributions to Atmodpheric Physics 53, 147-66)
-  !       !
-  !       gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
-  !       gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
-  !       gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
-  !       gamma4(i)=  1._dp - gamma3(i)
-
-  !       alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
-  !       alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
-
-  !       k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-12_wp))
-
-  !     end do
-  !     exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
-  !     !
-  !     ! Diffuse reflection and transmission
-  !     !
-  !     do i = 1, ngpt
-  !       exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
-
-  !       ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-  !       RT_term(i) = 1._dp / (k(i) * (1._dp + exp_minus2ktau(i)) + gamma1(i) * (1._dp - exp_minus2ktau(i)) )
-
-  !       ! Equation 25
-  !       Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
-
-  !       ! Equation 26
-  !       Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
-  !     end do
-
-  !     !
-  !     ! Transmittance of direct, unscattered beam. Also used below
-  !     !
-  !     Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
-  !     !
-  !     ! Direct reflect and transmission
-  !     !
-  !     do i = 1, ngpt
-  !       k_mu     = k(i) * mu0
-  !       k_mu2    = k_mu*k_mu
-  !       k_gamma3 = k(i) * gamma3(i)
-  !       k_gamma4 = k(i) * gamma4(i)
-  !       !
-  !       ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
-  !       !   and rearranging to avoid div by 0.         
-  !       RT_term(i) =  w0(i,j) *  &
-  !       RT_term(i) / merge(1._dp - k_mu2, epsilon(1._dp), abs(1._dp - k_mu2) >= epsilon(1._dp))
-  !       !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
-
-  !       Rdir(i,j) = RT_term(i)  *                              &
-  !               (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
-  !                  (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-  !            2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
-
-  !       ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
-  !       ! this term must be in dp
-  !       ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
-
-  !       !
-  !       ! Equation 15, multiplying top and bottom by exp(-k*tau),
-  !       !   multiplying through by exp(-tau/mu0) to
-  !       !   prefer underflow to overflow
-  !       ! Omitting direct transmittance
-  !       !
-  !       Tdir(i,j) = -RT_term(i) *                                                                 &
-  !                   ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-  !                    (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-  !                    2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
-  !     end do
-  !   end do
-
-  ! end subroutine sw_two_stream
 
     ! pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
   !                               Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")

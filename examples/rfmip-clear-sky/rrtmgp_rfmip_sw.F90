@@ -192,7 +192,7 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
-  use_reftrans_nn = .true.
+  use_reftrans_nn = .false.
 
   ! temporary code: save sw_two_stream inputs and outputs
   save_inputs_outputs = .false.
