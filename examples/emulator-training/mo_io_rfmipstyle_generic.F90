@@ -42,7 +42,7 @@ module mo_io_rfmipstyle_generic
   end interface
 
   private
-  public :: read_kdist_gas_names, determine_gas_names, read_size, read_and_block_pt, &
+  public :: read_kdist_gas_names, determine_gas_names, read_size, unblock, read_and_block_pt, &
             read_and_block_sw_bc, read_and_block_lw_bc, read_and_block_gases_ty, read_and_block_clouds_cams
             
   public :: unblock_and_write
@@ -691,7 +691,35 @@ contains
 
   end function read_scaling
   !--------------------------------------------------------------------------------------------------------------------
+  !
+  ! Reshape values (nominally fluxes) from RTE order (nlev, ncol, nblocks)
+  !   to RFMIP order (nlev, ncol, nexp),
+  subroutine unblock(values, values_unblocked)
+    real(wp), dimension(:,:,:),  & ! [nlay/+1, blocksize,nblocks]
+                                intent(in   ) :: values
+    real(wp), dimension(:,:,:),  & ! [nlay+1, ncol, nexp]
+                                intent(out  ) :: values_unblocked
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks
+    real(wp), dimension(:,:), allocatable :: temp2d
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock: Haven't read problem size yet.")
+    nlev      = size(values,1)
+    blocksize = size(values,2)
+    nblocks   = size(values,3)
+    if(nlev /= nlay_l+1)                   call stop_on_err('unblock: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock: array values has the wrong number of blocks/size')
 
+    allocate(temp2D(nlev, ncol_l*nexp_l))
+    do b = 1, nblocks
+      temp2D(1:nlev, ((b-1)*blocksize+1):(b*blocksize)) = values(1:nlev,1:blocksize,b)
+    end do
+    
+    values_unblocked = reshape(temp2d, shape = [nlev, ncol_l, nexp_l])
+
+    deallocate(temp2d)
+  end subroutine unblock
   !
   ! Reshape values (nominally fluxes) from RTE order (ncol, nblocks)
   !   to RFMIP order (ncol, nexp), then write them to a user-specified variable

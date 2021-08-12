@@ -66,7 +66,7 @@ def qsatGFS(p,T):
     return qs 
 
 # Input data file
-fpath_cams  = root_dir+'data_input/CAMS_2010-2016.nc'
+fpath_cams  = root_dir+'data_input/CAMS_2012-2016.nc'
 # New file
 fpath_new   = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle.nc'
 print("Saving new file to {}".format(fpath_new))
@@ -217,6 +217,7 @@ var_tisr[:] = vars_reshaped['tisr'][:]
 # COMPUTE CLOUD FRACTION
 # First compute relative hum
 q_lay = vars_reshaped['q'].data # mixing ratio
+q_lay[q_lay<0] = 0.0
 rh_lay = mixr2rh(q_lay,p_lay,temp_lay)
 
 # cloud condensate mixing ratio: is this ice and water content combined?

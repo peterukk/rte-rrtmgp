@@ -735,10 +735,12 @@ contains
 
     !$acc exit data delete(input_names, input_maxvals, input_minvals)
 
-    ! do igas = 1, ninputs
-    !   print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", input_names(igas), &
-    !               minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
-    ! end do
+    do igas = 1, ninputs
+      print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", input_names(igas), &
+                  minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
+    end do
+
+    nn_inputs = max(0.0_wp, nn_inputs)
 
 #ifdef USE_TIMING
     ret =  gptlstop('compute_nn_inputs')

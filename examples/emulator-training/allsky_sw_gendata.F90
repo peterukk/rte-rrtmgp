@@ -274,13 +274,21 @@ program rrtmgp_rfmip_sw
   ! A gas might have a different name in the k-distribution than in the files
   ! provided (e.g. 'co2' and 'carbon_dioxide'), user needs to provide the correct ones
   !
-  kdist_gas_names = ["h2o  ","co2  ","ch4  ","o2   ","o3   ", "n2o  ", "n2   "] !,"no2  "]
+  ! kdist_gas_names = ["h2o  ","co2  ","ch4  ","o2   ","o3   ", "n2o  ", "n2   "] !,"no2  "]
+  ! input_file_gas_names =  ['water_vapor   ', &
+  !                   'carbon_dioxide', &
+  !                   'methane       ', &
+  !                   'oxygen        ', &
+  !                   'ozone         ', &
+  !                   'nitrous_oxide ', &
+  !                   'nitrogen      ']!,'no2           ']  
+  kdist_gas_names = ["h2o  ","o3   ","co2  ","n2o  ", "ch4  ","o2   ", "n2   "] !,"no2  "]
   input_file_gas_names =  ['water_vapor   ', &
+                    'ozone         ', &
                     'carbon_dioxide', &
+                    'nitrous_oxide ', &
                     'methane       ', &
                     'oxygen        ', &
-                    'ozone         ', &
-                    'nitrous_oxide ', &
                     'nitrogen      ']!,'no2           ']  
   num_gases = size(kdist_gas_names)
   print *, "Calculation uses gases: ", (trim(input_file_gas_names(b)) // " ", b = 1, size(input_file_gas_names))
@@ -632,7 +640,7 @@ program rrtmgp_rfmip_sw
   !$acc exit data delete(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
   !$acc exit data delete(sfc_alb_spec, mu0, toa_flux, def_tsi)
   call atmos%finalize() ! Also deallocates arrays on device
-  deallocate(reftrans_variables)
+  if (allocated(reftrans_variables))  deallocate(reftrans_variables)
 
 #ifdef USE_OPENACC  
   istat = cublasDestroy(h) 
@@ -732,7 +740,7 @@ program rrtmgp_rfmip_sw
     call nndev_file_netcdf%end_define_mode()
 
     call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_gasopt_input)
-    deallocate(nn_gasopt_input)
+    if (allocated(nn_gasopt_input)) deallocate(nn_gasopt_input)
     ! print *," min max col dry", minval(col_dry), maxval(col_dry)
     call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
     deallocate(col_dry)
