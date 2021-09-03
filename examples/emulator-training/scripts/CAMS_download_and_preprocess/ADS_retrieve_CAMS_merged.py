@@ -139,7 +139,7 @@ for month in ["02", "05", "08", "11"]:
 
 # PREPROCESS INTO ONE NetCDF FILE USING CDO COMMANDS
 # these are in a bash script, output file is tmp/CAMS_YYYY.nc
-os.system("./preproc_bash_cdo_nco {}".format(year)) 
+# os.system("./preproc_bash_cdo_nco {}".format(year)) 
 
 
 # -------------------------------------------------------------------
@@ -147,68 +147,69 @@ os.system("./preproc_bash_cdo_nco {}".format(year))
 # -------------------------------------------------------------------
 # Unfortunately the dataset and format is different so we need quite a lot of
 # processing
-fname = dl_dir+'CAMS_n2o_%s.tar.gz'%(year)
+# fname = dl_dir+'CAMS_n2o_%s.tar.gz'%(year)
 
-c.retrieve(
-    'cams-global-greenhouse-gas-inversion',
-    {
-        'variable': 'nitrous_oxide',
-        'quantity': 'concentration',
-        'input_observations': 'surface',
-        'time_aggregation': 'instantaneous',
-        'version': 'latest',
-        'year': '%s'%(year),
-        'month': [
-            '02', '05', '08',
-            '11',
-        ],
-        'format': 'tgz',
-    },
-    fname)
+# c.retrieve(
+#     'cams-global-greenhouse-gas-inversion',
+#     {
+#         'variable': 'nitrous_oxide',
+#         'quantity': 'concentration',
+#         'input_observations': 'surface',
+#         'time_aggregation': 'instantaneous',
+#         'version': 'latest',
+#         'year': '%s'%(year),
+#         'month': [
+#             '02', '05', '08',
+#             '11',
+#         ],
+#         'format': 'tgz',
+#     },
+#     fname)
 
-# Unpack and merge into on year-long file
-os.chdir(dl_dir)
-os.system("tar -xvzf {}".format(fname))
-os.system("cdo mergetime cams73_latest_n2o_conc_surface_inst_{}*.nc tmp.nc".format(year))
-# Remove ap,bp and remap to the coarser grid
-os.system("ncks -O -x -v ap,bp tmp.nc tmp2.nc")
-os.system("cdo remapbil,../newgrid tmp2.nc CAMS_n2o_{}_tmp.nc".format(year))
-# Now add the vertical reference
-os.system("ncks -A -v level,hyam,hybm,hyai,hybi ../REF_vert.nc CAMS_n2o_{}_tmp.nc".format(year))
-os.system("ncrename -v Psurf,surface_air_pressure CAMS_n2o_{}_tmp.nc".format(year))
-os.system("rm tmp*")
-os.system("rm cams73*")
-os.system("rm *.tar.gz")
+# # Unpack and merge into on year-long file
+# os.chdir(dl_dir)
+# os.system("tar -xvzf {}".format(fname))
+# os.system("cdo mergetime cams73_latest_n2o_conc_surface_inst_{}*.nc tmp.nc".format(year))
+# # Remove ap,bp and remap to the coarser grid
+# os.system("ncks -O -x -v ap,bp tmp.nc tmp2.nc")
 
-# The vertical reference is inconsistent with the 3D variable
-# We need to flip the profiles so they are from top to bottom of atmosphere
-fname_tmp = "CAMS_n2o_{}_tmp.nc".format(year)
-dat = Dataset(dl_dir+fname_tmp,'a')
-sp_v = dat.variables['surface_air_pressure']
-sp_v.standard_name = "surface_air_pressure"
-n2o_dat = dat.variables['N2O'][:].data
-n2o_dat = np.flip(n2o_dat,axis=1)
-dat.variables['N2O'][:] = n2o_dat
-dat.close()
+# os.system("cdo remapbil,../newgrid tmp2.nc CAMS_n2o_{}_tmp.nc".format(year))
+# # Now add the vertical reference
+# os.system("ncks -A -v level,hyam,hybm,hyai,hybi ../REF_vert.nc CAMS_n2o_{}_tmp.nc".format(year))
+# os.system("ncrename -v Psurf,surface_air_pressure CAMS_n2o_{}_tmp.nc".format(year))
+# os.system("rm tmp*")
+# os.system("rm cams73*")
+# os.system("rm *.tar.gz")
 
-# Almost done - now remap to the higher resolution vertical grid 
-# used by the main CAMS data
-fname_tmp2 = "CAMS_n2o_{}_tmp2.nc".format(year)
-fname_n2o = "CAMS_{}_n2o.nc".format(year)
-os.system("cdo remapeta,../newvct {} {}".format(fname_tmp,fname_tmp2))
+# # The vertical reference is inconsistent with the 3D variable
+# # We need to flip the profiles so they are from top to bottom of atmosphere
+# fname_tmp = "CAMS_n2o_{}_tmp.nc".format(year)
+# dat = Dataset(dl_dir+fname_tmp,'a')
+# sp_v = dat.variables['surface_air_pressure']
+# sp_v.standard_name = "surface_air_pressure"
+# n2o_dat = dat.variables['N2O'][:].data
+# n2o_dat = np.flip(n2o_dat,axis=1)
+# dat.variables['N2O'][:] = n2o_dat
+# dat.close()
 
-# Extract the time slices corresponding to the main CAMS data
-codestr = "ncks -d time,0 -d time,4 -d time,22 -d time,228 -d time,472 " \
-"-d time,476 -d time,720 -d time,724 {} {}".format(fname_tmp2,fname_n2o) 
-os.system(codestr) 
-os.system("rm *tmp*")
+# # Almost done - now remap to the higher resolution vertical grid 
+# # used by the main CAMS data
+# fname_tmp2 = "CAMS_n2o_{}_tmp2.nc".format(year)
+# fname_n2o = "CAMS_{}_n2o.nc".format(year)
+# os.system("cdo remapeta,../newvct {} {}".format(fname_tmp,fname_tmp2))
 
-# FINALLY, concatenate N2O and main data files, write to final destination
-fname = "CAMS_{}.nc".format(year)
+# # Extract the time slices corresponding to the main CAMS data
+# codestr = "ncks -d time,0 -d time,4 -d time,22 -d time,228 -d time,472 " \
+# "-d time,476 -d time,720 -d time,724 {} {}".format(fname_tmp2,fname_n2o) 
+# os.system(codestr) 
+# os.system("rm *tmp*")
 
-os.system("ncks -A {} {}".format(fname_n2o,fname))
-os.system("ncatted -h -a history,global,d,, {}".format(fname))
-os.system("ncatted -h -a history_of_appended_files,global,d,, {}".format(fname))
+# # FINALLY, concatenate N2O and main data files, write to final destination
+# fname = "CAMS_{}.nc".format(year)
 
-fname_final = "../../../data_input/CAMS_{}.nc".format(year)
-os.system("cp {} {}".format(fname,fname_final))
+# os.system("ncks -A {} {}".format(fname_n2o,fname))
+# os.system("ncatted -h -a history,global,d,, {}".format(fname))
+# os.system("ncatted -h -a history_of_appended_files,global,d,, {}".format(fname))
+
+# fname_final = "../../../data_input/CAMS_{}.nc".format(year)
+# os.system("cp {} {}".format(fname,fname_final))

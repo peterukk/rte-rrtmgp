@@ -42,7 +42,7 @@ module mo_io_rfmipstyle_generic
   end interface
 
   private
-  public :: read_kdist_gas_names, determine_gas_names, read_size, read_and_block_pt, &
+  public :: read_kdist_gas_names, determine_gas_names, read_size, unblock, read_and_block_pt, &
             read_and_block_sw_bc, read_and_block_lw_bc, read_and_block_gases_ty, read_and_block_clouds_cams
             
   public :: unblock_and_write
@@ -206,11 +206,12 @@ contains
   ! Read and reshape shortwave boundary conditions
   !
   subroutine read_and_block_sw_bc(fileName, blocksize, &
-                               surface_albedo, total_solar_irradiance, solar_zenith_angle)
+                               surface_albedo, total_solar_irradiance, solar_zenith_angle, sza_fill_value)
     character(len=*),           intent(in   ) :: fileName
     integer,                    intent(in   ) :: blocksize
     real(wp), dimension(:,:), allocatable, &
                                 intent(  out) :: surface_albedo, total_solar_irradiance, solar_zenith_angle
+    real(wp),   optional,       intent(in   ) :: sza_fill_value
     ! ---------------------------
     integer :: ncid, varid
     integer :: nblocks
@@ -240,14 +241,20 @@ contains
       total_solar_irradiance = reshape(temp2D, shape = [blocksize, nblocks])
     end if
 
-    if(nf90_inq_varid(ncid, "solar_zenith_angle", varid) /= NF90_NOERR) then 
-      print *, "can't find solar_zenith_angle in file, using random values between 0 and 90"
+    if (present(sza_fill_value)) then
+      print *, "filling solar zenith angles with user-provided constant of", sza_fill_value
       allocate(solar_zenith_angle(blocksize,nblocks))
-      call random_number(solar_zenith_angle) 
-      solar_zenith_angle = solar_zenith_angle * 90_wp
+      solar_zenith_angle = sza_fill_value
     else 
-      temp2D(1:ncol_l,1:nexp_l) = spread(read_field(ncid, "solar_zenith_angle",      ncol_l), dim=2, ncopies=nexp_l)
-      solar_zenith_angle     = reshape(temp2d, shape = [blocksize, nblocks])
+      if(nf90_inq_varid(ncid, "solar_zenith_angle", varid) /= NF90_NOERR) then 
+        print *, "can't find solar_zenith_angle in file and fill value not provided, using random values between 0 and 90"
+        allocate(solar_zenith_angle(blocksize,nblocks))
+        call random_number(solar_zenith_angle) 
+        solar_zenith_angle = solar_zenith_angle * 90_wp
+      else 
+        temp2D(1:ncol_l,1:nexp_l) = spread(read_field(ncid, "solar_zenith_angle",      ncol_l), dim=2, ncopies=nexp_l)
+        solar_zenith_angle     = reshape(temp2d, shape = [blocksize, nblocks])
+      end if
     end if
     ncid = nf90_close(ncid)
   end subroutine read_and_block_sw_bc
@@ -691,7 +698,35 @@ contains
 
   end function read_scaling
   !--------------------------------------------------------------------------------------------------------------------
+  !
+  ! Reshape values (nominally fluxes) from RTE order (nlev, ncol, nblocks)
+  !   to RFMIP order (nlev, ncol, nexp),
+  subroutine unblock(values, values_unblocked)
+    real(wp), dimension(:,:,:),  & ! [nlay/+1, blocksize,nblocks]
+                                intent(in   ) :: values
+    real(wp), dimension(:,:,:),  & ! [nlay+1, ncol, nexp]
+                                intent(out  ) :: values_unblocked
+    ! ---------------------------
+    integer :: ncid
+    integer :: b, blocksize, nlev, nblocks
+    real(wp), dimension(:,:), allocatable :: temp2d
+    ! ---------------------------
+    if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock: Haven't read problem size yet.")
+    nlev      = size(values,1)
+    blocksize = size(values,2)
+    nblocks   = size(values,3)
+    if(nlev /= nlay_l+1)                   call stop_on_err('unblock: array values has the wrong number of levels')
+    if(blocksize*nblocks /= ncol_l*nexp_l) call stop_on_err('unblock: array values has the wrong number of blocks/size')
 
+    allocate(temp2D(nlev, ncol_l*nexp_l))
+    do b = 1, nblocks
+      temp2D(1:nlev, ((b-1)*blocksize+1):(b*blocksize)) = values(1:nlev,1:blocksize,b)
+    end do
+    
+    values_unblocked = reshape(temp2d, shape = [nlev, ncol_l, nexp_l])
+
+    deallocate(temp2d)
+  end subroutine unblock
   !
   ! Reshape values (nominally fluxes) from RTE order (ncol, nblocks)
   !   to RFMIP order (ncol, nexp), then write them to a user-specified variable
@@ -860,7 +895,7 @@ contains
 
   subroutine unblock_and_write_4D_sp(fileName, varName, values)
     character(len=*),           intent(in   ) :: fileName, varName
-    real(sp), dimension(:,:,:,:),  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
+    real(sp), dimension(:,:,:,:),target,  & !   (ngas, nlay/+1, block_size, nblocks) or (ngpt,...)
                                 intent(in   ) :: values
     ! ---------------------------
     integer :: ncid

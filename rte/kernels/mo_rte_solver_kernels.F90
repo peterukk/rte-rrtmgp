@@ -516,7 +516,7 @@ contains
                                  flux_up, flux_dn, flux_dir, &
                                  flux_up_gpt, flux_dn_gpt, flux_dir_gpt, &
                                  reftrans_variables, neural_net & !!TEMPORARY CODE FOR ML EXPERIMENTS!!
-                                 ) bind(C, name="sw_solver_2stream")
+                                 ) 
     integer,                                intent(in   ) :: ngpt_in, nlay_in, ncol ! Number of columns, layers, g-points
     logical(wl),                            intent(in   ) :: top_at_1
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: inc_flux, inc_flux_dif     ! incident flux at top of domain [W/m2] (ngpt, ncol)
@@ -569,27 +569,24 @@ contains
 
       !!TEMPORARY CODE FOR ML EXPERIMENTS!!
       if (present(neural_net)) then
+#ifndef DOUBLE_PRECISION
         Rdif => reftrans_variables_nocol(:,:,1)
         Tdif => reftrans_variables_nocol(:,:,2)
         Rdir => reftrans_variables_nocol(:,:,3)
         Tdir => reftrans_variables_nocol(:,:,4)
+#endif
       else
         Rdif => Rdif_arr
         Tdif => Tdif_arr
         Rdir => Rdir_arr
         Tdir => Tdir_arr
       end if
-      ! if (present(reftrans_variables)) then
-      !   Rdif => reftrans_variables(:,:,icol,1)
-      !   Tdif => reftrans_variables(:,:,icol,2)
-      !   Rdir => reftrans_variables(:,:,icol,3)
-      !   Tdir => reftrans_variables(:,:,icol,4)
-      ! else
-      !   Rdif => Rdif_arr
-      !   Tdif => Tdif_arr
-      !   Rdir => Rdir_arr
-      !   Tdir => Tdir_arr
-      ! end if
+      if (present(reftrans_variables)) then ! inout reftrans, assumed kernel not called with neural_net
+        Rdif => reftrans_variables(:,:,icol,1)
+        Tdif => reftrans_variables(:,:,icol,2)
+        Rdir => reftrans_variables(:,:,icol,3)
+        Tdir => reftrans_variables(:,:,icol,4)
+      end if
       !!TEMPORARY CODE FOR ML EXPERIMENTS!!
 
       if (save_gpt_flux) then
@@ -608,10 +605,7 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('sw_two_stream')
 #endif
-      ! if (present(reftrans_variables)) then
-      !   Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
-      !   ! call NN code to predict other reftrans variables
-      ! else
+
       if (present(neural_net)) then
         Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
        ! call NN code to predict other reftrans variables
@@ -619,6 +613,28 @@ contains
                 neural_net,         &
                 tau(:,:,icol), ssa(:,:,icol), g(:,:,icol), Tnoscat, mu0(icol), &
                 nn_output)
+        ! call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+        !         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+        !         Rdif_arr, Tdif_arr, Rdir_arr, Tdir_arr, Tnoscat)
+        ! print *, "mae Rdif", mae(Rdif_arr,Rdif), "Tdif", mae(Tdif_arr,Tdif), "Rdir", mae(Rdir_arr,Rdir), "Tdir", mae(Tdir_arr,Tdir)
+        
+        ! print *, "maxdiff Rdif", maxval(abs(Rdif_arr-Rdif)), "Tdif", maxval(abs(Tdif_arr-Tdif)), &
+        !   "Rdir", maxval(abs(Rdir_arr-Rdir)), "Tdir", maxval(abs(Tdir_arr-Tdir))
+        ! print *, "bias Rdif", mean_2d(Rdif_arr-Rdif), "Tdif", mean_2d(Tdif_arr-Tdif), "Rdir", mean_2d(Rdir_arr-Rdir), "Tdir", mean_2d(Tdir_arr-Tdir)
+        ! Rdif = Rdif_arr
+        ! Tdif = Tdif_arr
+        ! Rdir = Rdir_arr
+        ! Tdir = Tdir_arr
+        ! if (icol==1) then 
+          ! print *, "pred", Rdif(1,1), Tdif(1,1), Rdir(1,1), Tdir(1,1)
+          ! print *, "pred1", Rdif(ngpt,1), Tdif(ngpt,1), Rdir(ngpt,1), Tdir(ngpt,1)
+          ! print *, "pred2", Rdif(ngpt,nlay), Tdif(ngpt,nlay), Rdir(ngpt,nlay), Tdir(ngpt,nlay)
+
+          ! print *, "true", Rdif_arr(1,1), Tdif_arr(1,1), Rdir_arr(1,1), Tdir_arr(1,1)
+          ! print *, "true1", Rdif_arr(ngpt,1), Tdif_arr(ngpt,1), Rdir_arr(ngpt,1), Tdir_arr(ngpt,1)
+          ! print *, "true2", Rdif_arr(ngpt,nlay), Tdif_arr(ngpt,nlay), Rdir_arr(ngpt,nlay), Tdir_arr(ngpt,nlay)
+
+        ! end if
       else
         call sw_two_stream(ngpt, nlay, mu0(icol),                                &
                           tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
@@ -1096,132 +1112,7 @@ contains
   ! Equations are developed in Meador and Weaver, 1980,
   !    doi:10.1175/1520-0469(1980)037<0630:TSATRT>2.0.CO;2
   !
-!   subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
-!                                 Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
-!     integer,                        intent(in)  :: ngpt_in, nlay_in
-!     real(wp),                       intent(in)  :: mu0
-!     real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
-!     real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
-!     ! -----------------------
-!     integer  :: i, j
-
-!     ! Variables used in Meador and Weaver
-!     real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha2, k
-!     ! Ancillary variables
-!     real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
-!     real(wp) :: k_gamma3, k_mu, k_mu2, mu0_inv
-!     real(wp) :: term1,term2,term3
-!     ! double precision
-!     real(dp) :: k_gamma4, alpha1(ngpt)
-
-!     ! ---------------------------------
-!     mu0_inv = 1._wp/mu0
-
-!     !
-!     ! Transmittance of direct, unscattered beam. Also used below
-!     !
-! #ifdef USE_TIMING
-!     ret =  gptlstart('tnoscat')
-! #endif
-!     Tnoscat = exp_fast(-tau*mu0_inv)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('tnoscat')
-! #endif
-!     do j = 1, nlay
-!       !$OMP SIMD
-!       do i = 1, ngpt
-!         ! Zdunkowski Practical Improved Flux Method "PIFM"
-!         !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
-!         !
-!         gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
-!         gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
-!         gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
-!         gamma4(i)=  1._wp - gamma3(i)
-
-!         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
-!         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
-
-!         k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_min))
-
-!       end do
-!       exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
-!       !
-!       ! Diffuse reflection and transmission
-!       !
-!       !$OMP SIMD
-!       do i = 1, ngpt
-!         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
-
-!         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-!         RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
-
-!         ! Equation 25
-!         Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
-
-!         ! Equation 26
-!         Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
-!       end do
-
-!       ! !
-!       ! ! Transmittance of direct, unscattered beam. Also used below
-!       ! !
-!       ! Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
-!       !
-!       ! Direct reflect and transmission
-!       !
-!       !$OMP SIMD
-!       do i = 1, ngpt
-!         k_mu     = k(i) * mu0
-!         k_mu2    = k_mu*k_mu
-!         k_gamma3 = k(i) * gamma3(i)
-!         k_gamma4 = k(i) * gamma4(i)
-!         !
-!         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
-!         !   and rearranging to avoid div by 0.         
-!         RT_term(i) =  w0(i,j) *  &
-!         RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
-!         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
-
-!         Rdir(i,j) = RT_term(i)  *                              &
-!                 (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
-!                    (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-!              2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
-
-!         ! term1 = (1._dp - k_mu) * (alpha2(i) + k_gamma3)
-!         ! term2 = (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
-!         ! term3 =  2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) 
-
-!         ! Rdir(i,j) = RT_term(i)  *                              &
-!         !         (  term1 -  &
-!         !            term2  - &
-!         !            term3 * Tnoscat(i,j)  )
-
-!         ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
-!         ! this term must be in dp
-!         ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
-
-!         !
-!         ! Equation 15, multiplying top and bottom by exp(-k*tau),
-!         !   multiplying through by exp(-tau/mu0) to
-!         !   prefer underflow to overflow
-!         ! Omitting direct transmittance
-!         ! !
-!         ! Tdir(i,j) = -RT_term(i) *                                                                 &
-!         !             ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-!         !              (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-!         !              2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
-!         term1 = (1._dp + k_mu) * (alpha1(i) + k_gamma4) 
-!         term2 = (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i)
-!         term3 = 2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i)
-!         Tdir(i,j) = -RT_term(i) *                                                                 &
-!                     ( (term1-term2)* Tnoscat(i,j) - term3)     
-!       end do
-!     end do
-
-!   end subroutine sw_two_stream
-
-  ! most accurate full double precision version
-  pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
+  subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
                                 Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
     integer,                        intent(in)  :: ngpt_in, nlay_in
     real(wp),                       intent(in)  :: mu0
@@ -1231,53 +1122,70 @@ contains
     integer  :: i, j
 
     ! Variables used in Meador and Weaver
-    real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+    real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha2, k
     ! Ancillary variables
-    real(dp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
-    real(dp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
+    real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+    real(wp) :: k_gamma3, k_mu, k_mu2, mu0_inv
+    real(wp) :: term1,term2,term3
+    ! double precision
+    real(dp) :: k_gamma4, alpha1(ngpt)
+
     ! ---------------------------------
     mu0_inv = 1._wp/mu0
 
+    !
+    ! Transmittance of direct, unscattered beam. Also used below
+    !
+#ifdef USE_TIMING
+    ret =  gptlstart('tnoscat')
+#endif
+    Tnoscat = exp_fast(-tau*mu0_inv)
+#ifdef USE_TIMING
+    ret =  gptlstop('tnoscat')
+#endif
     do j = 1, nlay
+      !$OMP SIMD
       do i = 1, ngpt
         ! Zdunkowski Practical Improved Flux Method "PIFM"
-        !  (Zdunkowski et al., 1980;  Contributions to Atmodpheric Physics 53, 147-66)
+        !  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
         !
-        gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
-        gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
-        gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
-        gamma4(i)=  1._dp - gamma3(i)
+        gamma1(i)= (8._wp - w0(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
+        gamma2(i)=  3._wp *(w0(i,j) * (1._wp -         g(i,j))) * .25_wp
+        gamma3(i)= (2._wp - 3._wp * mu0 *              g(i,j) ) * .25_wp
+        gamma4(i)=  1._wp - gamma3(i)
 
         alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
         alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
 
-        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-12_wp))
+        k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  k_min))
 
       end do
       exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
       !
       ! Diffuse reflection and transmission
       !
+      !$OMP SIMD
       do i = 1, ngpt
         exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-        RT_term(i) = 1._dp / (k(i) * (1._dp + exp_minus2ktau(i)) + gamma1(i) * (1._dp - exp_minus2ktau(i)) )
+        RT_term(i) = 1._wp / (k(i) * (1._wp + exp_minus2ktau(i)) + gamma1(i) * (1._wp - exp_minus2ktau(i)) )
 
         ! Equation 25
-        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
+        Rdif(i,j) = RT_term(i) * gamma2(i) * (1._wp - exp_minus2ktau(i))
 
         ! Equation 26
-        Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
+        Tdif(i,j) = RT_term(i) * 2._wp * k(i) * exp_minusktau(i)
       end do
 
-      !
-      ! Transmittance of direct, unscattered beam. Also used below
-      !
-      Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
+      ! !
+      ! ! Transmittance of direct, unscattered beam. Also used below
+      ! !
+      ! Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
       !
       ! Direct reflect and transmission
       !
+      !$OMP SIMD
       do i = 1, ngpt
         k_mu     = k(i) * mu0
         k_mu2    = k_mu*k_mu
@@ -1287,13 +1195,22 @@ contains
         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
         !   and rearranging to avoid div by 0.         
         RT_term(i) =  w0(i,j) *  &
-        RT_term(i) / merge(1._dp - k_mu2, epsilon(1._dp), abs(1._dp - k_mu2) >= epsilon(1._dp))
+        RT_term(i) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
 
         Rdir(i,j) = RT_term(i)  *                              &
                 (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
                    (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
-             2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
+             2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
+
+        ! term1 = (1._dp - k_mu) * (alpha2(i) + k_gamma3)
+        ! term2 = (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
+        ! term3 =  2.0_wp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) 
+
+        ! Rdir(i,j) = RT_term(i)  *                              &
+        !         (  term1 -  &
+        !            term2  - &
+        !            term3 * Tnoscat(i,j)  )
 
         ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
         ! this term must be in dp
@@ -1304,15 +1221,114 @@ contains
         !   multiplying through by exp(-tau/mu0) to
         !   prefer underflow to overflow
         ! Omitting direct transmittance
-        !
+        ! !
+        ! Tdir(i,j) = -RT_term(i) *                                                                 &
+        !             ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+        !              (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+        !              2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+        term1 = (1._dp + k_mu) * (alpha1(i) + k_gamma4) 
+        term2 = (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i)
+        term3 = 2.0_wp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i)
         Tdir(i,j) = -RT_term(i) *                                                                 &
-                    ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
-                     (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
-                     2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+                    ( (term1-term2)* Tnoscat(i,j) - term3)     
       end do
     end do
 
   end subroutine sw_two_stream
+
+  ! most accurate full double precision version
+  ! pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
+  !                               Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
+  !   integer,                        intent(in)  :: ngpt_in, nlay_in
+  !   real(wp),                       intent(in)  :: mu0
+  !   real(wp), dimension(ngpt,nlay), intent(in)  :: tau, w0, g
+  !   real(wp), dimension(ngpt,nlay), intent(out) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
+  !   ! -----------------------
+  !   integer  :: i, j
+
+  !   ! Variables used in Meador and Weaver
+  !   real(dp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
+  !   ! Ancillary variables
+  !   real(dp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term
+  !   real(dp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
+  !   ! ---------------------------------
+  !   mu0_inv = 1._wp/mu0
+
+  !   do j = 1, nlay
+  !     do i = 1, ngpt
+  !       ! Zdunkowski Practical Improved Flux Method "PIFM"
+  !       !  (Zdunkowski et al., 1980;  Contributions to Atmodpheric Physics 53, 147-66)
+  !       !
+  !       gamma1(i)= (8._dp - w0(i,j) * (5._dp + 3._dp * g(i,j))) * .25_dp
+  !       gamma2(i)=  3._dp *(w0(i,j) * (1._dp -         g(i,j))) * .25_dp
+  !       gamma3(i)= (2._dp - 3._dp * mu0 *              g(i,j) ) * .25_dp
+  !       gamma4(i)=  1._dp - gamma3(i)
+
+  !       alpha1(i) = gamma1(i) * gamma4(i) + gamma2(i) * gamma3(i)           ! Eq. 16
+  !       alpha2(i) = gamma1(i) * gamma3(i) + gamma2(i) * gamma4(i)           ! Eq. 17
+
+  !       k(i) = sqrt(max((gamma1(i) - gamma2(i)) * (gamma1(i) + gamma2(i)),  1.e-12_wp))
+
+  !     end do
+  !     exp_minusktau(:) = exp_fast(-tau(:,j)*k(:))
+  !     !
+  !     ! Diffuse reflection and transmission
+  !     !
+  !     do i = 1, ngpt
+  !       exp_minus2ktau(i)  = exp_minusktau(i) * exp_minusktau(i)
+
+  !       ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
+  !       RT_term(i) = 1._dp / (k(i) * (1._dp + exp_minus2ktau(i)) + gamma1(i) * (1._dp - exp_minus2ktau(i)) )
+
+  !       ! Equation 25
+  !       Rdif(i,j) = RT_term(i) * gamma2(i) * (1._dp - exp_minus2ktau(i))
+
+  !       ! Equation 26
+  !       Tdif(i,j) = RT_term(i) * 2._dp * k(i) * exp_minusktau(i)
+  !     end do
+
+  !     !
+  !     ! Transmittance of direct, unscattered beam. Also used below
+  !     !
+  !     Tnoscat(:,j) = exp_fast(-tau(:,j)*mu0_inv)
+  !     !
+  !     ! Direct reflect and transmission
+  !     !
+  !     do i = 1, ngpt
+  !       k_mu     = k(i) * mu0
+  !       k_mu2    = k_mu*k_mu
+  !       k_gamma3 = k(i) * gamma3(i)
+  !       k_gamma4 = k(i) * gamma4(i)
+  !       !
+  !       ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
+  !       !   and rearranging to avoid div by 0.         
+  !       RT_term(i) =  w0(i,j) *  &
+  !       RT_term(i) / merge(1._dp - k_mu2, epsilon(1._dp), abs(1._dp - k_mu2) >= epsilon(1._dp))
+  !       !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
+
+  !       Rdir(i,j) = RT_term(i)  *                              &
+  !               (   (1._dp - k_mu) * (alpha2(i) + k_gamma3) -  &
+  !                  (1._dp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i) - &
+  !            2.0_dp * (k_gamma3 - alpha2(i) * k_mu)  * exp_minusktau (i) * Tnoscat(i,j)  )
+
+  !       ! temp(i) =  (1._sp + k_mu) * (alpha2(i) - k_gamma3) * exp_minus2ktau(i)
+  !       ! this term must be in dp
+  !       ! Rdir still having problems (too large) if k_gammas are sp, even after fixing RT_Term
+
+  !       !
+  !       ! Equation 15, multiplying top and bottom by exp(-k*tau),
+  !       !   multiplying through by exp(-tau/mu0) to
+  !       !   prefer underflow to overflow
+  !       ! Omitting direct transmittance
+  !       !
+  !       Tdir(i,j) = -RT_term(i) *                                                                 &
+  !                   ((1._dp + k_mu) * (alpha1(i) + k_gamma4)                     * Tnoscat(i,j) - &
+  !                    (1._dp - k_mu) * (alpha1(i) - k_gamma4) * exp_minus2ktau(i) * Tnoscat(i,j) - &
+  !                    2.0_dp * (k_gamma4 + alpha1(i) * k_mu)  * exp_minusktau (i))
+  !     end do
+  !   end do
+
+  ! end subroutine sw_two_stream
 
     ! pure subroutine sw_two_stream(ngpt_in, nlay_in, mu0, tau, w0, g, &
   !                               Rdif, Tdif, Rdir, Tdir, Tnoscat) bind (C, name="sw_two_stream")
@@ -1980,98 +1996,7 @@ end subroutine apply_BC_old
 
   end subroutine sw_two_stream_scalar
 
-!   subroutine predict_nn_reftrans(ncol, nlay, ngpt,  &
-!                                 neural_net,         &
-!                                 tau, ssa, g, Tnoscat, mu0, &
-!                                 Rdif,Tdif,Rdir,Tdir &
-!                                 )
-!     use, intrinsic :: ISO_C_BINDING
-!     integer,                              intent(in)    :: ngpt,nlay,ncol
-!     type(network_type),                   intent(in)    :: neural_net 
-!     real(wp), dimension(ngpt,nlay, ncol), intent(in), target &
-!                                                        :: tau, & ! Inputs: optical thickness,
-!                                                           ssa, &  ! single-scattering albedo,
-!                                                           g,   &  ! asymmetry parameter,
-!                                                           Tnoscat ! no scattering transmittance
-!     real(wp), dimension(ncol),            intent(in)    :: mu0    ! cosine of solar zenith angle
-!     real(wp), dimension(ngpt,nlay,ncol), &                ! outputs
-!                                 intent(out), target     :: Rdif,Tdif,Rdir,Tdir
-!     ! local vars
-!     integer :: nbatch, i, ivar, icol, ilay, igpt
-!     ! after scaling inputs by **(1/2), min max scaling 
-!     real(sp), dimension(5)    :: xmin =  (/ -20.723267, 0.0, 0.0, 0.0, 0.0 /)
-!     real(sp), dimension(5)    :: xmax =  (/ 9.0,  1.0,  0.7,  0.99999514, 1.0 /)
-!     real(sp), dimension(4)    :: ystds = (/ 0.18829606, 0.43673688, 0.20370968, 0.21444032 /)
-!     real(sp), dimension(ngpt*nlay*ncol), target :: logtau, mu
-!     ! real(sp), allocatable :: nn_input(:,:), Tnoscat(:) ! (nbatch, 4), where nbatch=ngpt*nlay*ncol
-!     ! real(sp), dimension (ngpt*nlay*ncol,4) :: nn_input
-!     ! real(sp), dimension(:), contiguous, pointer     :: input
-!     ! real(sp), dimension(:,:),   contiguous, pointer   :: nn_input, nn_output   
-!     ! nobs = nlay*ncol
-    
-! #ifdef USE_TIMING
-!     ret =  gptlstart('prep_input')
-! #endif
-    
-  
-!       nbatch = ngpt*nlay*ncol
-
-!       logtau = (log(reshape(tau,(/nbatch/))) - xmin(1))  / (xmax(1) - xmin(1))
-!       i = 1
-!       do icol = 1, ncol
-!         do ilay = 1, nlay*ngpt
-!           mu(i) = mu0(icol)
-!           i = i +1
-!         end do
-!       end do
-      
-!       ! nn_input(1:nbatch,1:1) => logtau
-!       ! nn_input(1:nbatch,2:2) => ssa
-!       ! nn_input(1:nbatch,3:3) => g
-!       ! nn_input(1:nbatch,4:4) => mu
-!       ! nn_input(1:nbatch,5:5) => Tnoscat
-!       ! doesn't work, we have to copy the input arrays
-
-! #ifdef USE_TIMING
-!     ret =  gptlstop('prep_input')
-! #endif
-
-!       do i = 1,5
-!         print *," min max inp ", i, ":", minval(nn_input(:,i)), maxval(nn_input(:,i))
-!       end do
-
-! #ifdef USE_TIMING
-!     ret =  gptlstart('kernel')
-! #endif
-!     ! call neural_net % output_sgemm_flat_byrows(size(nn_input,2), size(nn_output,2), nbatch, nn_input, nn_output)
-!     call neural_net % output_sgemm_flat_byrows(5, 4, nbatch, nn_input, nn_output)
-    
-! #ifdef USE_TIMING
-!     ret =  gptlstop('kernel')
-! #endif
-! #ifdef USE_TIMING
-!     ret =  gptlstart('postproc')
-! #endif
-!     ! nn_output = nn_output**2
-!     do ivar = 1, 4
-!       do i = 1, nbatch
-!         nn_output(i,ivar) = nn_output(i,ivar)**2
-!         nn_output(i,ivar) = nn_output(i,ivar) / ystds(ivar)
-!       end do
-!     end do
-
-!     ! nn_output = min(1.0_wp, nn_output)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('postproc')
-! #endif
-!     print *,"max,min Rdif", maxval(nn_output(:,1)), minval(nn_output(:,1))
-!     print *,"max,min Tdif", maxval(nn_output(:,2)), minval(nn_output(:,2))
-!     print *,"max,min  Rdir", maxval(nn_output(:,3)), minval(nn_output(:,3))
-!     print *,"max,min  Tdir", maxval(nn_output(:,4)), minval(nn_output(:,4))
-
-!   end subroutine predict_nn_reftrans
-
-    subroutine predict_nn_reftrans(nlay, ngpt,  &
+  subroutine predict_nn_reftrans(nlay, ngpt,  &
                                 neural_net,         &
                                 tau, ssa, g, Tnoscat, mu0, &
                                 nn_output &
@@ -2088,15 +2013,41 @@ end subroutine apply_BC_old
     !                             intent(out), target     :: Rdif,Tdif,Rdir,Tdir
     real(sp), dimension(ngpt*nlay,4), intent(out)      :: nn_output
     ! local vars
-    integer :: nbatch, i, ivar, icol, ilay, igpt
-    ! after scaling inputs by **(1/2), min max scaling 
-    real(sp), dimension(5)    :: xmin =  (/ -20.723267, 0.0, 0.0, 0.0, 0.0 /)
-    ! real(sp), dimension(5)    :: xmax =  (/ 9.0,  1.0,  0.7,  0.99999514, 1.0 /)
-    real(sp), dimension(5)    :: xmax =  (/ 9.0,  1.0,  1.0,  1.0, 1.0 /)
-    real(sp), dimension(4)    :: ystds = (/ 0.18829606, 0.43673688, 0.20370968, 0.21444032 /)
+    integer :: nbatch, i, ivar, icol, ilay, igpt, j, k
     real(sp), dimension(ngpt*nlay,5)    :: nn_input
+
+    ! after log scaling tau: min max scaling 
+    ! real(sp), dimension(5)    :: xmin =  (/ -20.723267, 0.0, 0.0, 0.0, 0.0 /)
+    ! real(sp), dimension(5)    :: xmax =  (/ 9.0,  1.0,  1.0,  1.0, 1.0 /)
+
+    ! sqrt4
+    real(sp), dimension(5)    :: xmin =  (/ 0.0,  0.0, 0.0, 0.0,  0.0 /)
+    real(sp), dimension(5)    :: xmax =  (/ 13.05,1.0, 0.8, 1.0,  1.0 /)
+
+
+    ! nfac2
+    ! real(sp), dimension(4)    :: ystds = (/ 0.34254798, 0.34254798, 0.34254798, 0.34254798/)
+    ! real(sp), dimension(4)    :: ymeans = (/ 0.11233056, 0.63645709, 0.12254605, 0.11041685 /)
+
+    ! nfac2, mean0
+    ! real(sp), dimension(4)    :: ymeans = (/ 0.0, 0.0, 0.0, 0.0 /)
+    ! real(sp), dimension(4)    :: ystds = (/ 0.15692602, 0.42003798, 0.17412843, 0.18447757/)
+
+    ! nfac4
+    ! real(sp), dimension(4)    :: ystds = (/ 0.3415382, 0.3415382, 0.3415382, 0.3415382 /)
+    ! real(sp), dimension(4)    :: ymeans = (/0.20413001, 0.74772155, 0.21873595, 0.22002678 /)
+
+    !nfac1
+    ! real(sp), dimension(4)    :: ystds = (/ 0.08930878, 0.43197197, 0.10786474, 0.12255082/)
+    ! real(sp), dimension(4)    :: ymeans = (/ 0.03724393, 0.58150858, 0.04533824, 0.04622386 /)
+
+    ! real(sp), dimension(6)    :: xmin =  (/ -20.723267,  0.,  4.0157e-01,  0.0,   1.356e-01,  0.0 /)
+    ! real(sp), dimension(6)    :: xmax =  (/ 11.91744,    1. , 2. ,         0.75,  0.5 ,       1.  /)
+    ! real(sp), dimension(4)    :: ystds = (/ 1.068713665008544922e-01, 3.954977393150329590e-01, &
+    ! 1.308900862932205200e-01, 1.513165533542633057e-01/)
+    ! real(sp), dimension(ngpt*nlay,6)    :: nn_input
+    ! real(sp), dimension(ngpt*nlay)    :: gamma1, gamma2, gamma3
     ! real(sp), dimension(:), contiguous, pointer     :: input
-    ! real(sp), dimension(:,:),   contiguous, pointer   :: nn_input, nn_output   
     ! nobs = nlay*ncol
     
 #ifdef USE_TIMING
@@ -2107,7 +2058,10 @@ end subroutine apply_BC_old
 #ifdef USE_TIMING
     ret =  gptlstart('log')
 #endif
-      nn_input(1:nbatch,1) = (log(reshape(tau,(/nbatch/))) - xmin(1))  / (xmax(1) - xmin(1))
+      ! nn_input(1:nbatch,1) = (log(reshape(tau,(/nbatch/))) - xmin(1))  / (xmax(1) - xmin(1))
+    nn_input(1:nbatch,1) =  reshape(tau,(/nbatch/))
+    nn_input(1:nbatch,1) =  sqrt(sqrt(nn_input(1:nbatch,1)))
+    nn_input(1:nbatch,1) = (nn_input(1:nbatch,1) - xmin(1))  / (xmax(1) - xmin(1))
 #ifdef USE_TIMING
     ret =  gptlstop('log')
 #endif
@@ -2115,7 +2069,21 @@ end subroutine apply_BC_old
       nn_input(1:nbatch,3) = reshape(g, (/nbatch/))
       nn_input(1:nbatch,4) = mu0
       nn_input(1:nbatch,5) = reshape(Tnoscat, (/nbatch/))
-      ! doesn't work, we have to copy the input arrays
+
+      ! k = 1
+      ! do j = 1, nlay
+      !   do i = 1, ngpt
+      !     gamma1(k)= (8._wp - ssa(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
+      !     gamma2(k)=  3._wp *(ssa(i,j) * (1._wp -         g(i,j))) * .25_wp
+      !     gamma3(k)= (2._wp - 3._wp * mu0 *               g(i,j) ) * .25_wp
+      !     k = k + 1
+      !   end do
+      ! end do
+      ! nn_input(1:nbatch,2) = reshape(ssa, (/nbatch/))
+      ! nn_input(1:nbatch,3) = (gamma1 - xmin(3)) / (xmax(3) - xmin(3))
+      ! nn_input(1:nbatch,4) = (gamma2 - xmin(4)) / (xmax(4) - xmin(4))
+      ! nn_input(1:nbatch,5) = (gamma3 - xmin(5)) / (xmax(5) - xmin(5))
+      ! nn_input(1:nbatch,6) = reshape(Tnoscat, (/nbatch/))
 
 #ifdef USE_TIMING
     ret =  gptlstop('prep_input')
@@ -2128,8 +2096,7 @@ end subroutine apply_BC_old
 #ifdef USE_TIMING
     ret =  gptlstart('kernel')
 #endif
-    ! call neural_net % output_sgemm_flat_byrows(size(nn_input,2), size(nn_output,2), nbatch, nn_input, nn_output)
-    call neural_net % output_sgemm_flat_byrows(5, 4, nbatch, nn_input, nn_output)
+    call neural_net % output_sgemm_flat_byrows(size(nn_input,2), size(nn_output,2), nbatch, nn_input, nn_output)
     
 #ifdef USE_TIMING
     ret =  gptlstop('kernel')
@@ -2137,10 +2104,9 @@ end subroutine apply_BC_old
 #ifdef USE_TIMING
     ret =  gptlstart('postproc')
 #endif
-    ! nn_output = nn_output**2
     do ivar = 1, 4
       do i = 1, nbatch
-        ! nn_output(i,ivar) = nn_output(i,ivar) * ystds(ivar)
+        ! nn_output(i,ivar) = nn_output(i,ivar) * ystds(ivar)  + ymeans(ivar)
         nn_output(i,ivar) = nn_output(i,ivar)**2
       end do
     end do
@@ -2149,11 +2115,30 @@ end subroutine apply_BC_old
 #ifdef USE_TIMING
     ret =  gptlstop('postproc')
 #endif
-    ! print *,"max,min Rdif", maxval(nn_output(:,1)), minval(nn_output(:,1))
-    ! print *,"max,min Tdif", maxval(nn_output(:,2)), minval(nn_output(:,2))
-    ! print *,"max,min  Rdir", maxval(nn_output(:,3)), minval(nn_output(:,3))
-    ! print *,"max,min  Tdir", maxval(nn_output(:,4)), minval(nn_output(:,4))
+    ! print *,"min,max Rdif", minval(nn_output(:,1)), maxval(nn_output(:,1))
+    ! print *,"min,max Tdif", minval(nn_output(:,2)), maxval(nn_output(:,2))
+    ! print *,"min,max  Rdir", minval(nn_output(:,3)), maxval(nn_output(:,3))
+    ! print *,"min,max  Tdir", minval(nn_output(:,4)), maxval(nn_output(:,4))
 
   end subroutine predict_nn_reftrans
+
+
+  function mean_2d(x2) result(mean2)
+    implicit none 
+    real(wp), dimension(:,:), intent(in) :: x2
+    real(wp) :: mean2
+    
+    mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
+  end function mean_2d
+
+  function mae(x1,x2) result(res)
+    implicit none 
+    real(wp), dimension(:,:), intent(in) :: x1,x2
+    real(wp) :: res
+    real(wp), dimension(size(x1,dim=1),size(x1,dim=2)) :: diff 
+    
+    diff = abs(x1 - x2)
+    res = sum(diff)/size(diff)
+  end function mae
 
 end module mo_rte_solver_kernels

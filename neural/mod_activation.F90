@@ -123,7 +123,7 @@ contains
           x(i,j) = x(i,j) + b(j)
           x(i,j) = x(i,j) / (abs(x(i,j)) + 1)
         end do
-      end do
+      end do      
     end if
   end subroutine
 
@@ -173,9 +173,11 @@ contains
       end do
     else 
       !$acc parallel loop collapse(2) default(present)
-      do j = 1, size(x,dim=2)
+      do j = 1, size(x,dim=2), 2
+        !$OMP SIMD
         do i = 1, size(x,dim=1)
-          x(i,j) = x(i,j) + b(j)
+          x(i,j)   = x(i,j)   + b(j)
+          x(i,j+1) = x(i,j+1) + b(j+1)
         end do
       end do
     end if

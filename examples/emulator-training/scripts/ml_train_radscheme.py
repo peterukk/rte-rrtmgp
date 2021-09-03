@@ -31,13 +31,16 @@ import matplotlib.pyplot as plt
 # ----------------------------------------------------------------------------
 
 #  ----------------- File paths -----------------
-fpath       = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds.nc"
-fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds.nc"
-fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+# fpath       = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds.nc"
+fpath       = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2009-2016_clouds_noreftrans.nc"
+fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds_reftrans.nc"
+fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds_reftrans.nc"
 
-fpath       = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
-fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
-fpath_test   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+# fpath       = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
+# fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+# fpath_test   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+
+fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2011-2013_RFMIPstyle.nc"
 
 # ----------- config ------------
 
@@ -77,12 +80,23 @@ else: # if we only have one dataset, split manually
 nx = x_tr_raw.shape[1]
 ny = y_tr_raw.shape[1]   
 
+
+
 if scale_inputs:
     x_tr        = np.copy(x_tr_raw)
     x_val       = np.copy(x_val_raw)
     x_test      = np.copy(x_test_raw)
     
-    x_tr, xmin,xmax = preproc_minmax_inputs(x_tr_raw)
+    fpath_xcoeffs = "../../../neural/data/nn_radscheme_xmin_xmax.txt"
+    xcoeffs = np.loadtxt(fpath_xcoeffs, delimiter=',')
+    xmax = xcoeffs[542:]
+    # xmin = xcoeffs[0:542]
+
+    xmin = np.repeat(0.0, 542)
+
+    
+    x_tr            = preproc_minmax_inputs(x_tr_raw, (xmin, xmax))
+    # x_tr, xmin,xmax = preproc_minmax_inputs(x_tr_raw)
     x_val           = preproc_minmax_inputs(x_val_raw,  (xmin,xmax)) 
     x_test          = preproc_minmax_inputs(x_test_raw, (xmin,xmax)) 
 else:
@@ -92,13 +106,45 @@ else:
     
     
 if scale_outputs: 
-    y_mean = np.zeros(ny)
-    y_sigma = np.zeros(ny)
-    for igpt in range(ny):
-        y_mean[igpt] = y_tr_raw[:,igpt].mean()
-        # y_sigma[igpt] = y_raw[:,igpt].std()
-    # y_mean = np.repeat(y_raw.mean(),ny)
-    y_sigma = np.repeat(y_tr_raw.std(),ny)  # 467.72
+    # y_mean = np.zeros(ny)
+    # y_sigma = np.zeros(ny)
+    # for i in range(ny):
+    #     y_mean[i] = y_tr_raw[:,i].mean()
+    #     # y_sigma[igpt] = y_raw[:,igpt].std()
+    # # y_mean = np.repeat(y_raw.mean(),ny)
+    # y_sigma = np.repeat(y_tr_raw.std(),ny)  # 467.72
+    y_mean = np.array([374.46596068, 374.45956871, 374.45462027, 374.4511992 ,
+       374.45047469, 374.45502195, 374.4680579 , 374.49239519,
+       374.53055628, 374.58516238, 374.65892284, 374.75524611,
+       374.8792801 , 375.03542025, 375.22643646, 375.45378099,
+       375.71533287, 376.00285752, 376.30151249, 376.58998858,
+       376.84997017, 377.06088253, 377.1959924 , 377.2298344 ,
+       377.14753112, 376.9435507 , 376.61342392, 376.0964268 ,
+       375.33952337, 374.26344007, 372.82036231, 370.98542669,
+       368.80749149, 366.3915064 , 363.87406595, 361.26581523,
+       358.59414259, 355.66949237, 352.05744001, 347.27688142,
+       341.25040552, 334.76377694, 328.82791973, 323.08134132,
+       316.79175838, 309.09519245, 299.90917436, 288.99921467,
+       274.59731862, 257.36481124, 240.59263275, 226.58893258,
+       216.13279391, 208.64963063, 203.82791957, 200.9401672 ,
+       199.41826418, 198.6591551 , 198.25545666, 197.94484266,
+       197.83066985, 897.8497014 , 897.56832421, 897.18702832,
+       896.65574775, 895.92692424, 895.01315111, 893.947432  ,
+       892.81558392, 891.67935113, 890.56589866, 889.47075025,
+       888.3641525 , 887.21249947, 885.9978321 , 884.72128377,
+       883.3744413 , 881.95796854, 880.47806976, 878.94735622,
+       877.38503736, 875.785125  , 874.16277448, 872.56365052,
+       871.02421366, 869.54206684, 868.07279715, 866.51043363,
+       864.7201463 , 862.55637703, 859.83278134, 856.37222482,
+       852.03649377, 846.8212828 , 840.8255009 , 834.20929904,
+       826.98212955, 819.20462721, 810.68386777, 800.99420578,
+       789.71007101, 776.9060625 , 763.57679203, 750.85167967,
+       738.33882549, 725.31670556, 710.885572  , 695.07722868,
+       677.67695876, 656.78869705, 633.36680778, 611.07829043,
+       592.37422528, 578.04482565, 567.34107156, 559.94750542,
+       555.05698858, 552.03360581, 550.17168289, 548.97796299,
+       548.11269961, 547.68542119], dtype=np.float32)
+    y_sigma = np.repeat(431.14175665, ny)
 
     nfac = 1
     y_tr    = preproc_pow_gptnorm(y_tr_raw, nfac, y_mean, y_sigma)
@@ -206,13 +252,13 @@ elif (ml_library=='tf-keras'):
     neurons     = [128, 128]  #0.99804565
     neurons     = [64, 64]  # 0.9952047
     neurons     = [128]     # 0.9980413605
-                   
+                    # 0.9996379952819034          
     if use_gpu:
         devstr = '/gpu:0'
         os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
     else:
-        num_cpu_threads = 4
+        num_cpu_threads = 6
         devstr = '/cpu:0'
         # Maximum number of threads to use for OpenMP parallel regions.
         os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
@@ -230,7 +276,7 @@ elif (ml_library=='tf-keras'):
         tf.config.set_soft_device_placement(True)
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     
-    optim = optimizers.Adam(lr=lr)
+    optim = optimizers.Adam(learning_rate=lr)
     
     # Create and compile model
     # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
@@ -257,6 +303,21 @@ elif (ml_library=='tf-keras'):
     
     cc = np.corrcoef(y_test_raw.flatten(), y_pred.flatten())
     diff = np.abs(y_test_raw-y_pred)
-    print("r {} max diff {}".format(cc[0,1],np.max(diff)))
+    rmse = np.sqrt(((y_pred - y_test_raw) ** 2).mean())
     
-    plot_hist2d(y_test_raw,y_pred,20,True)      #  
+    print("r {} max diff {} RMSE {}".format(cc[0,1],np.max(diff), rmse))
+    
+    plot_hist2d(y_test_raw,y_pred,20,True)      # 
+    # MAE 8
+
+    
+    # SAVE MODEL
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/radscheme-128_2.h5"
+
+    savemodel(kerasfile, model)
+    
+    from tensorflow.keras.models import load_model
+    kerasfile = "s/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/radscheme-128.h5"
+    model = tf.lite.TFLiteConverter.from_keras_model(kerasfile)
+    model = load_model(kerasfile,compile=False)
+    

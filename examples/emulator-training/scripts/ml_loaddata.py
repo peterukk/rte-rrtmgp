@@ -209,7 +209,7 @@ def load_inp_outp_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, cl
     # need to reshape mu0 and sfc alb so they are also 3D
     mu0     = np.reshape(mu0,(nexp,ncol,1))
     sfc_alb = np.reshape(sfc_alb,(nexp,ncol,1))
-    
+    print("nx gasopt {} rte {} clouds {}  nlay {}".format(nx, nx_rte, 2, nlay))
     i = 0
     if clouds:
         for iexp in range(nexp):
@@ -415,6 +415,24 @@ def load_inp_outp_reftrans(fname,half_clouds=False):
 
 
 @njit(parallel=True)
+def reftrans_gammas(tau,w0,g,mu0):
+    ns = tau.shape[0]
+
+    gamma1 = np.zeros(ns,dtype=np.float64)
+    gamma2 = np.zeros(ns,dtype=np.float64)
+    gamma3 = np.zeros(ns,dtype=np.float64)
+
+    for i in prange(ns):
+        # Zdunkowski Practical Improved Flux Method "PIFM"
+        #  (Zdunkowski et al., 1980;  Contributions to Atmowpheric Physics 53, 147-66)
+        #
+        gamma1[i]= (8. - w0[i] * (5. + 3. * g[i])) * .25
+        gamma2[i]=  3. *(w0[i] * (1. -      g[i])) * .25
+        gamma3[i]= (2. - 3. * mu0[i] *      g[i] ) * .25
+   
+    return gamma1,gamma2,gamma3
+
+@njit(parallel=True)
 def reftrans(tau,w0,g,mu0):
     ns = tau.shape[0]
 
@@ -571,12 +589,22 @@ def preproc_pow_gptnorm(y, nfac, means,sigma):
     # for production
     (nobs,ngpt) = y.shape
     y_scaled = np.zeros(y.shape,dtype=np.float32)
+    # if ( nfac==1):
+    #     for iobs in range(nobs):
+    #         for igpt in range(ngpt):
+    #             y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
+    # else:
+    #     nfacc = 1/nfac
+    #     for iobs in prange(nobs):
+    #         for igpt in prange(ngpt):
+    #             y_scaled[iobs,igpt] = np.power(y[iobs,igpt],nfacc)
+    #             y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
     nfacc = 1/nfac
     for iobs in prange(nobs):
-        for igpt in prange(ngpt):
-            y_scaled[iobs,igpt] = np.power(y[iobs,igpt],nfacc)
-            y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
-        
+       for igpt in prange(ngpt):
+           y_scaled[iobs,igpt] = np.power(y[iobs,igpt],nfacc)
+           y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
+                
     return y_scaled
 
 @njit(parallel=True)
