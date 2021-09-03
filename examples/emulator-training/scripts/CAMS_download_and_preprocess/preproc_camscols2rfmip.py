@@ -7,7 +7,7 @@ Created on Thu Jul  4 10:43:11 2019
 """
 
 import os
-from netCDF4 import Dataset
+from netCDF4 import Dataset,num2date
 import numpy as np
 this_dir    = os.getcwd() + "/"
 os.chdir(this_dir)
@@ -66,9 +66,9 @@ def qsatGFS(p,T):
     return qs 
 
 # Input data file
-fpath_cams  = root_dir+'data_input/CAMS_2010-2016.nc'
+fpath_cams  = root_dir+'data_input/CAMS_2018.nc'
 # New file
-fpath_new   = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle.nc'
+fpath_new   = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle2.nc'
 print("Saving new file to {}".format(fpath_new))
 # RFMIP file, used to copy attributes and compare
 fpath_rfmip = root_dir+'data_input/multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc'
@@ -120,6 +120,15 @@ hybm = dat_new.createVariable("hybm","f4",("nhym"))
 hyam[:] = dat.variables['hyam'][:]
 hybm[:] = dat.variables['hybm'][:]
 
+# save solar zenith angle
+from sunposition import sunpos
+t_unit =  dat.variables['time'].units
+t_cal  =  dat.variables['time'].calendar
+times = num2date(timedatt,units = t_unit,calendar = t_cal).data
+az,zen = sunpos(times.data,latt,lonn,0)[:2] #discard RA, dec, H
+
+szavar = dat_new.createVariable("solar_zenith_angle","f4",("site"))
+szavar[:] = zen
 
 varlist = []
 for v in dat.variables:
@@ -217,6 +226,7 @@ var_tisr[:] = vars_reshaped['tisr'][:]
 # COMPUTE CLOUD FRACTION
 # First compute relative hum
 q_lay = vars_reshaped['q'].data # mixing ratio
+q_lay[q_lay<0] = 0.0
 rh_lay = mixr2rh(q_lay,p_lay,temp_lay)
 
 # cloud condensate mixing ratio: is this ice and water content combined?

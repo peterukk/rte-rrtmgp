@@ -107,6 +107,11 @@ fpath_tr    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2
 fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds.nc"
 fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds.nc"
 
+fpath       = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
+fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+fpath_test   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
+
+
 # ----------- config ------------
 
 scale_inputs    = True
@@ -123,7 +128,7 @@ use_gpu = False
 # ----------- config ------------
 
 # Load data
-x_tr_raw, y_tr_raw, y_tr_bb = load_inp_outp_rte_sw(fpath_tr)
+x_tr_raw, y_tr_raw, y_tr_bb = load_inp_outp_rte_sw(fpath)
 # y_tr_bb is broadband flux
 
 if (fpath_val != None and fpath_test != None): # If val and test data exists

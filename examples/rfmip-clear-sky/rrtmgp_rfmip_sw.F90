@@ -184,7 +184,7 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_rrtmgp_nn      = .false.
+  use_rrtmgp_nn      = .true.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -199,7 +199,8 @@ program rrtmgp_rfmip_sw
 
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
-  modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt" 
+  modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt"
+
   modelfile_reftrans      = "../../neural/data/reftrans-12-sqrt2.txt" 
   modelfile_reftrans      = "../../neural/data/reftrans-8-8-pow8.txt" 
   modelfile_reftrans      = "../../neural/data/reftrans-12-logtau-sqrt.txt" 
@@ -262,7 +263,7 @@ program rrtmgp_rfmip_sw
   !
   call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
   print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  ! print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
+  print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
   ! --------------------------------------------------
   !
   ! Prepare data for use in rte+rrtmgp
@@ -444,7 +445,7 @@ do i = 1, 4
                                         toa_flux))
     end if
     ! !$acc update host(optical_props%tau, optical_props%ssa, optical_props%g)
-    ! print *, "mean tau", mean_3d(optical_props%tau)
+    print *, "mean tau", mean_3d(optical_props%tau)
     ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
     ! print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
     if (nblocks==1) call system_clock(iTime2)
