@@ -236,8 +236,6 @@ program rrtmgp_rfmip_sw
   do_gpt_flux = .true.
   ! Save fluxes to netCDF file?
   save_flux   = .false.
-  ! Compare fluxes to reference?
-  compare_flux = .true.
 
   print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] (4 args: use reference code) "
   print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [emulated component] ", &
@@ -557,6 +555,7 @@ program rrtmgp_rfmip_sw
         ret =  gptlstop('predict_nn_radscheme_sw')
 #endif
     else
+    
       !
       ! Compute the optical properties of clouds
       !
@@ -853,6 +852,13 @@ program rrtmgp_rfmip_sw
     integer :: igas, ilay, icol, ndims, idx_h2o, idx_o3, idx_gas, i
     character(len=32)                           :: gas_name    
     real(wp),       dimension(nlay,ncol)        :: vmr
+    real(sp),       dimension(:), allocatable   :: xmin, xmax
+
+    !  Neural network inputs are a vector consisting of temperature and pressure followed by gas concentrations
+    ! These inputs are scaled to a range of (0-1), additionally some are power or log scaled: 
+    ! The inputs are:   tlay,    log(play),   h2o**(1/4), o3**(1/4), co2, ..
+    xmin = nn_input_minvals
+    xmax = nn_input_maxvals
 
     ! First lets write temperature, pressure, water vapor and ozone into the inputs
     ! These are assumed to always be present!
