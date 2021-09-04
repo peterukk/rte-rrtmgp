@@ -119,6 +119,10 @@ else:
 
 if balance_samples: frac = frac * 1.2
 
+inds_keep = (y_tr_raw[:,0]>0.4) | (y_tr_raw[:,2]>0.4)
+xx = x_tr_raw[inds_keep,:]
+yy = y_tr_raw[inds_keep,:]
+
 nrows       = x_tr_raw.shape[0]
 inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
 x_tr_raw = x_tr_raw[inds_rand,:]; y_tr_raw = y_tr_raw[inds_rand,:]
@@ -131,6 +135,8 @@ x_test_raw  = x_test_raw[inds_rand,:]; y_test_raw = y_test_raw[inds_rand,:]
 
 print( "{:e} training samples remain after trimming".format(x_tr_raw.shape[0]))
 
+x_tr_raw = np.concatenate((x_tr_raw,xx),axis=0)
+y_tr_raw = np.concatenate((y_tr_raw,yy),axis=0)
 
 if synthetic_data_supplement:
     minmax_ssa  = (0.0, 1.0)
@@ -502,7 +508,9 @@ elif (ml_library=='tf-keras'):
 
 
     # First hidden layer (input layer) activation
-    activ0      = 'softsign'
+    # activ0      = 'softsign'
+    activ0      = 'relu'
+
     # Activation in other hidden layers
     activ       =  activ0
     
@@ -524,8 +532,8 @@ elif (ml_library=='tf-keras'):
     # lr          = 0.0001 
     # batch_size  = 512
     batch_size  = 1024
-    # neurons     = [16,16]
-    neurons     = [8,8] # not quite fast enough, but accurate
+    neurons     = [16,16]
+    # neurons     = [8,8] # not quite fast enough, but accurate
     # neurons     = [16]
     # neurons     = [4,4] # nope
     # neurons = [8]
@@ -545,6 +553,7 @@ elif (ml_library=='tf-keras'):
     # lossfunc = mae_weights # pretty ok
     # lossfunc = mae_weights2
     # lossfunc = mae_sine_and_y_weight
+    # lossfunc = mse_sineweight_nfac2
     
     optim = optimizers.Adam(lr=lr)
     
