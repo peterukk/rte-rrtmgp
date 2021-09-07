@@ -20,11 +20,44 @@ Contributions welcome!
 
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten,Input
+from tensorflow.keras import losses, optimizers
 # from keras.models import Sequential
 # from keras.layers import Dense, Dropout, Activation, Flatten,Input
 import numpy as np
 import h5py
 import tensorflow.keras.backend as K
+import optuna
+
+# 1. Define an objective function to be maximized.
+def create_model_hyperopt(trial, nx, ny):
+    model = Sequential()
+    
+    # We define our MLP.
+    # number of hidden layers
+    n_layers = trial.suggest_int("n_layers", 1, 3)
+    model = Sequential()
+    # Input layer
+    activ0 = trial.suggest_categorical('activation', ['relu', 'softsign'])
+    num_hidden0 = trial.suggest_int("n_neurons_l0_l", 64, 256)
+    model.add(Dense(num_hidden0, input_dim=nx, activation=activ0))
+     
+    for i in range(1, n_layers):
+         num_hidden = trial.suggest_int("n_neurons_l{}".format(i), 64, 256)
+         activ =trial.suggest_categorical('activation', ['relu', 'softsign']),
+         model.add(Dense(num_hidden, activation=activ))
+         
+    # output layer
+    model.add(Dense(ny, activation='linear'))
+    
+    # We compile our model with a sampled learning rate.
+    lr = trial.suggest_loguniform('lr', 1e-5, 1e-1)
+    lossfunc    = losses.mean_squared_error
+    model.compile(
+        loss=lossfunc, 
+        optimizer=optimizers.Adam(learning_rate=lr),
+        metrics   = ['mean_absolute_error'],
+        )
+    return model
 
 def mse_weights(y_true,y_pred):
     wg = np.array([2.0, 1.0, 2.0, 2.0], dtype=np.float32)
