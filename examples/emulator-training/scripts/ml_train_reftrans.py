@@ -58,7 +58,7 @@ balance_samples = True
 # generating corresponding outputs on the fly? For REFTRANS computations this 
 # is very doable because there's only 4 inputs; additionally the 
 # reftrans routine can easily be coded in Python
-synthetic_data_supplement = False
+synthetic_data_supplement = True
 
 # Add no-scattering transmittance as a NN input?
 add_Tnoscat = True
@@ -262,7 +262,6 @@ if scale_inputs:
     # if use_gammas:
     #     xmin = np.array([-20.723267,  0.,  0.40,  0.0,   1.356e-01,  0.0])
     #     xmax = np.array([11.91744,    1. , 2. ,   0.75,  0.5 ,       1.  ])
-       
     # else:
     #     if add_Tnoscat:
     #         xmin = np.array([-20.723267, 0, 0, 0, 0])
@@ -368,7 +367,7 @@ if plot_distributions:
     i = 0
     for ix in range(2):
         for iy in range(2):
-            ax[ix,iy].hist(x_tr[:,i])
+            ax[ix,iy].hist(x_tr[:,i]**(1/2.0))
             ax[ix,iy].set_yscale('log')
             ax[ix,iy].set_title("{}".format(xvars[i]))
             
@@ -508,8 +507,8 @@ elif (ml_library=='tf-keras'):
 
 
     # First hidden layer (input layer) activation
-    # activ0      = 'softsign'
-    activ0      = 'relu'
+    activ0      = 'softsign'
+    # activ0      = 'relu'
 
     # Activation in other hidden layers
     activ       =  activ0
@@ -542,9 +541,9 @@ elif (ml_library=='tf-keras'):
     # lr          = 0.01
     # lossfunc    = losses.binary_crossentropy
     
-    lossfunc = losses.mean_absolute_error
-    valfunc     = 'val_mean_squared_error'
-    mymetrics   = ['mean_squared_error']
+    # lossfunc = losses.mean_absolute_error
+    # valfunc     = 'val_mean_squared_error'
+    # mymetrics   = ['mean_squared_error']
 
     # lossfunc = mse_sineweight
     # valfunc     = 'val_loss'
@@ -596,7 +595,7 @@ elif (ml_library=='tf-keras'):
   
     # ----- SAVE MODEL ------
     # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-mse-hardsig.h5"
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-tmp.h5"
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-16-16-mse.h5"
 
     # kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-std.h5"
     savemodel(kerasfile, model)
