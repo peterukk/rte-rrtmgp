@@ -199,7 +199,7 @@ program rrtmgp_rfmip_sw
   !
   ! various logical to control program
   logical :: use_rrtmgp_nn=.false., use_rte_nn=.false., use_rtegpt_nn=.false., use_reftrans_nn = .false., use_rte_rrtmgp_nn =.false.
-  logical :: include_clouds=.true., compare_flux=.false., save_inputs_outputs = .false., do_gpt_flux, save_flux
+  logical :: include_clouds=.true., compare_flux=.true., save_inputs_outputs = .false., do_gpt_flux, save_flux
   !
   ! Derived types from the RTE and RRTMGP libraries
   !

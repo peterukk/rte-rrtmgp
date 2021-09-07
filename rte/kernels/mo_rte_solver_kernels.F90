@@ -548,7 +548,13 @@ contains
     real(wp), dimension(ngpt,nlay) :: source_up, source_dn
     real(wp), dimension(ngpt     ) :: source_srf
     logical(wl) :: save_gpt_flux = .false.
+    logical(wl) :: compare_reftrans = .false.
+    real(wp), dimension(:,:,:,:), allocatable :: reftrans_true, reftrans_pred
     ! ------------------------------------
+
+    if (compare_reftrans) then
+      allocate(reftrans_true(ngpt,nlay,ncol,4), reftrans_pred(ngpt,nlay,ncol,4))
+    end if
 
     top_level = MERGE(1, nlay+1, top_at_1)
 
@@ -609,32 +615,44 @@ contains
       if (present(neural_net)) then
         Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
        ! call NN code to predict other reftrans variables
-       call predict_nn_reftrans(nlay, ngpt,  &
+       call predict_nn_reftrans(nlay, ngpt, &
                 neural_net,         &
                 tau(:,:,icol), ssa(:,:,icol), g(:,:,icol), Tnoscat, mu0(icol), &
                 nn_output)
-        ! call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-        !         tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-        !         Rdif_arr, Tdif_arr, Rdir_arr, Tdir_arr, Tnoscat)
+
+        if (compare_reftrans) then
+          call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+          Rdif_arr, Tdif_arr, Rdir_arr, Tdir_arr, Tnoscat)
+
+          reftrans_true(:,:,icol,1) = Rdif_arr
+          reftrans_true(:,:,icol,2) = Tdif_arr
+          reftrans_true(:,:,icol,3) = Rdir_arr
+          reftrans_true(:,:,icol,4) = Tdir_arr
+          reftrans_pred(:,:,icol,1) = Rdif
+          reftrans_pred(:,:,icol,2) = Tdif
+          reftrans_pred(:,:,icol,3) = Rdir
+          reftrans_pred(:,:,icol,4) = Tdir
         ! print *, "mae Rdif", mae(Rdif_arr,Rdif), "Tdif", mae(Tdif_arr,Tdif), "Rdir", mae(Rdir_arr,Rdir), "Tdir", mae(Tdir_arr,Tdir)
         
         ! print *, "maxdiff Rdif", maxval(abs(Rdif_arr-Rdif)), "Tdif", maxval(abs(Tdif_arr-Tdif)), &
         !   "Rdir", maxval(abs(Rdir_arr-Rdir)), "Tdir", maxval(abs(Tdir_arr-Tdir))
         ! print *, "bias Rdif", mean_2d(Rdif_arr-Rdif), "Tdif", mean_2d(Tdif_arr-Tdif), "Rdir", mean_2d(Rdir_arr-Rdir), "Tdir", mean_2d(Tdir_arr-Tdir)
-        ! Rdif = Rdif_arr
-        ! Tdif = Tdif_arr
-        ! Rdir = Rdir_arr
-        ! Tdir = Tdir_arr
-        ! if (icol==1) then 
-          ! print *, "pred", Rdif(1,1), Tdif(1,1), Rdir(1,1), Tdir(1,1)
-          ! print *, "pred1", Rdif(ngpt,1), Tdif(ngpt,1), Rdir(ngpt,1), Tdir(ngpt,1)
-          ! print *, "pred2", Rdif(ngpt,nlay), Tdif(ngpt,nlay), Rdir(ngpt,nlay), Tdir(ngpt,nlay)
+        ! if (icol < 3) then 
+        !   print *, "pred", Rdif(1,1), Tdif(1,1), Rdir(1,1), Tdir(1,1)
+        !   print *, "pred1", Rdif(ngpt,1), Tdif(ngpt,1), Rdir(ngpt,1), Tdir(ngpt,1)
+        !   print *, "pred2", Rdif(ngpt,nlay), Tdif(ngpt,nlay), Rdir(ngpt,nlay), Tdir(ngpt,nlay)
 
           ! print *, "true", Rdif_arr(1,1), Tdif_arr(1,1), Rdir_arr(1,1), Tdir_arr(1,1)
           ! print *, "true1", Rdif_arr(ngpt,1), Tdif_arr(ngpt,1), Rdir_arr(ngpt,1), Tdir_arr(ngpt,1)
           ! print *, "true2", Rdif_arr(ngpt,nlay), Tdif_arr(ngpt,nlay), Rdir_arr(ngpt,nlay), Tdir_arr(ngpt,nlay)
-
         ! end if
+        ! Rdif = Rdif_arr
+        ! Tdif = Tdif_arr
+        ! Rdir = Rdir_arr
+        ! Tdir = Tdir_arr
+        end if
+
       else
         call sw_two_stream(ngpt, nlay, mu0(icol),                                &
                           tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
@@ -691,6 +709,23 @@ contains
     ret =  gptlstop('sum_broadband_nocol')
 #endif    
     end do
+
+    if (compare_reftrans) then
+        print *, "mae Rdif",  mae_3d(reftrans_true(:,:,:,1),reftrans_pred(:,:,:,1))
+        print *, "Tdif",      mae_3d(reftrans_true(:,:,:,2),reftrans_pred(:,:,:,2))
+        print *, "Rdir",      mae_3d(reftrans_true(:,:,:,3),reftrans_pred(:,:,:,3))
+        print *, "Tdir",      mae_3d(reftrans_true(:,:,:,4),reftrans_pred(:,:,:,4))
+
+        print *, "bias Rdif",  mean_3d(reftrans_true(:,:,:,1)) - mean_3d(reftrans_pred(:,:,:,1))
+        print *, "Tdif",      mean_3d(reftrans_true(:,:,:,2)) - mean_3d(reftrans_pred(:,:,:,2))
+        print *, "Rdir",      mean_3d(reftrans_true(:,:,:,3)) - mean_3d(reftrans_pred(:,:,:,3))
+        print *, "Tdir",      mean_3d(reftrans_true(:,:,:,4)) - mean_3d(reftrans_pred(:,:,:,4))
+
+        print *, "maxdiff Rdif",  maxval(abs(reftrans_true(:,:,:,1)) - reftrans_pred(:,:,:,1))
+        print *, "Tdif",      maxval(abs(reftrans_true(:,:,:,2)) - reftrans_pred(:,:,:,2))
+        print *, "Rdir",      maxval(abs(reftrans_true(:,:,:,3)) - reftrans_pred(:,:,:,3))
+        print *, "Tdir",      maxval(abs(reftrans_true(:,:,:,4)) - reftrans_pred(:,:,:,4))
+    end if
 
   end subroutine sw_solver_2stream
   ! -------------------------------------------------------------------------------------------------
@@ -1996,7 +2031,7 @@ end subroutine apply_BC_old
 
   end subroutine sw_two_stream_scalar
 
-  subroutine predict_nn_reftrans(nlay, ngpt,  &
+  subroutine predict_nn_reftrans(nlay, ngpt, &
                                 neural_net,         &
                                 tau, ssa, g, Tnoscat, mu0, &
                                 nn_output &
@@ -2013,7 +2048,7 @@ end subroutine apply_BC_old
     !                             intent(out), target     :: Rdif,Tdif,Rdir,Tdir
     real(sp), dimension(ngpt*nlay,4), intent(out)      :: nn_output
     ! local vars
-    integer :: nbatch, i, ivar, icol, ilay, igpt, j, k
+    integer :: nbatch, i, ivar, ilay, igpt, j, k
     real(sp), dimension(ngpt*nlay,5)    :: nn_input
 
     ! after log scaling tau: min max scaling 
@@ -2021,8 +2056,8 @@ end subroutine apply_BC_old
     ! real(sp), dimension(5)    :: xmax =  (/ 9.0,  1.0,  1.0,  1.0, 1.0 /)
 
     ! sqrt4
-    real(sp), dimension(5)    :: xmin =  (/ 0.0,  0.0, 0.0, 0.0,  0.0 /)
-    real(sp), dimension(5)    :: xmax =  (/ 13.05,1.0, 0.8, 1.0,  1.0 /)
+    real(sp), dimension(5)    :: xmin =  (/ 0.0,   0.0, 0.0, 0.0,  0.0 /)
+    real(sp), dimension(5)    :: xmax =  (/ 13.05, 1.0, 0.8, 1.0,  1.0 /)
 
 
     ! nfac2
@@ -2033,22 +2068,11 @@ end subroutine apply_BC_old
     ! real(sp), dimension(4)    :: ymeans = (/ 0.0, 0.0, 0.0, 0.0 /)
     ! real(sp), dimension(4)    :: ystds = (/ 0.15692602, 0.42003798, 0.17412843, 0.18447757/)
 
-    ! nfac4
-    ! real(sp), dimension(4)    :: ystds = (/ 0.3415382, 0.3415382, 0.3415382, 0.3415382 /)
-    ! real(sp), dimension(4)    :: ymeans = (/0.20413001, 0.74772155, 0.21873595, 0.22002678 /)
-
     !nfac1
     ! real(sp), dimension(4)    :: ystds = (/ 0.08930878, 0.43197197, 0.10786474, 0.12255082/)
     ! real(sp), dimension(4)    :: ymeans = (/ 0.03724393, 0.58150858, 0.04533824, 0.04622386 /)
 
-    ! real(sp), dimension(6)    :: xmin =  (/ -20.723267,  0.,  4.0157e-01,  0.0,   1.356e-01,  0.0 /)
-    ! real(sp), dimension(6)    :: xmax =  (/ 11.91744,    1. , 2. ,         0.75,  0.5 ,       1.  /)
-    ! real(sp), dimension(4)    :: ystds = (/ 1.068713665008544922e-01, 3.954977393150329590e-01, &
-    ! 1.308900862932205200e-01, 1.513165533542633057e-01/)
-    ! real(sp), dimension(ngpt*nlay,6)    :: nn_input
-    ! real(sp), dimension(ngpt*nlay)    :: gamma1, gamma2, gamma3
-    ! real(sp), dimension(:), contiguous, pointer     :: input
-    ! nobs = nlay*ncol
+    ! real(sp), dimension(:), contiguous, pointer     :: tau_1D, ssa_1D, g_1D
     
 #ifdef USE_TIMING
     ret =  gptlstart('prep_input')
@@ -2058,32 +2082,21 @@ end subroutine apply_BC_old
 #ifdef USE_TIMING
     ret =  gptlstart('log')
 #endif
-      ! nn_input(1:nbatch,1) = (log(reshape(tau,(/nbatch/))) - xmin(1))  / (xmax(1) - xmin(1))
-    nn_input(1:nbatch,1) =  reshape(tau,(/nbatch/))
-    nn_input(1:nbatch,1) =  sqrt(sqrt(nn_input(1:nbatch,1)))
-    nn_input(1:nbatch,1) = (nn_input(1:nbatch,1) - xmin(1))  / (xmax(1) - xmin(1))
+      ! nn_input(:,1) = (log(reshape(tau,(/nbatch/))) - xmin(1))  / (xmax(1) - xmin(1))
+    ! call C_F_POINTER (C_LOC(tau), tau_1D, [nbatch])
+    ! call C_F_POINTER (C_LOC(ssa), ssa_1D, [nbatch])
+    ! call C_F_POINTER (C_LOC(g),   g_1D, [nbatch])
+
+    ! nn_input(:,1) =  reshape(tau,(/nbatch/))
+    nn_input(:,1) =  sqrt(sqrt(reshape(tau,(/nbatch/))))
+    nn_input(:,1) = nn_input(:,1)  / xmax(1)
 #ifdef USE_TIMING
     ret =  gptlstop('log')
 #endif
-      nn_input(1:nbatch,2) = reshape(ssa, (/nbatch/))
-      nn_input(1:nbatch,3) = reshape(g, (/nbatch/))
-      nn_input(1:nbatch,4) = mu0
-      nn_input(1:nbatch,5) = reshape(Tnoscat, (/nbatch/))
-
-      ! k = 1
-      ! do j = 1, nlay
-      !   do i = 1, ngpt
-      !     gamma1(k)= (8._wp - ssa(i,j) * (5._wp + 3._wp * g(i,j))) * .25_wp
-      !     gamma2(k)=  3._wp *(ssa(i,j) * (1._wp -         g(i,j))) * .25_wp
-      !     gamma3(k)= (2._wp - 3._wp * mu0 *               g(i,j) ) * .25_wp
-      !     k = k + 1
-      !   end do
-      ! end do
-      ! nn_input(1:nbatch,2) = reshape(ssa, (/nbatch/))
-      ! nn_input(1:nbatch,3) = (gamma1 - xmin(3)) / (xmax(3) - xmin(3))
-      ! nn_input(1:nbatch,4) = (gamma2 - xmin(4)) / (xmax(4) - xmin(4))
-      ! nn_input(1:nbatch,5) = (gamma3 - xmin(5)) / (xmax(5) - xmin(5))
-      ! nn_input(1:nbatch,6) = reshape(Tnoscat, (/nbatch/))
+      nn_input(:,2) = reshape(ssa, (/nbatch/))
+      nn_input(:,3) = reshape(g, (/nbatch/)) / xmax(3)
+      nn_input(:,4) = mu0
+      nn_input(:,5) = reshape(Tnoscat, (/nbatch/))
 
 #ifdef USE_TIMING
     ret =  gptlstop('prep_input')
@@ -2111,7 +2124,7 @@ end subroutine apply_BC_old
       end do
     end do
 
-    nn_output = min(1.0_wp, nn_output)
+    ! nn_output = min(1.0_wp, nn_output)
 #ifdef USE_TIMING
     ret =  gptlstop('postproc')
 #endif
@@ -2128,7 +2141,7 @@ end subroutine apply_BC_old
     real(wp), dimension(:,:), intent(in) :: x2
     real(wp) :: mean2
     
-    mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
+    mean2 = sum(x2) / (size(x2))
   end function mean_2d
 
   function mae(x1,x2) result(res)
@@ -2140,5 +2153,23 @@ end subroutine apply_BC_old
     diff = abs(x1 - x2)
     res = sum(diff)/size(diff)
   end function mae
+
+  function mean_3d(x2) result(mean2)
+    implicit none 
+    real(wp), dimension(:,:,:), intent(in) :: x2
+    real(wp) :: mean2
+    
+    mean2 = sum(x2) / (size(x2))
+  end function mean_3d
+
+  function mae_3d(x1,x2) result(res)
+    implicit none 
+    real(wp), dimension(:,:,:), intent(in) :: x1,x2
+    real(wp) :: res
+    real(wp), dimension(size(x1,dim=1),size(x1,dim=2),size(x1,dim=3)) :: diff 
+    
+    diff = abs(x1 - x2)
+    res = sum(diff)/size(diff)
+  end function mae_3d
 
 end module mo_rte_solver_kernels
