@@ -27,5 +27,6 @@ ncks -A -v pressure tmp/tmp.nc tmp/CAMS_${year}.nc
 ncatted -h -a history,global,d,, tmp/CAMS_${year}.nc
 ncatted -h -a history_of_appended_files,global,d,, tmp/CAMS_${year}.nc
 
-
-rm tmp/tmp*.nc
+if test -f "tmp/CAMS_${year}.nc"; then
+    rm tmp/tmp*.nc
+fi

@@ -55,6 +55,9 @@ ml_library = 'tf-keras'
 # Model training: use GPU or CPU?
 use_gpu = False
 
+# Tune hyperparameters using KerasTuner?
+tune_params = True
+
 # ----------- config ------------
 
 # Load data
@@ -219,6 +222,8 @@ if (ml_library=='pytorch'):
 
 # TENSORFLOW-KERAS TRAINING
 elif (ml_library=='tf-keras'):
+    if tune_params:
+        import optuna
     import tensorflow as tf
     from tensorflow.keras import losses, optimizers
     from tensorflow.keras.callbacks import EarlyStopping
@@ -236,7 +241,6 @@ elif (ml_library=='tf-keras'):
     # Activation for last layer
     activ_last   = 'linear'
     # activ_last   = 'relu'
-
 
     epochs      = 100000
     patience    = 25
@@ -279,11 +283,16 @@ elif (ml_library=='tf-keras'):
     optim = optimizers.Adam(learning_rate=lr)
     
     # Create and compile model
-    # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
-    #                          activ_last = activ_last, kernel_init='he_uniform')
-    model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
-                             activ_last = activ_last, kernel_init='lecun_uniform')
-    model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
+    if tune_params:
+        # 3. Create a study object and optimize the objective function.
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=100)
+    else:
+        # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+        #                          activ_last = activ_last, kernel_init='he_uniform')
+        model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+                                 activ_last = activ_last, kernel_init='lecun_uniform')
+        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
     model.summary()
     
     # Create earlystopper and possibly other callbacks
