@@ -37,9 +37,9 @@ warnings.filterwarnings("ignore")
 # fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
 # fpath  ='/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc'
 
-fpath_tr    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds_reftrans.nc"
-fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds_reftrans.nc"
-fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds_reftrans.nc"
+fpath_tr    = "/media/peter/samsung/data/CAMS/ml_training/REFTRANS_data_g224_CAMS_2009-2018_sans_2014-2015_RND.nc"
+fpath_val   = "/media/peter/samsung/data/CAMS/ml_training/REFTRANS_data_g224_CAMS_2014_RND.nc"
+fpath_test  = "/media/peter/samsung/data/CAMS/ml_training/REFTRANS_data_g224_CAMS_2015_RND.nc"
 
 # fpath_tr    = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
 # fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
@@ -58,7 +58,7 @@ balance_samples = True
 # generating corresponding outputs on the fly? For REFTRANS computations this 
 # is very doable because there's only 4 inputs; additionally the 
 # reftrans routine can easily be coded in Python
-synthetic_data_supplement = True
+synthetic_data_supplement = False
 
 # Add no-scattering transmittance as a NN input?
 add_Tnoscat = True
@@ -78,7 +78,6 @@ use_gpu = False
 plot_eval = True
 
 # ----------- config ------------
-
 
 # LOAD DATA
 x_tr_raw,   y_tr_raw    = load_inp_outp_reftrans(fpath_tr, balance_samples)
@@ -112,31 +111,33 @@ else: # if we only have one dataset, split manually
 
 # lets extract random samples
 if synthetic_data_supplement:
-    frac = 0.1
+    frac = 0.10
 else:
-    frac = 0.25
+    frac = 0.15
 
 
-if balance_samples: frac = frac * 1.2
 
-inds_keep = (y_tr_raw[:,0]>0.4) | (y_tr_raw[:,2]>0.4)
-xx = x_tr_raw[inds_keep,:]
-yy = y_tr_raw[inds_keep,:]
+def extract_random_samples(x,y,frac):
+    nrows       = x.shape[0]
+    nkeep       = np.int(frac*nrows)
+    
+    inds_rare   = (y[:,0]>0.4) | (y[:,2]>0.4)
+    inds_rare   = np.where(inds_rare)[0]
+    
+    inds        = np.random.default_rng().choice(nrows, nkeep, replace=False)
+    inds_keep   = np.concatenate((inds,inds_rare))
+    inds_keep.sort()
 
-nrows       = x_tr_raw.shape[0]
-inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
-x_tr_raw = x_tr_raw[inds_rand,:]; y_tr_raw = y_tr_raw[inds_rand,:]
-nrows       = x_val_raw.shape[0]
-inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(frac*nrows),replace=False))
-x_val_raw   = x_val_raw[inds_rand,:]; y_val_raw = y_val_raw[inds_rand,:]
-nrows       = x_test_raw.shape[0]
-inds_rand   = np.sort(np.random.choice(np.arange(nrows),np.int(0.2*frac*nrows),replace=False))
-x_test_raw  = x_test_raw[inds_rand,:]; y_test_raw = y_test_raw[inds_rand,:]
+    x = x[inds_keep,:]
+    y = y[inds_keep,:]
+    return x,y
+
+x_tr_raw,   y_tr_raw    = extract_random_samples(x_tr_raw, y_tr_raw, frac)
+x_val_raw,  y_val_raw   = extract_random_samples(x_val_raw, y_val_raw, frac)
+x_test_raw, y_test_raw  = extract_random_samples(x_test_raw, y_test_raw, 0.33*frac)
 
 print( "{:e} training samples remain after trimming".format(x_tr_raw.shape[0]))
 
-x_tr_raw = np.concatenate((x_tr_raw,xx),axis=0)
-y_tr_raw = np.concatenate((y_tr_raw,yy),axis=0)
 
 if synthetic_data_supplement:
     minmax_ssa  = (0.0, 1.0)
@@ -145,7 +146,7 @@ if synthetic_data_supplement:
 
     # The observed distribution has mostly small tau values
     minmax_tau  = (0.1, 20.0)
-    nsamples    = np.int(5e5)
+    nsamples    = np.int(16)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                 minmax_mu0)
     x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
@@ -153,7 +154,7 @@ if synthetic_data_supplement:
     
     # Clear-sky conditions: g is zero
     minmax_tau  = (1e-09, 120000.00)
-    nsamples = np.int(5e5)
+    nsamples = np.int(1e6)
     minmax_g    = None
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
@@ -164,7 +165,7 @@ if synthetic_data_supplement:
     minmax_ssa  = (0.35, 1.0)
     minmax_tau  = (1e-3, 100.0)
     minmax_g    = (0.4, 0.8)
-    nsamples    = np.int(5e5)
+    nsamples    = np.int(3e6)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
     x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
@@ -176,7 +177,7 @@ if synthetic_data_supplement:
     minmax_g    = (0.6, 0.9)
     minmax_mu0  = (0.9, 1.0)
 
-    nsamples    = np.int(5e5)
+    nsamples    = np.int(2e6)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0)
     x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
@@ -196,16 +197,7 @@ if add_Tnoscat:
     tnoscat = np.exp(-x_test_raw[:,0]* (1/x_test_raw[:,3]))
     x_test_raw = np.hstack((x_test_raw,np.reshape(tnoscat,(x_test_raw.shape[0],1)))) 
     
-# Number of inputs and outputs    
-nx = x_tr_raw.shape[1]
-ny = y_tr_raw.shape[1]    
-    
-# Ensure outputs are positive 
-y_tr_raw[y_tr_raw<0.0] = 0.0
-y_val_raw[y_val_raw<0.0] = 0.0
-y_test_raw[y_test_raw<0.0] = 0.0
-
-
+# Add gammas as input if requested
 use_gammas = False
 if use_gammas:
     # xvars = ['tau scaled','ssa', 'g',    'mu']
@@ -230,8 +222,14 @@ if use_gammas:
     x_val_raw[:,2]  = gamma1_val; x_val_raw[:,3] = gamma2_val; x_val_raw[:,4] = gamma3_val
     x_test_raw[:,2] = gamma1_test; x_test_raw[:,3] = gamma2_test; x_test_raw[:,4] = gamma3_test
 
-
-
+# Number of inputs and outputs    
+nx = x_tr_raw.shape[1]
+ny = y_tr_raw.shape[1]    
+    
+# Ensure outputs are positive 
+y_tr_raw[y_tr_raw<0.0] = 0.0
+y_val_raw[y_val_raw<0.0] = 0.0
+y_test_raw[y_test_raw<0.0] = 0.0
 
 if scale_inputs:
     x_tr        = np.copy(x_tr_raw)
@@ -244,14 +242,14 @@ if scale_inputs:
     x_val[:,0]  = x_val[:,0]**(1/nfac_tau) 
     x_test[:,0] = x_test[:,0]**(1/nfac_tau) 
     if add_Tnoscat:
-        xmin = np.array([0.0,0,0,0,0])
+        xmin = np.array([0, 0, 0, 0, 0])
         # xmax = np.array([18.5,1,1,1,1])
         # xmax = np.array([13.05,1,1,1,1])
-        xmax = np.array([13.05,1,0.8,1,1])
+        xmax = np.array([13.05, 1, 1, 1, 1])
 
     else:
         xmin = np.array([0.0,0,0,0])
-        xmax = np.array([18.5,1,1,1])
+        xmax = np.array([13.05, 1, 1, 1])
 
     # log scaling instead 
     # nfac_tau = 1
@@ -260,7 +258,7 @@ if scale_inputs:
     # x_test[:,0] = np.log(x_test[:,0])
     
     # if use_gammas:
-    #     xmin = np.array([-20.723267,  0.,  0.40,  0.0,   1.356e-01,  0.0])
+    #     xmin = np.array([-20.723267,  0.,  0.07535875,  0.0,   -0.174691384,  0.0])
     #     xmax = np.array([11.91744,    1. , 2. ,   0.75,  0.5 ,       1.  ])
     # else:
     #     if add_Tnoscat:
@@ -329,12 +327,6 @@ if scale_outputs:
     # y_mean =  np.array([0.11233056, 0.63645709, 0.12254605, 0.11041685], 
     #                     dtype=np.float32)
     
-    # nfac4, single sigma
-    # y_sigma = np.array([0.34153819, 0.34153819, 0.34153819, 0.34153819], 
-    #                     dtype=np.float32)
-    # y_mean =  np.array([0.20413001, 0.74772155, 0.21873595, 0.22002678], 
-    #                     dtype=np.float32)
-    
     #nfac1 
     # y_sigma = np.array([0.08930878, 0.43197197, 0.10786474, 0.12255082], 
     #                     dtype=np.float32)
@@ -391,25 +383,26 @@ if (ml_library=='pytorch'):
     import torch
     import pytorch_lightning as pl
     from torch.utils.data import DataLoader, TensorDataset
-    from ml_trainfuncs_pytorch import MLP#, MLP_cpu
+    from ml_trainfuncs_pytorch import MLP, MLP_cpu
     os.environ['MKL_THREADING_LAYER'] = 'GNU'
 
     lr          = 0.001
     batch_size  = 1024
-    nneur       = 12
+    # nneur       = 12
+    # mymodel = nn.Sequential(
+    #       nn.Linear(nx, nneur),
+    #       nn.Softsign(), # first hidden layer
+    #       nn.Linear(nneur, ny),
+    #       nn.ReLU()
+    #     )
+    nneur = 8
     mymodel = nn.Sequential(
           nn.Linear(nx, nneur),
           nn.Softsign(), # first hidden layer
-          nn.Linear(nneur, ny),
-          nn.ReLU()
+          nn.Linear(nneur, nneur),
+          nn.ReLU(), # second hidden layer
+          nn.Linear(nneur, ny)
         )
-#    mymodel = nn.Sequential(
-#          nn.Linear(nx, nneur),
-#          nn.Softsign(), # first hidden layer
-#          nn.Linear(nneur, nneur),
-#          nn.ReLU(), # second hidden layer
-#          nn.Linear(nneur, ny)
-#        )predict_nn_re
     
     x_tr_torch = torch.from_numpy(x_tr); y_tr_torch = torch.from_numpy(y_tr)
     data_tr  =  TensorDataset(x_tr_torch,y_tr_torch)
@@ -421,15 +414,16 @@ if (ml_library=='pytorch'):
     data_test    = TensorDataset(x_test_torch,y_test_torch)
     
     mlp = MLP(nx=nx,ny=ny,learning_rate=lr,SequentialModel=mymodel)
+    mlp = MLP_cpu(nx=nx,ny=ny,learning_rate=lr,SequentialModel=mymodel)
 
     mc = pl.callbacks.ModelCheckpoint(monitor='val_loss',every_n_epochs=2)
     
     if use_gpu:
         trainer = pl.Trainer(gpus=0, deterministic=True)
     else:
-        num_cpu_threads = 8
+        num_cpu_threads = 6
         trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
-                num_processes=  num_cpu_threads) 
+                num_processes=  num_cpu_threads)
                 #plugins=pl.plugins.DDPPlugin(find_unused_parameters=False))
     
     trainer.fit(mlp, train_dataloader=DataLoader(data_tr,batch_size=batch_size), 
@@ -468,27 +462,19 @@ elif (ml_library=='tf-keras'):
     from tensorflow.keras import losses, optimizers
     from tensorflow.keras.callbacks import EarlyStopping
     from ml_trainfuncs_keras import create_model_mlp, savemodel, mse_weights, \
-      mae_weights2, mse_sineweight, mse_sigweight, mae_weights, mse_sineweight_nfac2
-    
-    # switch from GPU to CPU
-    # from tensorflow.python.eager import context
-    # _ = tf.Variable([1])
-    # context._context = None
-    # context._create_context()
-    # # my_devices = tf.config.experimental.list_physical_devices(device_type='CPU')
-    # # tf.config.experimental.set_visible_devices(devices= my_devices, device_type='CPU')
-    # tf.config.experimental.set_visible_devices([], 'GPU')
-    # device_lib.list_local_devices()
-    
-    
+      mae_weights2, mse_sineweight, mse_sigweight, mae_weights, \
+          mse_sineweight_nfac2, mse_sineweight_nfac2_2, mse_sineweight_nfac2_3
+    import tensorflow.keras.backend as K
+
+    # Set up training hardware
     if use_gpu:
         devstr = '/gpu:0'
-        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
     else:
-        num_cpu_threads = 6
+        num_cpu_threads = 12
         devstr = '/cpu:0'
-        # Maximum number of threads to use for OpenMP parallel regions.
+        # # Maximum number of threads to use for OpenMP parallel regions.
         os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
         # Without setting below 2 environment variables, it didn't work for me. Thanks to @cjw85 
         os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_cpu_threads)
@@ -504,6 +490,15 @@ elif (ml_library=='tf-keras'):
         tf.config.set_soft_device_placement(True)
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
         
+    # switch from GPU to CPU
+    # from tensorflow.python.eager import context
+    # _ = tf.Variable([1])
+    # context._context = None
+    # context._create_context()
+    # # my_devices = tf.config.experimental.list_physical_devices(device_type='CPU')
+    # # tf.config.experimental.set_visible_devices(devices= my_devices, device_type='CPU')
+    # tf.config.experimental.set_visible_devices([], 'GPU')
+    # device_lib.list_local_devices()
 
 
     # First hidden layer (input layer) activation
@@ -531,16 +526,19 @@ elif (ml_library=='tf-keras'):
     # lr          = 0.0001 
     # batch_size  = 512
     batch_size  = 1024
-    neurons     = [16,16]
-    # neurons     = [8,8] # not quite fast enough, but accurate
+    neurons     = [8,8] # not quite fast enough, but accurate
     # neurons     = [16]
+    neurons     = [12,12]
     # neurons     = [4,4] # nope
     # neurons = [8]
     retrain_mae = False
     
-    # lr          = 0.01
-    # lossfunc    = losses.binary_crossentropy
+    batch_size  = 4096
+    lr          = 0.01
     
+    optim = optimizers.Adam(lr=lr)
+
+
     # lossfunc = losses.mean_absolute_error
     # valfunc     = 'val_mean_squared_error'
     # mymetrics   = ['mean_squared_error']
@@ -552,9 +550,33 @@ elif (ml_library=='tf-keras'):
     # lossfunc = mae_weights # pretty ok
     # lossfunc = mae_weights2
     # lossfunc = mae_sine_and_y_weight
-    # lossfunc = mse_sineweight_nfac2
+    # lossfunc = mse_sineweight_nfac2_2
     
-    optim = optimizers.Adam(lr=lr)
+    # def mse_sineweight_nfac2_5(y_true, y_pred):
+    #     weights = 2.0 * (K.sin(1.0 * K.square(y_true) )) - 0.4
+    #     wg = np.array([2.5, 1.0, 2.5, 2.0], dtype=np.float32)
+    #     # wg = np.reshape(wg,(1,4)).repeat(batch_size,axis=0)
+    
+    #     y_true = y_true*wg
+    #     y_pred = y_pred*wg
+
+    #     return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
+
+
+    def mse_sineweight_nfac2_6(y_true, y_pred):
+        weights = 1.5 * (K.sin(1.1 * K.square(y_true) )) 
+        wg = np.array([2.5, 1.0, 2.5, 2.0], dtype=np.float32)
+        # wg = np.reshape(wg,(1,4)).repeat(batch_size,axis=0)
+        
+        y_true = y_true*wg
+        y_pred = y_pred*wg
+    
+    
+        return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
+
+    lossfunc =  mse_sineweight_nfac2_6
+    valfunc     = 'val_loss'
+    patience    = 21
     
     # Create and compile model
     # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
@@ -595,7 +617,7 @@ elif (ml_library=='tf-keras'):
   
     # ----- SAVE MODEL ------
     # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-mse-hardsig.h5"
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-16-16-mse.h5"
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-mse-NEW.h5"
 
     # kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-std.h5"
     savemodel(kerasfile, model)
@@ -603,8 +625,8 @@ elif (ml_library=='tf-keras'):
     
     # ----- LOAD MODEL ------
     from tensorflow.keras.models import load_model
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-mae.h5"
-    model = load_model(kerasfile,compile=False)
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-sinemse2-mae-NEW.h5"
+    model = load_model(kerasfile,compile=True)
     # model = tf.lite.TFLiteConverter.from_keras_model(kerasfile)
     # -----------------------
 
@@ -613,6 +635,7 @@ else:
 
 
 # EVALUATE
+yvars = ['Rdif',      'Tdif','Rdir','Tdir']
 for i in range(4):
     r = np.corrcoef(y_test_raw[:,i],y_pred[:,i])[0,1]
     print("R2 {}: {:0.5f} ; maxdiff {:0.5f}, bias {:0.5f}".format(yvars[i], \

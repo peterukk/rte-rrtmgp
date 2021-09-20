@@ -108,33 +108,35 @@ dl_dir   = this_dir + "tmp/"
 os.chdir(this_dir)
 
 # Specify which year to download, everything else is fixed
-year = "2014"
+year = "2015"
 
 c = cdsapi.Client()
 
 for month in ["02", "05", "08", "11"]:
     print(month)
+    
+    dict_eac4 = get_dict_eac4_ml(year,month)
+    c.retrieve(
+        'cams-global-reanalysis-eac4', dict_eac4,
+        dl_dir+'CAMS_eac4_ml_%s%s01.grb'%(year,month))
    
     dict_eac4 = get_dict_eac4_sfc(year,month)
     c.retrieve(
         'cams-global-reanalysis-eac4', dict_eac4,
         dl_dir+'CAMS_eac4_sfc_%s%s01.grb'%(year,month))
     
-    dict_eac4 = get_dict_eac4_ml(year,month)
-    c.retrieve(
-        'cams-global-reanalysis-eac4', dict_eac4,
-        dl_dir+'CAMS_eac4_ml_%s%s01.grb'%(year,month))
-    
     # EGG4
+
+    dict_egg4 = get_dict_egg4_ml(year,month)
+    c.retrieve(
+        'cams-global-ghg-reanalysis-egg4', dict_egg4,
+        dl_dir+'CAMS_egg4_ml_%s%s01.grb'%(year,month))
+    
     dict_egg4 = get_dict_egg4_sfc(year,month)
     c.retrieve(
         'cams-global-ghg-reanalysis-egg4', dict_egg4,
         dl_dir+'CAMS_egg4_sfc_%s%s01.grb'%(year,month))
     
-    dict_egg4 = get_dict_egg4_ml(year,month)
-    c.retrieve(
-        'cams-global-ghg-reanalysis-egg4', dict_egg4,
-        dl_dir+'CAMS_egg4_ml_%s%s01.grb'%(year,month))
 
 
 # PREPROCESS INTO ONE NetCDF FILE USING CDO COMMANDS
@@ -201,7 +203,7 @@ fname_n2o = "CAMS_{}_n2o.nc".format(year)
 os.system("cdo remapeta,../newvct {} {}".format(fname_tmp,fname_tmp2))
 
 # Extract the time slices corresponding to the main CAMS data
-codestr = "ncks -d time,0 -d time,4 -d time,22 -d time,228 -d time,472 " \
+codestr = "ncks -d time,0 -d time,4 -d time,224 -d time,228 -d time,472 " \
 "-d time,476 -d time,720 -d time,724 {} {}".format(fname_tmp2,fname_n2o) 
 os.system(codestr) 
 os.system("rm *tmp*")

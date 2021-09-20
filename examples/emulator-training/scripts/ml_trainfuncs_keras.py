@@ -21,12 +21,13 @@ Contributions welcome!
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten,Input
 from tensorflow.keras import losses, optimizers
+import tensorflow as tf
 # from keras.models import Sequential
 # from keras.layers import Dense, Dropout, Activation, Flatten,Input
 import numpy as np
 import h5py
 import tensorflow.keras.backend as K
-import optuna
+# import optuna
 
 # 1. Define an objective function to be maximized.
 def create_model_hyperopt(trial, nx, ny):
@@ -103,6 +104,20 @@ def mse_sineweight_nfac2(y_true, y_pred):
     weights = 0.5 + 0.8*(K.sin(3.14 * K.square(y_true)))
     return K.mean(K.square(weights*(y_true - y_pred)),axis=0)
 
+def mse_sineweight_nfac2_2(y_true, y_pred):
+    weights = 2.0 * (K.sin(0.8 * K.square(y_true) )) - 1.0
+    return K.mean(K.square(weights*(y_true - y_pred)),axis=0)
+
+def mse_sineweight_nfac2_3(y_true, y_pred):
+    # weights = 2.0 * (K.sin(0.5 * K.square(y_true) )) - 1.0
+    weights = 2.0 * (K.sin(0.5 * K.square(y_true) )) - 0.4
+    # weights[:,1] = 1.0
+    # weights_n = tf.unstack(weights)
+    # weights_n[:,1] = 1.0
+    # weights = tf.stack(weights_n)
+    return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
+
+
 def create_model_mlp(nx,ny,neurons=[40,40], activ0='softsign',activ='softsign',
                  kernel_init='he_uniform',activ_last='linear'):
     model = Sequential()
@@ -115,6 +130,7 @@ def create_model_mlp(nx,ny,neurons=[40,40], activ0='softsign',activ='softsign',
     model.add(Dense(ny, activation=activ_last,kernel_initializer=kernel_init))
     
     return model
+
 
 def savemodel(kerasfile, model):
    model.summary()

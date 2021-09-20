@@ -1,0 +1,37 @@
+#  ------- GFORTRAN ----------
+export FC = flang
+# 
+# Fortran compiler flags
+export FCFLAGS = -O3 
+
+# export FCFLAGS = -O3 -ffree-line-length-none -march=native
+
+# more aggressive optimization with fast-math. 
+#export FCFLAGS = -O3 -ffree-line-length-none  -march=native --fast-math  -funroll-loops #-DNGPT=224 -DNLAY=60
+# export FCFLAGS = -O3 -std=f2008 -ffree-line-length-none -m64 -march=native --fast-math  -funroll-loops
+# export FCFLAGS = -O3 -ffree-line-length-none -m64 -march=native --fast-math -funroll-loops -ftree-loop-linear -fprefetch-loop-arrays
+
+# Debugging
+# export FCFLAGS = -ffree-line-length-none -m64 -march=native -pedantic -g -fbounds-check -Wall -fbacktrace -finit-real=nan
+
+
+
+# ---------------------------------------------------------------------------
+# -------  (REQUIRED) NetCDF C and Fortran libraries ------------------------
+# --------------------------------------------------------------------------
+export NCHOME = /usr/
+export NFHOME = /usr/
+
+# --------------------------------------------------------------------------
+# -------  (REQUIRED) BLAS library for neural network computations ---------
+# --------------------------------------------------------------------------
+# export BLASLIB  = blis-amd
+# export BLAS_DIR = $(HOME)/blis-amd
+export BLASLIB  = blis
+export BLAS_DIR = $(HOME)/blis-0.8.1-zen2
+# --------------------------------------------------------------------------
+# -------  (OPTIONAL) GPTL library for timing ------------------------------
+# --------------------------------------------------------------------------
+export TIME_DIR = /home/peter/gptl-gcc
+
+export LIBXSMM_DIR = /home/peter/Downloads/libxsmm

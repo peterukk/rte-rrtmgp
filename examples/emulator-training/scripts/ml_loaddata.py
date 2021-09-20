@@ -16,7 +16,7 @@ import sys
 import numpy as np
 from numba import jit, njit, prange
 from netCDF4 import Dataset
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+# from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 # input scaling coefficients for RRTMGP-NN - these should probably be put in an
 # external file 
@@ -77,7 +77,52 @@ ymeans_sw_abs = np.array([3.64390580e-04, 4.35663940e-04, 4.98018635e-04, 5.7754
        1.31824624e-03, 1.31927885e-03, 1.31954963e-03, 1.31999550e-03,
        1.32057443e-03, 1.32077874e-03, 1.32089714e-03, 1.32086105e-03])
 ysigma_sw_abs = np.repeat(0.00065187697,224)
-
+ymeans_sw_ray = np.array([0.00016408, 0.00016821, 0.00016852, 0.00016616, 0.0001631 ,
+       0.0001615 , 0.00016211, 0.00016632, 0.00017432, 0.00017609,
+       0.00017617, 0.00017683, 0.00017806, 0.00017891, 0.00017938,
+       0.00017905, 0.00020313, 0.000203  , 0.00020417, 0.00020546,
+       0.00020597, 0.00020647, 0.0002067 , 0.0002069 , 0.00020719,
+       0.00020752, 0.00020766, 0.00020783, 0.00020801, 0.00020828,
+       0.00020884, 0.00020988, 0.00022147, 0.00022575, 0.00022777,
+       0.00022846, 0.00022824, 0.00022803, 0.00022816, 0.00022841,
+       0.0002286 , 0.00022876, 0.00022883, 0.00022887, 0.00022888,
+       0.00022891, 0.00022922, 0.00023004, 0.00025017, 0.00024942,
+       0.00024824, 0.00024734, 0.00024655, 0.00024587, 0.00024539,
+       0.00024486, 0.00024454, 0.0002441 , 0.00024381, 0.00024343,
+       0.00024307, 0.00024265, 0.00024179, 0.00024042, 0.00025942,
+       0.00026145, 0.00026296, 0.00026379, 0.00026454, 0.00026518,
+       0.00026548, 0.00026566, 0.00026578, 0.00026592, 0.00026607,
+       0.00026617, 0.00026612, 0.00026633, 0.00026634, 0.00026667,
+       0.00028838, 0.00028652, 0.00028487, 0.00028311, 0.00027978,
+       0.00027901, 0.00027885, 0.00027866, 0.000278  , 0.00027733,
+       0.00027734, 0.00027694, 0.00027574, 0.00027526, 0.0002754 ,
+       0.00027594, 0.00030356, 0.00031213, 0.00031563, 0.00031476,
+       0.00031548, 0.00031693, 0.00031758, 0.00031764, 0.00031757,
+       0.00031747, 0.0003175 , 0.0003176 , 0.00031767, 0.00031787,
+       0.00031921, 0.00032022, 0.00033161, 0.00033401, 0.00033486,
+       0.0003345 , 0.00033421, 0.00033408, 0.00033402, 0.00033377,
+       0.00033366, 0.00033365, 0.0003337 , 0.0003337 , 0.00033372,
+       0.00033368, 0.0003336 , 0.00033342, 0.00038102, 0.00038465,
+       0.00038598, 0.00038884, 0.00039175, 0.00039174, 0.00039248,
+       0.00039248, 0.00039339, 0.00038445, 0.00037872, 0.00037472,
+       0.00037253, 0.00036779, 0.00036238, 0.00035383, 0.0004347 ,
+       0.00044431, 0.00045121, 0.00045676, 0.00046053, 0.00046292,
+       0.00046443, 0.00046354, 0.00045597, 0.0004476 , 0.00044526,
+       0.00044227, 0.00043994, 0.00043726, 0.00043139, 0.00043131,
+       0.00050991, 0.0005198 , 0.00052429, 0.00052806, 0.00052854,
+       0.00052917, 0.00053388, 0.00053857, 0.0005396 , 0.00053686,
+       0.00053488, 0.0005327 , 0.00052904, 0.00052511, 0.00052043,
+       0.00051689, 0.00057637, 0.0005886 , 0.0006002 , 0.00061095,
+       0.00062064, 0.00062908, 0.00063611, 0.00064162, 0.00064557,
+       0.00064733, 0.00064765, 0.0006479 , 0.0006481 , 0.00064824,
+       0.00064831, 0.00064833, 0.00065669, 0.00067188, 0.00068705,
+       0.00070096, 0.00071349, 0.00072444, 0.00073358, 0.00074076,
+       0.00074614, 0.00074835, 0.00074795, 0.00074786, 0.0007479 ,
+       0.00074804, 0.00074818, 0.00074823, 0.0008143 , 0.00081451,
+       0.00081412, 0.00081407, 0.00081408, 0.00081299, 0.00081158,
+       0.00081498, 0.00081472, 0.0008145 , 0.00081539, 0.00081426,
+       0.00081398, 0.000814  , 0.00081404, 0.00081415])
+ysigma_sw_ray = np.repeat(0.00019679657,224)
 
 def load_inp_outp_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     # Load data for training a GAS OPTICS (RRTMGP) emulator,
@@ -506,33 +551,32 @@ def reftrans(tau,w0,g,mu0):
 
 def gen_synthetic_inp_outp_reftrans(ns, minmax_tau, minmax_ssa, minmax_g,
                                     minmax_mu0):
-    from doepy import build
-    
-    print("Generating {:e} hypercube samples, this may take a while".format(ns))
+    print("Generating {:e} hypercube samples".format(ns))
+
+    from skopt.sampler import Halton
+    halton = Halton()
 
     if minmax_g == None:
-        ranges = {  
-                'tau':  [minmax_tau[0], minmax_tau[1]], 
-                'ssa':  [minmax_ssa[0], minmax_ssa[1]], 
-                'mu0':  [minmax_mu0[0], minmax_mu0[1]],
-              }
-        samples = build.halton(ranges, num_samples = ns)
+        dims = [    (minmax_tau[0], minmax_tau[1]), 
+                    (minmax_ssa[0], minmax_ssa[1]),
+                    (minmax_mu0[0], minmax_mu0[1])]
+        vals = np.array(halton.generate(dims, n_samples = ns))
+        tau = vals[:,0]
+        ssa = vals[:,1]
+        mu0 = vals[:,2]
+        
         g = np.zeros(ns)
     else:
-        ranges = {  
-                        'tau':  [minmax_tau[0], minmax_tau[1]], 
-                        'ssa':  [minmax_ssa[0], minmax_ssa[1]], 
-                        'g':    [minmax_g[0],   minmax_g[1]], 
-                        'mu0':  [minmax_mu0[0], minmax_mu0[1]],
-                      }
-        samples = build.halton(ranges, num_samples = ns)
-        g   = samples['g'][:].to_numpy()
-
-
-    tau = samples['tau'][:].to_numpy()
-    ssa = samples['ssa'][:].to_numpy()
-    mu0 = samples['mu0'][:].to_numpy()
-    
+        dims = [    (minmax_tau[0], minmax_tau[1]), 
+                    (minmax_ssa[0], minmax_ssa[1]),
+                    (minmax_g[0],   minmax_g[1]),
+                    (minmax_mu0[0], minmax_mu0[1])]
+        vals = np.array(halton.generate(dims, n_samples = ns))
+        tau = vals[:,0]
+        ssa = vals[:,1]
+        g   = vals[:,2]
+        mu0 = vals[:,3]
+        
     str1="Doing reflectance-transmittance computations for {:e}".format(ns) \
         + " samples"
     print(str1)
@@ -623,6 +667,8 @@ def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
 def preproc_minmax_inputs(x, xcoeffs=None):
         x_scaled = np.copy(x)
         if xcoeffs is None:
+            from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
             scaler = MinMaxScaler()  
             scaler.fit(x_scaled)
             x_scaled = scaler.transform(x_scaled)  
@@ -645,6 +691,8 @@ def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
         x_scaled[:,3] = x_scaled[:,3]**(1.0/4) 
         # x = minmaxscale(x,data_min_,data_max_)
         if xcoeffs==None:
+            from sklearn.preprocessing import MinMaxScaler, StandardScaler
+
             scaler = MinMaxScaler()  
             scaler.fit(x_scaled)
             x_scaled = scaler.transform(x_scaled) 

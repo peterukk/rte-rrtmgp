@@ -101,7 +101,7 @@ program rrtmgp_rfmip_sw
   !
   ! Coefficients used to scale NN inputs
   !
-  use mo_rrtmgp_nn_constants,only: nn_input_names, nn_input_maxvals, nn_input_minvals
+  use mo_rrtmgp_nn_constants,only: nn_gasopt_input_names, nn_input_maxvals, nn_input_minvals
   !
   !
   ! Cloud optics extension
@@ -166,7 +166,7 @@ program rrtmgp_rfmip_sw
   integer             ::  b, icol, ilay, igpt, igas, ngas, ninputs, num_gases, ret, i, istat
   character(len=4)    ::  block_size_char
   character(len=6)    ::  emulated_component
-  character(len=32 ), dimension(:),     allocatable :: kdist_gas_names, input_file_gas_names, input_names
+  character(len=32 ), dimension(:),     allocatable :: kdist_gas_names, input_file_gas_names, gasopt_input_names
   ! Output fluxes
   real(wp), dimension(:,:,:),   target, allocatable :: flux_up, flux_dn, flux_dn_dir
   real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir
@@ -194,7 +194,7 @@ program rrtmgp_rfmip_sw
   !
   ! various logical to control program
   logical ::  include_clouds=.true., compare_flux=.false., save_inputs_outputs = .false., &
-          &   do_gpt_flux, save_reftrans, preprocess_rrtmgp_inputs
+          &   do_gpt_flux, save_reftrans, save_rrtmgp, preprocess_rrtmgp_inputs
   !
   ! Derived types from the RTE and RRTMGP libraries
   !
@@ -228,7 +228,9 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Compute fluxes per g-point?
-  do_gpt_flux = .false.
+  do_gpt_flux   = .false.
+  ! When writing inputs and outputs for ML training, save also gas optics output variables?
+  save_rrtmgp   = .false.
   ! When writing inputs and outputs for ML training, save also reflectance-transmittance variables?
   save_reftrans = .true.
   ! When writing RRTMGP inputs for ML training, preprocess inputs like in Ukkonen 2020?
@@ -256,8 +258,23 @@ program rrtmgp_rfmip_sw
     call get_command_argument(5, nndev_file)
     save_inputs_outputs = .true.
   end if
+
+  if (save_reftrans) then
+    save_rrtmgp = .false.
+    if (.not. include_clouds) call stop_on_err("Need to provide cloud coeff. file for saving reftrans data")
+  end if
+
+  if (save_rrtmgp) then
+    save_reftrans = .false.
+    if (include_clouds) call stop_on_err("clouds should not be included when saving rrtmgp inout data")
+  end if
+
+  if (.not. save_inputs_outputs) then
+    save_rrtmgp = .false.
+    save_reftrans = .false.
+  end if
   
-  ! How big is the problem? Does it fit into blocks of the size we've specified?
+  ! How big is the problem? Does it fit into blocks of the size we've specifed?
   !
   call read_size(input_file, ncol, nlay, nexp)
   print *, "input file:", input_file
@@ -321,7 +338,7 @@ program rrtmgp_rfmip_sw
   !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
   ! end do
 
-  call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
+  call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle,  sza_fill_randoms_in=.true.)
   !
   ! Read k-distribution information. load_and_init() reads data from netCDF and calls
   !   k_dist%init(); users might want to use their own reading methods
@@ -437,26 +454,30 @@ program rrtmgp_rfmip_sw
   call stop_on_err(atmos%alloc_2str(block_size, nlay, k_dist))
 
   if (save_inputs_outputs) then
-    allocate(input_names(ninputs)) ! temperature + pressure + gases
+    ! RRTMGP inputs
+    allocate(gasopt_input_names(ninputs)) ! temperature + pressure + gases
     allocate(nn_gasopt_input(   ninputs, nlay, block_size, nblocks))
-    ! number of dry air molecules
-    allocate(col_dry(nlay, block_size, nblocks), vmr_h2o(nlay, block_size, nblocks)) 
-    allocate(tau_sw(ngpt, nlay, block_size, nblocks), ssa_sw(ngpt, nlay, block_size, nblocks))
-    if (include_clouds) then
-      allocate(g_sw(ngpt, nlay, block_size, nblocks))
-    end if
-  end if
-  ! Additional RTE input
-  if (save_inputs_outputs) then
+    ! RTE inputs
     allocate(toa_flux_save(k_dist%get_ngpt(), block_size, nblocks))
     allocate(mu0_save(block_size,nblocks), sfc_alb_spec_save(ngpt,block_size,nblocks))
-    ! and output
     if (save_reftrans) then
       allocate(Rdif_save(ngpt,nlay,block_size,nblocks), Tdif_save(ngpt,nlay,block_size,nblocks))
       allocate(Rdir_save(ngpt,nlay,block_size,nblocks), Tdir_save(ngpt,nlay,block_size,nblocks))
       allocate(reftrans_variables(ngpt,nlay,block_size,4))
     end if
+    if (save_rrtmgp) then
+      ! number of dry air molecules
+      allocate(col_dry(nlay, block_size, nblocks), vmr_h2o(nlay, block_size, nblocks)) 
+    end if
+    if (save_rrtmgp .or. save_reftrans) then
+      allocate(tau_sw(ngpt, nlay, block_size, nblocks), ssa_sw(ngpt, nlay, block_size, nblocks))
+      ! cloud optical properties
+      if (save_reftrans) then
+        allocate(g_sw(ngpt, nlay, block_size, nblocks))
+      end if
+    end if
   end if
+
 #ifdef USE_TIMING
   !
   ! Initialize timers
@@ -524,32 +545,28 @@ program rrtmgp_rfmip_sw
         call stop_on_err(get_gasopt_nn_inputs(                  &
                       block_size, nlay, ninputs,                        &
                       p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),      &
-                      nn_gasopt_input(:,:,:,b), input_names, preprocess_rrtmgp_inputs))
-        ! column dry amount, needed to normalize outputs (could also be computed within Python)
-        call stop_on_err(gas_conc_array(b)%get_vmr('h2o', vmr_h2o(:,:,b)))
-        call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
-
-        ! For RRTMGP emulators, training outputs are gas optical properties, so CLOUDS are NOT
-        ! included (assumed that user turns off include_clouds when generating gas optics training data)
-        if (.not. include_clouds) then
+                      nn_gasopt_input(:,:,:,b), gasopt_input_names, preprocess_rrtmgp_inputs))
+        if (save_rrtmgp) then
+          ! column dry amount, needed to normalize outputs (could also be computed within Python)
+          call stop_on_err(gas_conc_array(b)%get_vmr('h2o', vmr_h2o(:,:,b)))
+          call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
           tau_sw(:,:,:,b)     = atmos%tau
           ssa_sw(:,:,:,b)     = atmos%ssa 
-          ! tau_sw_ray(:,:,:,b)  = (atmos%ssa * atmos%tau)
         end if
       end if
 
       ! print *, "mean tau after gas optics", mean_3d(atmos%tau)
     
       if (include_clouds) then
-
         call stop_on_err(clouds%delta_scale())
         call stop_on_err(clouds%increment(atmos))
-        
+      
         ! print *, "mean tau after adding clouds", mean_3d(atmos%tau)
-        if (save_inputs_outputs)  then
+        
+        if (save_reftrans)  then
+            g_sw(:,:,:,b)       = atmos%g 
             tau_sw(:,:,:,b)     = atmos%tau
             ssa_sw(:,:,:,b)     = atmos%ssa 
-            g_sw(:,:,:,b)       = atmos%g 
         end if
       end if
 
@@ -593,7 +610,7 @@ program rrtmgp_rfmip_sw
       !
 
 
-      if (save_inputs_outputs .and. save_reftrans) then
+      if (save_reftrans) then
         call stop_on_err(rte_sw(atmos,   &
                                 top_at_1,        &
                                 mu0,             &
@@ -673,102 +690,7 @@ program rrtmgp_rfmip_sw
     call nndev_file_netcdf%define_dimension("gpt", ngpt)
     call nndev_file_netcdf%define_dimension("bnd", nbnd)
 
-    ! RRTMGP inputs
-    nn_input_str = 'Features:'
-    do b  = 1, size(input_names)
-      nn_input_str = trim(nn_input_str) // " " // trim(input_names(b)) 
-    end do
-    if (preprocess_rrtmgp_inputs) then
-      cmt = "preprocessed inputs for RRTMGP shortwave gas optics"
-    else 
-      cmt = "inputs for RRTMGP shortwave gas optics"
-    end if
-    call nndev_file_netcdf%define_variable("rrtmgp_sw_input", &
-    &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
-    &   long_name =cmt, comment_str=nn_input_str, &
-    &   data_type_name="float")
-
-    if(include_clouds) then
-      call nndev_file_netcdf%define_variable("tau_sw", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="optical depth", data_type_name="float")
-      call nndev_file_netcdf%define_variable("ssa_sw", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="single scattering albedo", data_type_name="float")
-      call nndev_file_netcdf%define_variable("g_sw", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="asymmetry parameter", data_type_name="float")
-      call nndev_file_netcdf%define_variable("cloud_lwp", &
-      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-      &   long_name="cloud liquid water path", units_str="g/kg")
-      call nndev_file_netcdf%define_variable("cloud_iwp", &
-      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-      &   long_name="cloud ice water path", units_str="g/kg")
-      call nndev_file_netcdf%define_variable("cloud_fraction", &
-      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-      &   long_name="cloud fraction")
-    else
-      call nndev_file_netcdf%define_variable("tau_sw_gas", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="gas optical depth", data_type_name="float")
-      call nndev_file_netcdf%define_variable("ssa_sw_gas", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="gas single scattering albedo", data_type_name="float")
-    end if
-    call nndev_file_netcdf%define_variable("col_dry", &
-    &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
-    &   long_name="layer number of dry air molecules")
-
-    if(save_reftrans) then
-      call nndev_file_netcdf%define_variable("rdif", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="diffuse reflectance", data_type_name="float")
-  
-      call nndev_file_netcdf%define_variable("tdif", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="diffuse transmittance", data_type_name="float")
-
-      call nndev_file_netcdf%define_variable("rdir", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="direct reflectance", data_type_name="float")
-  
-      call nndev_file_netcdf%define_variable("tdir", &
-      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-      &   long_name="direct transmittance", data_type_name="float")
-    end if
-
-    call nndev_file_netcdf%end_define_mode()
-
-    call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_gasopt_input)
-    if (allocated(nn_gasopt_input)) deallocate(nn_gasopt_input)
-    ! print *," min max col dry", minval(col_dry), maxval(col_dry)
-    call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
-    deallocate(col_dry)
-    print *, "RRTMGP inputs (gas concs + T + p) were successfully saved"
-
-    if(include_clouds) then
-      call unblock_and_write(trim(nndev_file), 'tau_sw', tau_sw)
-      deallocate(tau_sw)
-      call unblock_and_write(trim(nndev_file), 'ssa_sw', ssa_sw)
-      deallocate(ssa_sw)
-      call unblock_and_write(trim(nndev_file), 'g_sw',   g_sw)
-      deallocate(g_sw)
-      print *, "Optical properties (output from RRTMGP+cloud optics) were successfully saved"
-      call unblock_and_write(trim(nndev_file), 'cloud_lwp', lwp)
-      call unblock_and_write(trim(nndev_file), 'cloud_iwp', iwp)
-      call unblock_and_write(trim(nndev_file), 'cloud_fraction', cloud_fraction)
-      deallocate(lwp, iwp, cloud_fraction)
-    else 
-      call unblock_and_write(trim(nndev_file), 'tau_sw_gas', tau_sw)
-      call unblock_and_write(trim(nndev_file), 'ssa_sw_gas', ssa_sw)
-      deallocate(tau_sw,ssa_sw)
-      print *, "Optical properties (RRTMGP output) were successfully saved"
-    end if
-
-    call nndev_file_netcdf%close()
-
-    call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
-
+    ! RTE inputs and outputs (broadband fluxes), always saved
     call nndev_file_netcdf%define_variable("rsu", &
     &   dim3_name="expt", dim2_name="site", dim1_name="level", &
     &   long_name="upwelling shortwave flux")
@@ -793,18 +715,104 @@ program rrtmgp_rfmip_sw
     &   dim2_name="expt", dim1_name="site", &
     &   long_name="cosine of solar zenith angle")
 
+
+    if (preprocess_rrtmgp_inputs) then
+      cmt = "preprocessed inputs for RRTMGP shortwave gas optics"
+    else 
+      cmt = "inputs for RRTMGP shortwave gas optics"
+    end if
+
+    ! RRTMGP inputs
+    nn_input_str = 'Features:'
+    do b  = 1, size(gasopt_input_names)
+      nn_input_str = trim(nn_input_str) // " " // trim(gasopt_input_names(b)) 
+    end do
+    call nndev_file_netcdf%define_variable("rrtmgp_sw_input", &
+    &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
+    &   long_name =cmt, comment_str=nn_input_str, &
+    &   data_type_name="float")
+
+    if (save_rrtmgp) then
+      call nndev_file_netcdf%define_variable("tau_sw_gas", &
+      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+      &   long_name="gas optical depth", data_type_name="float")
+      call nndev_file_netcdf%define_variable("ssa_sw_gas", &
+      &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+      &   long_name="gas single scattering albedo", data_type_name="float")
+      call nndev_file_netcdf%define_variable("col_dry", &
+      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
+      &   long_name="layer number of dry air molecules")
+    end if
+
+    if(include_clouds) then
+      call nndev_file_netcdf%define_variable("cloud_lwp", &
+      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
+      &   long_name="cloud liquid water path", units_str="g/kg")
+      call nndev_file_netcdf%define_variable("cloud_iwp", &
+      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
+      &   long_name="cloud ice water path", units_str="g/kg")
+      call nndev_file_netcdf%define_variable("cloud_fraction", &
+      &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
+      &   long_name="cloud fraction")
+      if (save_reftrans) then
+        call nndev_file_netcdf%define_variable("tau_sw", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="optical depth", data_type_name="float")
+        call nndev_file_netcdf%define_variable("ssa_sw", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="single scattering albedo", data_type_name="float")
+        call nndev_file_netcdf%define_variable("g_sw", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="asymmetry parameter", data_type_name="float")
+
+        call nndev_file_netcdf%define_variable("rdif", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="diffuse reflectance", data_type_name="float")
+        call nndev_file_netcdf%define_variable("tdif", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="diffuse transmittance", data_type_name="float")
+        call nndev_file_netcdf%define_variable("rdir", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="direct reflectance", data_type_name="float")
+        call nndev_file_netcdf%define_variable("tdir", &
+        &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
+        &   long_name="direct transmittance", data_type_name="float")
+      end if
+
+    end if
+
     call nndev_file_netcdf%end_define_mode()
 
-    call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
-    call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)
-    call unblock_and_write(trim(nndev_file), 'rsd_dir', flux_dn_dir)
+    call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_gasopt_input)
+    deallocate(nn_gasopt_input)
+    print *, "RRTMGP inputs (gas concs + T + p) were successfully saved"
 
-    call unblock_and_write(trim(nndev_file), 'toa_flux', toa_flux_save)
-    call unblock_and_write(trim(nndev_file), 'sfc_alb', sfc_alb_spec_save)
-    call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
-    deallocate(toa_flux_save, sfc_alb_spec_save, mu0_save)
+    if (save_rrtmgp) then
+      ! print *," min max col dry", minval(col_dry), maxval(col_dry)
+      call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
+      deallocate(col_dry)
 
-    if(save_reftrans) then
+      call unblock_and_write(trim(nndev_file), 'tau_sw_gas', tau_sw)
+      call unblock_and_write(trim(nndev_file), 'ssa_sw_gas', ssa_sw)
+      deallocate(tau_sw,ssa_sw)
+      print *, "Optical properties (RRTMGP output) were successfully saved"
+    end if
+    if(include_clouds) then
+      call unblock_and_write(trim(nndev_file), 'cloud_lwp', lwp)
+      call unblock_and_write(trim(nndev_file), 'cloud_iwp', iwp)
+      call unblock_and_write(trim(nndev_file), 'cloud_fraction', cloud_fraction)
+      print *, "Cloud variables were successfully saved"
+      deallocate(lwp, iwp, cloud_fraction)
+    end if
+    if (save_reftrans) then
+      call unblock_and_write(trim(nndev_file), 'tau_sw', tau_sw)
+      deallocate(tau_sw)
+      call unblock_and_write(trim(nndev_file), 'ssa_sw', ssa_sw)
+      deallocate(ssa_sw)
+      call unblock_and_write(trim(nndev_file), 'g_sw',   g_sw)
+      deallocate(g_sw)
+      print *, "Optical properties (RRTMGP+cloud optics) were successfully saved"
+
       print *,  "minmax Rdif", minval(Rdif_save), maxval(Rdif_save), &
                 "minmax Tdif", minval(Tdif_save), maxval(Tdif_save)
       print *,  "minmax Rdir", minval(Rdir_save), maxval(Rdir_save), &
@@ -817,7 +825,21 @@ program rrtmgp_rfmip_sw
       deallocate(Rdir_save)
       call unblock_and_write(trim(nndev_file), 'tdir', Tdir_save)
       deallocate(Tdir_save)
+      print *, "Reflectance-transmittance data succesfully saved"
     end if
+
+    ! call nndev_file_netcdf%close()
+    ! call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
+    ! call nndev_file_netcdf%end_define_mode()
+
+    call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
+    call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)
+    call unblock_and_write(trim(nndev_file), 'rsd_dir', flux_dn_dir)
+
+    call unblock_and_write(trim(nndev_file), 'toa_flux', toa_flux_save)
+    call unblock_and_write(trim(nndev_file), 'sfc_alb', sfc_alb_spec_save)
+    call unblock_and_write(trim(nndev_file), 'mu0', mu0_save)
+    deallocate(toa_flux_save, sfc_alb_spec_save, mu0_save)
 
     if (do_gpt_flux) then
 
@@ -848,10 +870,9 @@ program rrtmgp_rfmip_sw
       call unblock_and_write(trim(nndev_file), 'rsd_gpt', gpt_flux_dn)
       call unblock_and_write(trim(nndev_file), 'rsd_dir_gpt', gpt_flux_dn_dir)
       deallocate(gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir)
-
     end if 
 
-    print *, "RTE outputs were successfully saved"
+    print *, "RTE outputs were successfully saved. All done!"
 
     call nndev_file_netcdf%close()
 
@@ -885,14 +906,14 @@ program rrtmgp_rfmip_sw
   ! Here we just use the available gases
   function get_gasopt_nn_inputs(ncol, nlay, ninputs, &
                               play, tlay, gas_desc,           &
-                              nn_inputs, input_names, preprocess) result(error_msg)
+                              nn_inputs, gasopt_input_names, preprocess) result(error_msg)
 
     integer,                                  intent(in   ) ::  ncol, nlay, ninputs
     real(wp), dimension(nlay,ncol),           intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                                 tlay
     type(ty_gas_concs),                       intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
     real(sp), dimension(ninputs, nlay, ncol),  intent(inout) ::  nn_inputs !
-    character(len=32 ), dimension(ninputs),    intent(inout) ::  input_names 
+    character(len=32 ), dimension(ninputs),    intent(inout) ::  gasopt_input_names 
     logical,                                  intent(in)    :: preprocess
     character(len=128)                                  :: error_msg
     ! ----------------------------------------------------------
@@ -914,12 +935,12 @@ program rrtmgp_rfmip_sw
     error_msg = gas_desc%get_conc_dims_and_igas('o3',  ndims, idx_o3)
     if(error_msg  /= '') return
 
-    input_names(1) = 'tlay'
+    gasopt_input_names(1) = 'tlay'
 
     if (.not. preprocess) then
-      input_names(2) = 'play'
-      input_names(3) = 'h2o'
-      input_names(4) = 'o3'
+      gasopt_input_names(2) = 'play'
+      gasopt_input_names(3) = 'h2o'
+      gasopt_input_names(4) = 'o3'
       do icol = 1, ncol
         do ilay = 1, nlay
             nn_inputs(1,ilay,icol)    =  tlay(ilay,icol)
@@ -929,9 +950,9 @@ program rrtmgp_rfmip_sw
         end do
       end do
     else
-      input_names(2) = 'log(play)'
-      input_names(3) = 'h2o**(1/4)'
-      input_names(4) = 'o3**(1/4)'
+      gasopt_input_names(2) = 'log(play)'
+      gasopt_input_names(3) = 'h2o**(1/4)'
+      gasopt_input_names(4) = 'o3**(1/4)'
       do icol = 1, ncol
         do ilay = 1, nlay
             nn_inputs(1,ilay,icol)    =  (tlay(ilay,icol)     - xmin(1)) / (xmax(1) - xmin(1))
@@ -953,7 +974,7 @@ program rrtmgp_rfmip_sw
       if(gas_name=='h2o' .or. gas_name=='o3' .or. gas_name=='o2' .or. gas_name=='n2') cycle
 
       ! Save gas name
-      input_names(i) = gas_name
+      gasopt_input_names(i) = gas_name
 
       ! Fill 2D (lay,col) array with gas concentration
       error_msg = gas_desc%get_vmr(gas_name, vmr(:,:))
@@ -963,9 +984,9 @@ program rrtmgp_rfmip_sw
         nn_inputs(i,:,:) = vmr(:,:)
       else 
         ! which index in nn_input_name, which corresponds to the scaling coefficient arrays
-        idx_gas = findloc(nn_input_names,gas_name,dim=1)
+        idx_gas = findloc(nn_gasopt_input_names,gas_name,dim=1)
         if (idx_gas == 0) then
-          error_msg = 'get_gasopt_nn_inputs: trying to write ' // trim(gas_name) // ' but name not found in nn_input_names'
+          error_msg = 'get_gasopt_nn_inputs: trying to write ' // trim(gas_name) // ' but name not found in nn_gasopt_input_names'
           return
         end if
           do icol = 1, ncol
@@ -978,7 +999,7 @@ program rrtmgp_rfmip_sw
     end do
     
     ! do igas = 1, ninputs
-    !   print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", input_names(igas), &
+    !   print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", gasopt_input_names(igas), &
     !               minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
     ! end do
 

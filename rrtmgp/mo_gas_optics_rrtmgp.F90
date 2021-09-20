@@ -32,7 +32,7 @@ module mo_gas_optics_rrtmgp
                                    compute_Planck_source, compute_Planck_source_nn, &
                                    predict_nn_lw_blas, predict_nn_sw_blas
   use mo_rrtmgp_constants,   only: avogad, m_dry, m_h2o, grav
-  use mo_rrtmgp_nn_constants,only: nn_input_names, nn_input_maxvals, nn_input_minvals
+  use mo_rrtmgp_nn_constants,only: nn_gasopt_input_names, nn_input_maxvals, nn_input_minvals
   use mo_rrtmgp_util_string, only: lower_case, string_in_array, string_loc_in_array
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_gas_ref_concentrations, only: get_ref_vmr
@@ -627,18 +627,18 @@ contains
     ! For now just support a few different options...
     if (ninputs == 18) then        
       if (print_warnings) print *, "using longwave neural network models which take all 16 non-constant RRTMGP LW gases as input"
-      input_names  = nn_input_names(1:18)
+      input_names  = nn_gasopt_input_names(1:18)
       input_minvals = nn_input_minvals(1:18)
       input_maxvals = nn_input_maxvals(1:18)
     ! Old code: currently not supported
     ! else if (ninputs == 9) then
     !   if (print_warnings) print *, "using less complex LW neural network which only uses h2o, o3, co2, n2o, ch4, cfc11-EQ and cfc12"
-    !   input_names    = nn_input_names(1:9)
+    !   input_names    = nn_gasopt_input_names(1:9)
     !   input_minvals   = nn_input_minvals(1:9)               
     !   input_maxvals   = nn_input_maxvals(1:9)
     else if (ninputs == 7) then
       if (print_warnings) print *, "using shortwave neural network model which take as input the concentrations of h2o, o3, co2, n2o and ch4"
-      input_names    = nn_input_names(1:7)
+      input_names    = nn_gasopt_input_names(1:7)
       input_minvals   = nn_input_minvals(1:7)               
       input_maxvals   = nn_input_maxvals(1:7)
     else 
@@ -735,14 +735,12 @@ contains
 
     !$acc exit data delete(input_names, input_maxvals, input_minvals)
 
-    do igas = 1, ninputs
-      print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", input_names(igas), &
-                  minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
-    end do
+    ! do igas = 1, ninputs
+    !   print '(A25,I2,A2,A8,F6.3,F6.3)', "Min,max of NN-input ", igas, " =", input_names(igas), &
+    !               minval(nn_inputs(igas,:,:)), maxval(nn_inputs(igas,:,:))
+    ! end do
 
-    nn_inputs = max(0.0_wp, nn_inputs)
-
-    nn_inputs = max(0.0_wp, nn_inputs)
+    ! nn_inputs = max(0.0_wp, nn_inputs)
 
 #ifdef USE_TIMING
     ret =  gptlstop('compute_nn_inputs')

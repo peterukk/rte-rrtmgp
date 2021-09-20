@@ -21,7 +21,7 @@ module mo_rrtmgp_nn_constants
     ! -----------------------------------------
     integer, parameter :: ninputs_all = 19
     ! Strings specifying all the RRTMGP gases which can be used by neural networks, these are matched to available gases
-    character(32), dimension(ninputs_all) :: nn_input_names = [character(len=32)  :: 'tlay', 'play', 'h2o',   'o3', 'co2',  &
+    character(32), dimension(ninputs_all) :: nn_gasopt_input_names = [character(len=32)  :: 'tlay', 'play', 'h2o',   'o3', 'co2',  &
     'n2o', 'ch4', 'cfc11', 'cfc12', 'co', 'ccl4', 'cfc22', 'hfc143a', 'hfc125', 'hfc23', 'hfc32', 'hfc134a', 'cf4', 'no2'] 
 
     ! Scaling coefficients for neural network inputs, used to scale values to between 0 and 1 (min-max-scaling)

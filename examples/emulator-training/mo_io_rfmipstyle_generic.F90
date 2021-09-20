@@ -65,6 +65,8 @@ contains
     ncol = get_dim_size(ncid, 'site')
     nlay = get_dim_size(ncid, 'layer')
     nexp = get_dim_size(ncid, 'expt')
+    ! Make IO more general so that the last dimension can also be "time" instead of "experiment"
+    if (nexp==0) nexp = get_dim_size(ncid, 'time')
     if(get_dim_size(ncid, 'level') /= nlay+1) call stop_on_err("read_size: number of levels should be nlay+1")
     ncid = nf90_close(ncid)
 
@@ -206,17 +208,20 @@ contains
   ! Read and reshape shortwave boundary conditions
   !
   subroutine read_and_block_sw_bc(fileName, blocksize, &
-                               surface_albedo, total_solar_irradiance, solar_zenith_angle, sza_fill_value)
+                               surface_albedo, total_solar_irradiance, solar_zenith_angle, sza_fill_value, sza_fill_randoms_in)
     character(len=*),           intent(in   ) :: fileName
     integer,                    intent(in   ) :: blocksize
     real(wp), dimension(:,:), allocatable, &
                                 intent(  out) :: surface_albedo, total_solar_irradiance, solar_zenith_angle
     real(wp),   optional,       intent(in   ) :: sza_fill_value
+    logical,   optional,        intent(in)    :: sza_fill_randoms_in
     ! ---------------------------
-    integer :: ncid, varid
+    logical :: sza_fill_randoms =.false.
+    integer :: ncid, varid, ndims
     integer :: nblocks
     real(wp) :: tsi_constant
-    real(wp), dimension(ncol_l, nexp_l) :: temp2D
+    ! real(wp), dimension(ncol_l, nexp_l) :: temp2D
+    real(wp), allocatable :: temp2D(:,:)
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("read_and_block_sw_bc: Haven't read problem size yet.")
     if(mod(ncol_l*nexp_l, blocksize) /= 0 ) call stop_on_err("read_and_block_sw_bc: number of columns doesn't fit evenly into blocks.")
@@ -228,8 +233,19 @@ contains
     if(nf90_open(trim(fileName), NF90_NOWRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("read_and_block_sw_bc: can't find file " // trim(fileName))
 
-    temp2D(1:ncol_l,1:nexp_l) = spread(read_field(ncid, "surface_albedo",          ncol_l), dim=2, ncopies=nexp_l)
-    surface_albedo         = reshape(temp2D, shape = [blocksize, nblocks])
+    ! surface albedo and solar irradiance can be either 1D or 2D , check for dimensions
+    if(nf90_inq_varid(ncid, "surface_albedo", varid) /= NF90_NOERR) &
+      call stop_on_err("get_var_size: can't find variable " // "surface_albedo")
+    if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
+      call stop_on_err("get_var_size: can't get information for variable " // "surface_albedo")
+    if (ndims == 2) then ! (ncol, nexp)
+      temp2D = read_field(ncid, "surface_albedo", ncol_l, nexp_l)
+    else if (ndims == 1) then
+      temp2D  = spread(read_field(ncid, "surface_albedo",  ncol_l), dim=2, ncopies=nexp_l)
+    end if
+    surface_albedo  = reshape(temp2D, shape = [blocksize, nblocks])
+    deallocate(temp2D)
+
 
     if(nf90_inq_varid(ncid, "total_solar_irradiance", varid) /= NF90_NOERR) then 
       tsi_constant = 1412.0_wp 
@@ -237,23 +253,41 @@ contains
       total_solar_irradiance = tsi_constant
       print "(a,f7.2)", " can't find total_solar_irradiance in file, setting to a constant value of ", tsi_constant
     else 
-      temp2D(1:ncol_l,1:nexp_l) = spread(read_field(ncid, "total_solar_irradiance",  ncol_l), dim=2, ncopies=nexp_l)
-      total_solar_irradiance = reshape(temp2D, shape = [blocksize, nblocks])
+      if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
+        call stop_on_err("get_var_size: can't get information for variable " // "total_solar_irradiance")
+      if (ndims == 2) then ! (ncol, nexp)
+        temp2D = read_field(ncid, "total_solar_irradiance", ncol_l, nexp_l)
+      else if (ndims == 1) then
+        temp2D  = spread(read_field(ncid, "total_solar_irradiance",  ncol_l), dim=2, ncopies=nexp_l)
+      end if
+      total_solar_irradiance  = reshape(temp2D, shape = [blocksize, nblocks])
+      deallocate(temp2D)
     end if
+
+    if (present(sza_fill_randoms_in)) sza_fill_randoms = sza_fill_randoms_in
 
     if (present(sza_fill_value)) then
       print *, "filling solar zenith angles with user-provided constant of", sza_fill_value
       allocate(solar_zenith_angle(blocksize,nblocks))
       solar_zenith_angle = sza_fill_value
     else 
-      if(nf90_inq_varid(ncid, "solar_zenith_angle", varid) /= NF90_NOERR) then 
-        print *, "can't find solar_zenith_angle in file and fill value not provided, using random values between 0 and 90"
+      if(sza_fill_randoms .or. (nf90_inq_varid(ncid, "solar_zenith_angle", varid) /= NF90_NOERR))  then 
+        print *, "can't find solar_zenith_angle in file or sza_fill_randoms is true; using random values between 0 and 90"
         allocate(solar_zenith_angle(blocksize,nblocks))
         call random_number(solar_zenith_angle) 
         solar_zenith_angle = solar_zenith_angle * 90_wp
       else 
-        temp2D(1:ncol_l,1:nexp_l) = spread(read_field(ncid, "solar_zenith_angle",      ncol_l), dim=2, ncopies=nexp_l)
-        solar_zenith_angle     = reshape(temp2d, shape = [blocksize, nblocks])
+        if(nf90_inq_varid(ncid, "solar_zenith_angle", varid) /= NF90_NOERR) &
+          call stop_on_err("get_var_size: can't find variable " // "solar_zenith_angle")
+        if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
+          call stop_on_err("get_var_size: can't get information for variable " // "solar_zenith_angle")
+        if (ndims == 2) then ! (ncol, nexp)
+          temp2D = read_field(ncid, "solar_zenith_angle", ncol_l, nexp_l)
+        else if (ndims == 1) then
+          temp2D  = spread(read_field(ncid, "solar_zenith_angle",  ncol_l), dim=2, ncopies=nexp_l)
+        end if
+        solar_zenith_angle  = reshape(temp2D, shape = [blocksize, nblocks])
+        deallocate(temp2D)
       end if
     end if
     ncid = nf90_close(ncid)
@@ -644,8 +678,7 @@ contains
     real(wp), dimension(:,:,:), allocatable, & ! [nlay, blocksize, nblocks]
                                 intent(  out) :: clwc, ciwc, cloud_fraction
     ! ---------------------------
-    integer :: ncid, varid, b, nblocks
-    real(wp), dimension(:,:,:), allocatable :: temp3D, temp3D_2, temp3D_3
+    integer :: ncid, varid, b, nblocks, ndims
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("read_and_block_clouds: Haven't read problem size yet.")
     if(mod(ncol_l*nexp_l, blocksize) /= 0 ) call stop_on_err("read_and_block_clouds: number of columns doesn't fit evenly into blocks.")
@@ -661,20 +694,23 @@ contains
     if(nf90_inq_varid(ncid, "clwc", varid) /= NF90_NOERR) &
       call stop_on_err("get_var_size: can't find variable " // "clwc")
 
-     ! (nlay, ncol)
-    temp3D = reshape(spread(read_field(ncid, "clwc", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
-                    shape = [nlay_l, blocksize, nblocks])
-    temp3D_2 = reshape(spread(read_field(ncid, "ciwc", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
-                    shape = [nlay_l, blocksize, nblocks])
-    temp3D_3 = reshape(spread(read_field(ncid, "cloud_fraction", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
-                    shape = [nlay_l, blocksize, nblocks])
+    ! Clouds can be either 2D (site, layer) or 3D (time/expt, site, layer)
+    if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
+      call stop_on_err("get_var_size: can't get information for variable " // "clwc")
 
-    do b = 1, nblocks
-      clwc(:,:,b)           = temp3D(:,:,b)
-      ciwc(:,:,b)           = temp3D_2(:,:,b)
-      cloud_fraction(:,:,b) = temp3D_3(:,:,b)
-    end do
-    deallocate(temp3D, temp3D_2, temp3D_3)
+    if (ndims ==2) then
+     ! (nlay, ncol)
+      clwc = reshape(spread(read_field(ncid, "clwc", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
+                    shape = [nlay_l, blocksize, nblocks])
+      ciwc = reshape(spread(read_field(ncid, "ciwc", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
+                    shape = [nlay_l, blocksize, nblocks])
+      cloud_fraction = reshape(spread(read_field(ncid, "cloud_fraction", nlay_l,   ncol_l), dim = 3, ncopies = nexp_l), &
+                    shape = [nlay_l, blocksize, nblocks])
+    else 
+      clwc = reshape(read_field(ncid, "clwc", nlay_l, ncol_l, nexp_l), shape = [nlay_l, blocksize, nblocks]) 
+      ciwc = reshape(read_field(ncid, "ciwc", nlay_l, ncol_l, nexp_l), shape = [nlay_l, blocksize, nblocks]) 
+      cloud_fraction = reshape(read_field(ncid, "cloud_fraction", nlay_l, ncol_l, nexp_l), shape = [nlay_l, blocksize, nblocks]) 
+    end if
 
     ncid = nf90_close(ncid)
 
