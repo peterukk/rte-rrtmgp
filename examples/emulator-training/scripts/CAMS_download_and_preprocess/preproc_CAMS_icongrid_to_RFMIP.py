@@ -67,14 +67,14 @@ def qsatGFS(p,T):
     return qs 
 
 # Input data file
-fpath_cams  = "/media/peter/samsung/data/CAMS/CAMS_2015.nc"
+fpath_cams  = "/media/peter/samsung/data/CAMS/CAMS_2008.nc"
 
 # New file
 fpath_new   = os.path.splitext(fpath_cams)[0] + '_RFMIPstyle.nc'
 print("Saving new file to {}".format(fpath_new))
 
 # RFMIP file, used to copy attributes and compare
-fpath_rfmip = root_dir+'data_input/multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc'
+fpath_rfmip = root_dir+'../rfmip-clear-sky/multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc'
 
 dat         = Dataset(fpath_cams)
 dat_new     = Dataset(fpath_new,'w')
