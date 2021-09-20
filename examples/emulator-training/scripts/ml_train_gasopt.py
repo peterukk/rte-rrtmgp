@@ -18,8 +18,8 @@ import os
 import gc
 import numpy as np
 
-from ml_loaddata import ymeans_sw_abs, ysigma_sw_abs, load_inp_outp_rrtmgp, \
-    preproc_pow_gptnorm_reverse,scale_gasopt
+from ml_loaddata import ymeans_sw_abs, ysigma_sw_abs, ymeans_sw_ray, ysigma_sw_ray, \
+    load_inp_outp_rrtmgp, preproc_pow_gptnorm_reverse,scale_gasopt
 from ml_eval_funcs import plot_hist2d, plot_hist2d_T
 import matplotlib.pyplot as plt
 
@@ -35,9 +35,9 @@ fpath    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016
 fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_noclouds.nc"
 fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
 
-fpath    = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2012-2016_noclouds.nc"
-fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2017_noclouds.nc"
-fpath_test  = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+fpath    = "/media/peter/samsung/data/CAMS/ml_training/RRTMGP_data_g224_CAMS_2009-2018_sans_2014-2015_RND.nc"
+fpath_val   = "/media/peter/samsung/data/CAMS/ml_training/RRTMGP_data_g224_CAMS_2014_RND.nc"
+fpath_test  = "/media/peter/samsung/data/CAMS/ml_training/RRTMGP_data_g224_CAMS_2015_RND.nc"
 
 
 # Just one dataset
@@ -55,14 +55,17 @@ scale_outputs = True
 # Choose one of the following predictands (target output)
 # 'tau_lw', 'planck_frac', 'tau_sw_abs', 'tau_sw_ray', 'tau_sw', 'ssa_sw'
 predictand = 'tau_sw_abs'
+predictand = 'tau_sw_ray'
 
 # Which ML library to use: select either 'pytorch',
 # or 'tf-keras' for Tensorflow with Keras frontend
-ml_library = 'pytorch'
+ml_library = 'tf-keras'
 # ml_library = 'tf-keras'
 
 # Model training: use CPU or GPU?
 use_gpu = False
+
+retrain_mae = False
 
 # ----------- config ------------
 
@@ -93,21 +96,33 @@ else: # if we only have one dataset, split manually
 nfac = 8 # first, transform y: y=y**(1/nfac); cheaper and weaker version of 
 # log scaling. Useful when the output is a vector which has a wide range 
 # of magnitudes across the vector elements (g-points)
-y_mean  = ymeans_sw_abs # standard scaling after square root transformation
-y_sigma = ysigma_sw_abs
-# x coefficients
-# xmin = np.array([1.7894626e+02, 2.3025851e+00, 0.0000000e+00, 2.7871470e-04,
-#        3.8346465e-04, 1.5644504e-07, 0.0000000e+00], dtype=np.float32)
-# xmax = np.array([3.1476846e+02, 1.1551140e+01, 4.3200806e-01, 5.6353424e-02,
-#        7.7934266e-04, 3.5097651e-06, 3.3747145e-07], dtype=np.float32) 
+# standard scaling after square root transformation
+if (predictand == 'tau_sw_abs'):
+    y_mean  = ymeans_sw_abs 
+    y_sigma = ysigma_sw_abs
+elif (predictand == 'tau_sw_ray'):
+    y_mean  = ymeans_sw_ray #
+    y_sigma = ysigma_sw_ray
+else: 
+    print("SPECIFY Y SCALING COEFFICIENTS")
+    
+    
+    
+    
+
+    
+# INPUT SCALING
+
 #  tlay play h2o o3 co2 ch4 n2o
-xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3,1.41E-4,2.55E-8, 0.00E0], dtype=np.float32)
+# xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3,1.41E-4, 2.55E-8, 0.00E0], dtype=np.float32)
+# xmax = np.array([ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3,
+#          3.6000001E-6, 5.8135214E-7], dtype=np.float32) 
+
+#  tlay play h2o o3 co2 n2o ch4
+xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3, 1.41E-4, 0.00E0, 2.55E-8], dtype=np.float32)
 xmax = np.array([ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3,
-         3.6000001E-6, 5.8135214E-7], dtype=np.float32) 
-
+         5.8135214E-7, 3.6000001E-6], dtype=np.float32) 
 xcoeffs = (xmin,xmax)
-
-
 
 # Scale data, depending on choices 
 x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
@@ -167,7 +182,7 @@ if (ml_library=='pytorch'):
     mc = pl.callbacks.ModelCheckpoint(monitor='val_loss',every_n_epochs=2)
     
     if use_gpu:
-        trainer = pl.Trainer(gpus=0, deterministic=True)
+        trainer = pl.Trainer(gpus=1, deterministic=True)
     else:
         num_cpu_threads = 8
         trainer = pl.Trainer(accelerator="ddp_cpu", callbacks=[mc], deterministic=True,
@@ -223,15 +238,18 @@ elif (ml_library=='tf-keras'):
     batch_size  = 1024
     neurons     = [16,16]
     
+    batch_size  = 4096
+    lr          = 0.01
+    
     # batch_size  = 3*batch_size
     # lr          = 2 * lr
     
     if use_gpu:
         devstr = '/gpu:0'
-        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
     else:
-        num_cpu_threads = 4
+        num_cpu_threads = 12
         devstr = '/cpu:0'
         # Maximum number of threads to use for OpenMP parallel regions.
         os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
@@ -269,12 +287,19 @@ elif (ml_library=='tf-keras'):
         history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
                             validation_data=(x_val,y_val), callbacks=callbacks)    
         
+    if retrain_mae:
+        model.compile(loss=losses.mean_absolute_error, optimizer=optim,metrics=['mean_squared_error'])
+        callbacks = [EarlyStopping(monitor='val_loss',  patience=patience, verbose=1, mode='min',restore_best_weights=True)]
+        with tf.device(devstr):
+            history2 = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                                validation_data=(x_val,y_val), callbacks=callbacks)
+            
+        
     # PREDICT OUTPUTS FOR TEST DATA
     def eval_valdata():
         y_pred       = model.predict(x_val);  
         y_pred       = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
         
-        y_pred = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
         if predictand not in ['planck_frac', 'ssa_sw']:
             y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
             
@@ -284,9 +309,9 @@ elif (ml_library=='tf-keras'):
     eval_valdata()
 
     # SAVE MODEL
-    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"
-    # savemodel(kerasfile, model)
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.h5"
+    savemodel(kerasfile, model)
     
-    # # from keras.models import load_model
-    # # kerasfile = rootdir+"soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"
-    # # model = load_model(kerasfile,compile=False)
+    from keras.models import load_model
+    # kerasfile = rootdir+"soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"
+    model = load_model(kerasfile,compile=False)

@@ -32,15 +32,15 @@ import matplotlib.pyplot as plt
 
 #  ----------------- File paths -----------------
 # fpath       = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_clouds.nc"
-fpath       = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2009-2016_clouds_noreftrans.nc"
-fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_clouds_reftrans.nc"
-fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_clouds_reftrans.nc"
+fpath       = "/media/peter/samsung/data/CAMS/ml_training/RADSCHEME_data_g224_CAMS_2009-2018_sans_2014-2015.nc"
+fpath_val   = "/media/peter/samsung/data/CAMS/ml_training/RADSCHEME_data_g224_CAMS_2014.nc"
+fpath_test  = "/media/peter/samsung/data/CAMS/ml_training/RADSCHEME_data_g224_CAMS_2015.nc"
 
 # fpath       = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
 # fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
 # fpath_test   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
 
-fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2011-2013_RFMIPstyle.nc"
+# fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2011-2013_RFMIPstyle.nc"
 
 # ----------- config ------------
 
@@ -92,9 +92,10 @@ if scale_inputs:
     
     fpath_xcoeffs = "../../../neural/data/nn_radscheme_xmin_xmax.txt"
     xcoeffs = np.loadtxt(fpath_xcoeffs, delimiter=',')
-    xmax = xcoeffs[542:]
-    # xmin = xcoeffs[0:542]
+    xmax = xcoeffs[0:542]
 
+    # xmax = xcoeffs[542:]
+    # xmin = xcoeffs[0:542]
     xmin = np.repeat(0.0, 542)
 
     
@@ -250,7 +251,7 @@ elif (ml_library=='tf-keras'):
     lr          = 0.0001 
     # lr          = 0.0002 
     batch_size  = 256
-    batch_size  = 512
+    batch_size  = 1024
     neurons     = [182, 182]
     # neurons     = [256,256] #0.994935
     neurons     = [128, 128]  #0.99804565
@@ -262,7 +263,7 @@ elif (ml_library=='tf-keras'):
         os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
     else:
-        num_cpu_threads = 6
+        num_cpu_threads = 12
         devstr = '/cpu:0'
         # Maximum number of threads to use for OpenMP parallel regions.
         os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
@@ -321,7 +322,7 @@ elif (ml_library=='tf-keras'):
 
     
     # SAVE MODEL
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/radscheme-128_2.h5"
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/radscheme-128-128_NEW2.h5"
 
     savemodel(kerasfile, model)
     

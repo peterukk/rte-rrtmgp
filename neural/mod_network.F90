@@ -214,7 +214,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    print *, "neurons", neurons, "nbatch", nbatch, "nx", nx, "ny", ny
+    ! print *, "neurons", neurons, "nbatch", nbatch, "nx", nx, "ny", ny
 
     !$acc enter data create(a1, a2)
     associate(layers=>self%layers)    ! so it's easier to read

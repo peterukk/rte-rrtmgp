@@ -98,10 +98,10 @@ program rrtmgp_rfmip_sw
   ! Gas optics uses a derived type to represent gas concentrations compactly
   !
   use mo_gas_concentrations, only: ty_gas_concs
-  !
-  ! Coefficients used to scale NN inputs
-  !
-  use mo_rrtmgp_nn_constants,only: nn_input_names, nn_input_maxvals, nn_input_minvals
+  ! !
+  ! ! Coefficients used to scale NN inputs
+  ! !
+  ! use mo_rrtmgp_nn_constants,only: nn_input_names, nn_input_maxvals, nn_input_minvals
   !
   !
   ! Cloud optics extension
@@ -164,7 +164,7 @@ program rrtmgp_rfmip_sw
   integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
   logical             ::  top_at_1, do_scattering
   integer             ::  b, icol, ilay, igpt, igas, ngas, ninputs_rrtmgp, num_gases, ret, i, istat, ncid
-  character(len=4)    ::  block_size_char
+  character(len=5)    ::  block_size_char
   character(len=12)    ::  emulated_component
   character(len=32 ), dimension(:),     allocatable :: kdist_gas_names, input_file_gas_names, input_names
   ! Output fluxes
@@ -199,7 +199,7 @@ program rrtmgp_rfmip_sw
   !
   ! various logical to control program
   logical :: use_rrtmgp_nn=.false., use_rte_nn=.false., use_rtegpt_nn=.false., use_reftrans_nn = .false., use_rte_rrtmgp_nn =.false.
-  logical :: include_clouds=.true., compare_flux=.true., save_inputs_outputs = .false., do_gpt_flux, save_flux
+  logical :: include_clouds=.true., compare_flux=.false., save_inputs_outputs = .false., do_gpt_flux, save_flux
   !
   ! Derived types from the RTE and RRTMGP libraries
   !
@@ -233,50 +233,58 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Compute fluxes per g-point?
-  do_gpt_flux = .true.
+  do_gpt_flux = .false.
   ! Save fluxes to netCDF file?
-  save_flux   = .false.
+  save_flux   = .true.
+  ! Compare fluxes?
+  compare_flux = .true.
 
-  print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] (4 args: use reference code) "
-  print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [emulated component] ", &
-      "[NN model file(s)] (6-7 args, replace a component with NN)"
+  print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [flux file] (5 args: use reference code) "
+  print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [flux file] [emulated component] ", &
+      "[NN model file(s)] (7-8 args, replace a component with NN)"
   print *, "Provide 'none' for cloud coeff. file to skip clouds (clear-sky computation)"
 
   nargs = command_argument_count()
   if (nargs <  4) call stop_on_err("Need to provide at least block_size input_file k-distribution file [cloud coeff. file]")
 
   call get_command_argument(1, block_size_char)
-  read(block_size_char, '(i4)') block_size
+  read(block_size_char, '(i5)') block_size
 
   call get_command_argument(2, input_file)
   call get_command_argument(3, kdist_file)
   call get_command_argument(4, cloud_optics_file)
   if (trim(cloud_optics_file)=='none' ) include_clouds =.false.
-  if(nargs == 5) then
-     print *, "provide 4 (reference code) or 6-7 arguments (emulation mode), not 5"
+
+  call get_command_argument(5, flx_file) 
+  
+  if(nargs == 6) then
+     print *, "provide 5 (reference code) or 7-8 arguments (emulation mode), not 5"
      stop
   end if
-  if(nargs > 5) then
-    call get_command_argument(5, emulated_component) 
-    call get_command_argument(6, nn_modelfile_1)
+  if(nargs > 6) then
+    call get_command_argument(6, emulated_component) 
+    call get_command_argument(7, nn_modelfile_1)
 
     print *, "program called in EMULATION MODE, using neural nets to emulate ", emulated_component
 
     if (emulated_component == 'rrtmgp') then
       use_rrtmgp_nn         = .true.
-      if (nargs < 7) then
+      print *, "EMULATING RRTMGP COMPUTATIONS WITH NN"
+      if (nargs < 8) then
         call stop_on_err("Need to supply two model files to emulate RRTMGP (absorption and Rayleigh cross-section models, respectively")
       else
-        call get_command_argument(7, nn_modelfile_2)
+        call get_command_argument(8, nn_modelfile_2)
       end if
     else if (emulated_component == 'both') then
       use_rte_rrtmgp_nn     = .true.
+      print *, "EMULATING ENTIRE RADIATION SCHEME WITH NN"
     else if (emulated_component == 'rte') then
       use_rte_nn            = .true.
     else if (emulated_component == 'rte-reftrans') then
       use_reftrans_nn       = .true.
+      print *, "EMULATING REFTRANS COMPUTATIONS WITH NN"
     else
-      call stop_on_err("If nargs>5, third argument specifies which code to replace with NNs and must be one of the following: & 
+      call stop_on_err("If nargs>6, third argument specifies which code to replace with NNs and must be one of the following: & 
       &'both', 'rrtmgp', 'rte',' 'rte-reftrans'")
     end if
   end if
@@ -299,13 +307,21 @@ program rrtmgp_rfmip_sw
   ! A gas might have a different name in the k-distribution than in the files
   ! provided (e.g. 'co2' and 'carbon_dioxide'), user needs to provide the correct ones
   !
-  kdist_gas_names = ["h2o  ","co2  ","ch4  ","o2   ","o3   ", "n2o  ", "n2   "] !,"no2  "]
+  ! kdist_gas_names = ["h2o  ","co2  ","ch4  ","o2   ","o3   ", "n2o  ", "n2   "] !,"no2  "]
+  ! input_file_gas_names =  ['water_vapor   ', &
+  !                   'carbon_dioxide', &
+  !                   'methane       ', &
+  !                   'oxygen        ', &
+  !                   'ozone         ', &
+  !                   'nitrous_oxide ', &
+  !                   'nitrogen      ']!,'no2           ']  
+  kdist_gas_names = ["h2o  ","o3   ","co2  ","n2o  ", "ch4  ","o2   ", "n2   "] !,"no2  "]
   input_file_gas_names =  ['water_vapor   ', &
+                    'ozone         ', &
                     'carbon_dioxide', &
+                    'nitrous_oxide ', &
                     'methane       ', &
                     'oxygen        ', &
-                    'ozone         ', &
-                    'nitrous_oxide ', &
                     'nitrogen      ']!,'no2           ']  
   num_gases = size(kdist_gas_names)
   print *, "Calculation uses gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
@@ -421,6 +437,7 @@ program rrtmgp_rfmip_sw
     rei = 0.0_wp
     ! Compute ice and liquid water paths from mixing ratios (from ecRAD)
     do b = 1, nblocks
+      ! print *, "CLWC", maxval(clwc(:,:,b))
       do icol = 1, block_size
         do ilay = 1, nlay
           if (cloud_fraction(ilay,icol,b) > 0.0_wp) then
@@ -643,6 +660,7 @@ program rrtmgp_rfmip_sw
       !$acc loop
       do icol = 1, block_size
         mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
+        ! print *, "icol", icol, "sza", solar_zenith_angle(icol,b), "usecol", usecol(icol,b)
       end do
       !$acc end parallel
 
@@ -710,7 +728,7 @@ program rrtmgp_rfmip_sw
 
   !
   ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
-  !
+  
   ! do b = 1, nblocks
   !   do icol = 1, block_size
   !     if(.not. usecol(icol,b)) then
@@ -727,8 +745,6 @@ program rrtmgp_rfmip_sw
 
   if (compare_flux) then
     print *, "-- FLUX AND HEATING RATE ERRORS OF RESULTS COMPARED TO REFERENCE RTE+RRTMGP --"
-    print *, "------------------------------------------------------------------------------"
-
     allocate(rsd_ref( nlay+1, ncol, nexp))
     allocate(rsu_ref( nlay+1, ncol, nexp))  
     allocate(rsdu_ref( nlay+1, ncol, nexp))  
@@ -736,7 +752,9 @@ program rrtmgp_rfmip_sw
     allocate(rsu_nn( nlay+1, ncol, nexp))
     allocate(rsdu_nn( nlay+1, ncol, nexp))
 
-    flx_file_ref = 'fluxes/rsud_CAMS_2018_REF.nc'
+    flx_file_ref = 'fluxes/CAMS_2015_rsud_REFERENCE.nc'
+    print *, "reference file:", flx_file_ref
+    print *, "------------------------------------------------------------------------------"
 
     call unblock(flux_up, rsu_nn)
     call unblock(flux_dn, rsd_nn)
@@ -757,6 +775,9 @@ program rrtmgp_rfmip_sw
 
     print *, "bias in upwelling flux, top-of-atmosphere:", &
       bias(reshape(rsu_ref(1,:,1), shape = [1*ncol]),    reshape(rsu_nn(1,:,1), shape = [1*ncol]))
+
+    print *, "MAE in upwelling flux, top-of-atmosphere: ", &
+      mae(reshape(rsu_ref(1,:,1), shape = [1*ncol]),              reshape(rsu_nn(1,:,1), shape = [1*ncol]))   
 
     print *, "MAE in upwelling flux:                    ", &
       mae(reshape(rsu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
@@ -798,29 +819,34 @@ program rrtmgp_rfmip_sw
 
   ! Save fluxes?  we might want to evaluate the fluxes predicted with neural networks
   if (save_flux) then
-    flx_file = 'fluxes/rsud_CAMS_2018_REFTRANS.nc'
+    ! flx_file = 'fluxes/CAMS_2018_rsud_REF.nc'
+    print *, "Attempting to save broadband fluxes to ", flx_file
+
       ! Create file
-    call flux_file_netcdf%create(trim(flx_file),override_file=.true.)
+    ! call flux_file_netcdf%create(trim(flx_file),override_file=.true.)
+
+    call flux_file_netcdf%open(trim(flx_file), redefine_existing=.true.,is_hdf5_file=.true.)
 
     ! Define dimensions
-    call flux_file_netcdf%define_dimension("expt", nexp)
-    call flux_file_netcdf%define_dimension("site", ncol)
-    call flux_file_netcdf%define_dimension("level", nlay+1)
+    ! call flux_file_netcdf%define_dimension("expt", nexp)
+    ! call flux_file_netcdf%define_dimension("site", ncol)
+    ! call flux_file_netcdf%define_dimension("level", nlay+1)
 
-    call flux_file_netcdf%define_variable("plev", &
-      dim3_name="expt", dim2_name="site", dim1_name="level", &
-      units_str="Pa", standard_name="air_pressure", long_name="Pressure at layer edge")
+    ! call flux_file_netcdf%define_variable("plev", &
+    !   dim3_name="expt", dim2_name="site", dim1_name="level", &
+    !   units_str="Pa", standard_name="air_pressure", long_name="Pressure at layer edge")
 
-    call flux_file_netcdf%define_variable("rsu", &
-      dim3_name="expt", dim2_name="site", dim1_name="level", long_name="upwelling shortwave flux")
+    ! call flux_file_netcdf%define_variable("rsu", &
+    !   dim3_name="time", dim2_name="site", dim1_name="level", long_name="upwelling shortwave flux")
       
-    call flux_file_netcdf%define_variable("rsd", &
-      dim3_name="expt", dim2_name="site", dim1_name="level", long_name="downwelling shortwave flux")
+    ! call flux_file_netcdf%define_variable("rsd", &
+    !   dim3_name="time", dim2_name="site", dim1_name="level", long_name="downwelling shortwave flux")
 
     call flux_file_netcdf%end_define_mode()
-    call unblock_and_write(trim(flx_file), 'plev', p_lev)
+    ! call unblock_and_write(trim(flx_file), 'plev', p_lev)
     call unblock_and_write(trim(flx_file), 'rsu', flux_up)
     call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
+
     call flux_file_netcdf%close()
     print *, "Broadband fluxes saved to ", flx_file
     
@@ -852,13 +878,10 @@ program rrtmgp_rfmip_sw
     integer :: igas, ilay, icol, ndims, idx_h2o, idx_o3, idx_gas, i
     character(len=32)                           :: gas_name    
     real(wp),       dimension(nlay,ncol)        :: vmr
-    real(sp),       dimension(:), allocatable   :: xmin, xmax
 
     !  Neural network inputs are a vector consisting of temperature and pressure followed by gas concentrations
     ! These inputs are scaled to a range of (0-1), additionally some are power or log scaled: 
     ! The inputs are:   tlay,    log(play),   h2o**(1/4), o3**(1/4), co2, ..
-    xmin = nn_input_minvals
-    xmax = nn_input_maxvals
 
     ! First lets write temperature, pressure, water vapor and ozone into the inputs
     ! These are assumed to always be present!
@@ -885,7 +908,6 @@ program rrtmgp_rfmip_sw
     ! and also the dimensions of the concentration array
     i = 5
     do igas = 1, size(gas_desc%gas_name)
-    
       gas_name = gas_desc%gas_name(igas)
       if(gas_name=='h2o' .or. gas_name=='o3' .or. gas_name=='o2' .or. gas_name=='n2') cycle
 
@@ -897,6 +919,8 @@ program rrtmgp_rfmip_sw
 
       ! Write to nn_input non-contiguously
       nn_inputs(i,:,:) = vmr(:,:)
+
+      ! print *, "i", i, "GAS NAME", gas_name
     
       i = i + 1
     end do
@@ -948,16 +972,17 @@ program rrtmgp_rfmip_sw
     555.05698858, 552.03360581, 550.17168289, 548.97796299, 548.11269961, 547.68542119 /)   ! output standard-scaling coefficient 
     real(sp)                                :: ysigma = 431.14175665                        ! output standard-scaling coefficient
     real(sp), dimension(542)                :: xmin, xmax
-    real(sp), dimension(1084)               :: xvals
     ! load input scaling coefficients
     open(20,file="../../neural/data/nn_radscheme_xmin_xmax.txt",status="old",action="read")
-    do i = 1, 1084
-      read(20,*) xvals(i)
+    ! do i = 1, 1084
+    do i = 1, 542
+      read(20,*) xmax(i)
     end do
     close(20)
-    xmin = xvals(1:542)
-    xmax = xvals(543:1084)
-
+    ! xmin = xvals(1:542)
+    ! xmax = xvals(543:1084)
+    ! xmax =  xvals(1:542)
+    xmin = 0.0_wp
     
     ! number of samples (profiles) nbatch = ncol
 
@@ -988,6 +1013,7 @@ program rrtmgp_rfmip_sw
 
     ! print *, "shape nn input", shape(nn_inputs), "shape cloud lwp", shape(cloud_lwp), "nbatch", nbatch
     ! print *, "shape rrtmgp inputs", shape(rrtmgp_inputs)
+
     do j = 1, nbatch
       nn_inputs(1:i1e,j)     = reshape(rrtmgp_inputs(:,:,j),(/nx_gasopt*nlay/))
       nn_inputs(i2s:i2e,j)   = cloud_lwp(:,j)
@@ -1003,25 +1029,25 @@ program rrtmgp_rfmip_sw
 
       do i = 1, nx
         ! nn_inputs(i,j) = (nn_inputs(i,j) - xmin(i)) / (xmax(i) - xmin(i))
-        if (xmax(i) /= 0.0_sp) nn_inputs(i,j) = nn_inputs(i,j) / xmax(i)
+        if (xmax(i) /= 0.0_sp) then 
+          nn_inputs(i,j) = nn_inputs(i,j) / xmax(i)
+        end if
       end do
       ! print *, "i 177 2",nn_inputs(177,j)
 
       ! print *, "1", nn_inputs(1:i1e,j)
       ! print *, "2", nn_inputs(i2s:i2e,j)
       ! print *, "mean nn inp",j,":", mean(nn_inputs(1:i1e,j))
-
     end do 
-
-    print *, "mean nn inp", mean_2d(nn_inputs)
 
     ! do i = 1, nx
     !   print *, "i", i, ":", mean(nn_inputs(i,:))
     ! end do
 
     ! print*, "nx", nx, "ny", ny, "nbatch", nbatch
+#ifndef DOUBLE_PRECISION
     call neural_net % output_sgemm_flat(nx, ny, nbatch, nn_inputs, nn_outputs)
-
+#endif
     do j = 1, nbatch
       ! Postprocess: reverse standard scaling
       do i = 1, ny

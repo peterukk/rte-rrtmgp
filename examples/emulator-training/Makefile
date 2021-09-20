@@ -13,6 +13,7 @@ LDFLAGS   += -L$(RRTMGP_BUILD)
 LIBS      += -lrrtmgp -lrte -lneural
 FCINCLUDE += -I$(RRTMGP_BUILD)
 
+
 #
 # netcdf library, module files
 # C and Fortran interfaces respectively
@@ -22,6 +23,11 @@ LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
 LIBS      += -lnetcdff -lnetcdf
 # NetCDF-4 format for easy_netcdf
 FCFLAGS += -DNC_NETCDF4
+
+
+ifeq ($(DOUBLE_PRECISION),1)
+	FCFLAGS += -DDOUBLE_PRECISION
+endif
 
 # 
 # -------- BLAS lbirary: required for RRTMGP-NN --------
