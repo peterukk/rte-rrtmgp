@@ -60,6 +60,21 @@ def create_model_hyperopt(trial, nx, ny):
         )
     return model
 
+
+def create_model_mlp(nx,ny,neurons=[40,40], activ0='softsign',activ='softsign',
+                 kernel_init='he_uniform',activ_last='linear'):
+    model = Sequential()
+    # input layer (first hidden layer)
+    model.add(Dense(neurons[0], input_dim=nx, kernel_initializer=kernel_init, activation=activ0))
+    # further hidden layers
+    for i in range(1,np.size(neurons)):
+      model.add(Dense(neurons[i], activation=activ,kernel_initializer=kernel_init))
+    # output layer
+    model.add(Dense(ny, activation=activ_last,kernel_initializer=kernel_init))
+    
+    return model
+
+
 def mse_weights(y_true,y_pred):
     wg = np.array([2.0, 1.0, 2.0, 2.0], dtype=np.float32)
     # wg = np.array([2.5, 1.0, 2.0, 2.5], dtype=np.float32)
@@ -117,19 +132,6 @@ def mse_sineweight_nfac2_3(y_true, y_pred):
     # weights = tf.stack(weights_n)
     return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
 
-
-def create_model_mlp(nx,ny,neurons=[40,40], activ0='softsign',activ='softsign',
-                 kernel_init='he_uniform',activ_last='linear'):
-    model = Sequential()
-    # input layer (first hidden layer)
-    model.add(Dense(neurons[0], input_dim=nx, kernel_initializer=kernel_init, activation=activ0))
-    # further hidden layers
-    for i in range(1,np.size(neurons)):
-      model.add(Dense(neurons[i], activation=activ,kernel_initializer=kernel_init))
-    # output layer
-    model.add(Dense(ny, activation=activ_last,kernel_initializer=kernel_init))
-    
-    return model
 
 
 def savemodel(kerasfile, model):

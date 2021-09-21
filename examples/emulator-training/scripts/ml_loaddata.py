@@ -186,7 +186,7 @@ def load_inp_outp_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     
     return x,y,col_dry
 
-def load_inp_outp_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True):
+def load_inp_outp_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True, return_pressures=False):
     # Load data for training a RADIATION SCHEME (RTE+RRTMGP) emulator,
     # where inputs are vertical PROFILES of atmospheric conditions (T,p, gas concentrations)
     # and outputs (predictand) are PROFILES of broadband fluxes (upwelling and downwelling)
@@ -272,7 +272,14 @@ def load_inp_outp_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, cl
            
     print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
     
-    return x,y
+    if not return_pressures:
+        dat.close()
+        return x,y
+    else:
+        pres = dat.variables['pres_level'][:,:,:].data       # (nexp,ncol, nlev)
+        pres = np.reshape(pres,(ns,nlev))
+        dat.close()
+        return x,y,pres
 
 def load_inp_outp_rte_sw(fname):
     # Load data for training a RADIATIVE TRANSFER  SOLVER (RTE) emulator,
@@ -681,6 +688,17 @@ def preproc_minmax_inputs(x, xcoeffs=None):
                 else:
                     x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
             return x_scaled
+
+def preproc_minmax_reverse(x_scaled, xcoeffs):
+        x = np.copy(x_scaled)
+
+        (xmin,xmax) = xcoeffs
+        for i in range(x.shape[1]):
+            if (xmax[i] - xmin[i]) == 0.0:
+                x[:,i] = 0.0
+            else:
+                x[:,i] =  (x[:,i] + xmin[i]) * (xmax[i] - xmin[i] )
+        return x
 
 # Preprocess RRTMGP inputs (p,T, gas concs)
 def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
