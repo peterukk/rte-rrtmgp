@@ -13,8 +13,10 @@ import numpy as np
 import cdsapi
 import os
 
-timestr = ['03:00', '09:00',  '15:00',   '21:00']
-stepstr = ['3','9','15','21']
+# timestr = ['03:00', '09:00',  '15:00',   '21:00']
+# stepstr = ['3','9','15','21']
+timestr = [ '09:00',   '21:00']
+stepstr = ['9','21']
 
 def running_mean(x, N):
     cumsum = np.cumsum(np.insert(x, 0, 0)) 
@@ -102,37 +104,36 @@ def get_dict_egg4_ml(year,month):
 this_dir = os.getcwd() + "/"
 dl_dir   = this_dir + "tmp/"
 
-os.chdir(this_dir)
+#os.chdir(this_dir)
 
 # Specify which year to download, everything else is fixed
-year = "2020"
+year = "2008"
 
 c = cdsapi.Client()
 
 for month in ["02", "05", "08", "11"]:
     print(month)
-   
-    dict_eac4 = get_dict_eac4_sfc(year,month)
-    c.retrieve(
-        'cams-global-reanalysis-eac4', dict_eac4,
-        dl_dir+'CAMS_eac4_sfc_%s%s01.grb'%(year,month))
     
     dict_eac4 = get_dict_eac4_ml(year,month)
     c.retrieve(
         'cams-global-reanalysis-eac4', dict_eac4,
         dl_dir+'CAMS_eac4_ml_%s%s01.grb'%(year,month))
     
-    # EGG4
-    dict_egg4 = get_dict_egg4_sfc(year,month)
+    dict_eac4 = get_dict_eac4_sfc(year,month)
     c.retrieve(
-        'cams-global-ghg-reanalysis-egg4', dict_egg4,
-        dl_dir+'CAMS_egg4_sfc_%s%s01.grb'%(year,month))
+        'cams-global-reanalysis-eac4', dict_eac4,
+        dl_dir+'CAMS_eac4_sfc_%s%s01.grb'%(year,month))
     
+    # EGG4
     dict_egg4 = get_dict_egg4_ml(year,month)
     c.retrieve(
         'cams-global-ghg-reanalysis-egg4', dict_egg4,
         dl_dir+'CAMS_egg4_ml_%s%s01.grb'%(year,month))
-
+    
+    dict_egg4 = get_dict_egg4_sfc(year,month)
+    c.retrieve(
+        'cams-global-ghg-reanalysis-egg4', dict_egg4,
+        dl_dir+'CAMS_egg4_sfc_%s%s01.grb'%(year,month))
 
 # PREPROCESS INTO ONE NetCDF FILE USING CDO COMMANDS
 # these are in a bash script, output file is tmp/CAMS_YYYY.nc
@@ -210,5 +211,5 @@ os.system("ncks -A {} {}".format(fname_n2o,fname))
 os.system("ncatted -h -a history,global,d,, {}".format(fname))
 os.system("ncatted -h -a history_of_appended_files,global,d,, {}".format(fname))
 
-fname_final = "/media/peter/samsung/data/CAMS/CAMS_{}.nc".format(year)
+fname_final = "/media/peter/samsung/data/CAMS/CAMS_{}_2.nc".format(year)
 os.system("cp {} {}".format(fname,fname_final))

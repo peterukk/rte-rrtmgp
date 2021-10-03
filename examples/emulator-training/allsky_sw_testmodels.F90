@@ -560,14 +560,27 @@ program rrtmgp_rfmip_sw
       !$acc parallel loop
       do icol = 1, block_size
         mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
+
+        do igpt = 1,ngpt
+            toa_flux(igpt,icol) = k_dist%solar_source(igpt)
+        end do
+        def_tsi(icol) = sum(toa_flux(:,icol),dim=1)
+
+        do igpt  = 1, ngpt
+          ! Normalize incoming solar flux to match RFMIP specification
+          toa_flux(igpt,icol) = toa_flux(igpt,icol) * total_solar_irradiance(icol,b)/def_tsi(icol)
+          ! Apply boundary condition
+          toa_flux(igpt,icol) = toa_flux(igpt,icol) * mu0(icol)
+        end do
       end do
-      
+
+
       call predict_nn_radscheme_sw(block_size, nlay, ninputs_rrtmgp, & 
                         input_rrtmgp(:,:,:,b), & ! RRTMGP inputs (gas concentrations + T + p)
                         lwp(:,:,b), iwp(:,:,b), & ! cloud liquid and ice water paths
                         mu0, surface_albedo(:,b),  & ! RTE inputs; no inc. flux because its assumed constant across columns
                         nn_model,    & ! pre-trained neural network 
-                        fluxes)
+                        fluxes, sum(toa_flux,dim=1))
 #ifdef USE_TIMING
         ret =  gptlstop('predict_nn_radscheme_sw')
 #endif
@@ -609,7 +622,6 @@ program rrtmgp_rfmip_sw
                                           atmos,      &
                                           toa_flux))
       end if
-
       ! print *, "mean tau", mean_3d(atmos%tau)
       ! print *, "mean ssa", mean_3d(atmos%ssa)
       ! print *," max, min (tau)",   maxval(atmos%tau), minval(atmos%tau)
@@ -847,6 +859,9 @@ program rrtmgp_rfmip_sw
     call unblock_and_write(trim(flx_file), 'rsu', flux_up)
     call unblock_and_write(trim(flx_file), 'rsd', flux_dn)
 
+    call unblock_and_write(trim(flx_file), 'solar_zenith_angle', solar_zenith_angle)
+
+
     call flux_file_netcdf%close()
     print *, "Broadband fluxes saved to ", flx_file
     
@@ -942,11 +957,13 @@ program rrtmgp_rfmip_sw
                                     cloud_lwp, cloud_iwp, & ! cloud liquid and ice water paths
                                     mu0, sfc_alb,  & ! RTE inputs; no inc. flux because its assumed constant across columns
                                     neural_net,    & ! pre-trained neural network 
-                                    fluxes)
+                                    fluxes, incflux)
     integer,                                    intent(in)  ::  nbatch, nlay, nx_gasopt
     real(sp), dimension(nx_gasopt, nlay, nbatch), intent(in)  ::  rrtmgp_inputs 
     real(wp), dimension(nlay, nbatch),            intent(in)  ::  cloud_lwp, cloud_iwp
     real(wp), dimension(nbatch),                  intent(in)  ::  mu0, sfc_alb 
+    real(wp), dimension(nbatch)             :: incflux
+
     type(network_type),                         intent(in)  ::  neural_net 
     class(ty_fluxes_flexible),                  intent(inout) :: fluxes  
 
@@ -971,11 +988,11 @@ program rrtmgp_rfmip_sw
     677.67695876, 656.78869705, 633.36680778, 611.07829043, 592.37422528, 578.04482565, 567.34107156, 559.94750542, &
     555.05698858, 552.03360581, 550.17168289, 548.97796299, 548.11269961, 547.68542119 /)   ! output standard-scaling coefficient 
     real(sp)                                :: ysigma = 431.14175665                        ! output standard-scaling coefficient
-    real(sp), dimension(542)                :: xmin, xmax
+    real(sp), dimension(543)                :: xmin, xmax
     ! load input scaling coefficients
     open(20,file="../../neural/data/nn_radscheme_xmin_xmax.txt",status="old",action="read")
     ! do i = 1, 1084
-    do i = 1, 542
+    do i = 1, 543
       read(20,*) xmax(i)
     end do
     close(20)
@@ -991,13 +1008,12 @@ program rrtmgp_rfmip_sw
     ! scalars mu+ and sfc_alb 
     ! Incoming flux at top of the atmosphere is assumed constant! (not spectrally constant, but the solar gpt flux is still an array of constants)
     !           gases,         clouds,  mu0, sfc_alb
-    nx    =    nlay*nx_gasopt + 2*nlay  + 1 + 1
+    nx    =    nlay*nx_gasopt + 2*nlay  + 1 + 1     +1
     ! outputs
     nlev = nlay + 1
     ny   = 2*nlev ! 3 if dir downward flux needed
     allocate(nn_inputs (nx, nbatch))
     allocate(nn_outputs(ny, nbatch))
-
 
     i1e = nlay*nx_gasopt
     i2s = i1e + 1
@@ -1020,7 +1036,7 @@ program rrtmgp_rfmip_sw
       nn_inputs(i3s:i3e,j)   = cloud_iwp(:,j)
       nn_inputs(i4,j)        = mu0(j)
       nn_inputs(i5,j)        = sfc_alb(j)
-
+      nn_inputs(i5+1,j)      = incflux(j)
       ! nn_inputs(1:420,j)     = reshape(rrtmgp_inputs(:,:,j),(/nx_gasopt*nlay/))
       ! nn_inputs(421:480,j)   = cloud_lwp(:,j)
       ! nn_inputs(481:540,j)   = cloud_iwp(:,j)
@@ -1040,23 +1056,22 @@ program rrtmgp_rfmip_sw
       ! print *, "mean nn inp",j,":", mean(nn_inputs(1:i1e,j))
     end do 
 
-    ! do i = 1, nx
-    !   print *, "i", i, ":", mean(nn_inputs(i,:))
-    ! end do
-
-    ! print*, "nx", nx, "ny", ny, "nbatch", nbatch
 #ifndef DOUBLE_PRECISION
     call neural_net % output_sgemm_flat(nx, ny, nbatch, nn_inputs, nn_outputs)
 #endif
+    ! print *, "mean nn outp 1", mean_2d(nn_outputs)
     do j = 1, nbatch
       ! Postprocess: reverse standard scaling
       do i = 1, ny
-        nn_outputs(i, j) = (ysigma*nn_outputs(i, j) + ymeans(i))
+        ! nn_outputs(i, j) = (ysigma*nn_outputs(i, j) + ymeans(i))
+        nn_outputs(i, j) =  nn_outputs(i, j) * incflux(j)
+        nn_outputs(i, j) = max(0.0, nn_outputs(i,j))
       end do
       ! Save to flux
       fluxes%flux_up(1:nlev,j) = nn_outputs(1:nlev,j)
       fluxes%flux_dn(1:nlev,j) = nn_outputs(nlev+1:2*nlev,j)
     end do
+    ! print *, "mean nn outp 2", mean_2d(nn_outputs)
 
   end subroutine predict_nn_radscheme_sw
 

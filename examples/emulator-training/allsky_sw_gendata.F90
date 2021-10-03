@@ -194,7 +194,7 @@ program rrtmgp_rfmip_sw
   !
   ! various logical to control program
   logical ::  include_clouds=.true., compare_flux=.false., save_inputs_outputs = .false., &
-          &   do_gpt_flux, save_reftrans, save_rrtmgp, preprocess_rrtmgp_inputs
+          &   do_gpt_flux, save_reftrans, save_rrtmgp, preprocess_rrtmgp_inputs, clouds_provided = .true.
   !
   ! Derived types from the RTE and RRTMGP libraries
   !
@@ -232,12 +232,12 @@ program rrtmgp_rfmip_sw
   ! When writing inputs and outputs for ML training, save also gas optics output variables?
   save_rrtmgp   = .false.
   ! When writing inputs and outputs for ML training, save also reflectance-transmittance variables?
-  save_reftrans = .true.
+  save_reftrans = .false.
   ! When writing RRTMGP inputs for ML training, preprocess inputs like in Ukkonen 2020?
   preprocess_rrtmgp_inputs = .false.
 
-  print *, "Usage: ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] (4 args: use reference code) "
-  print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [input-output file] ", &
+  print *, "Usage: ./allsky_sw_gendata [block_size] [input file] [k-distribution file] [cloud coeff. file] (4 args: use reference code) "
+  print *, "OR   : ./allsky_sw_gendata [block_size] [input file] [k-distribution file] [cloud coeff. file] [input-output file] ", &
       " (5 args: ref. code, save training data)"
   ! print *, "OR   : ml_allsky_sw [block_size] [input file] [k-distribution file] [cloud coeff. file] [emulated component] ", &
   !     "[NN model file(s)] (6-7 args, replace a component with NN)"
@@ -338,7 +338,9 @@ program rrtmgp_rfmip_sw
   !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
   ! end do
 
-  call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle,  sza_fill_randoms_in=.true.)
+  ! call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle,  sza_fill_randoms_in=.true.)
+  call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
+
   !
   ! Read k-distribution information. load_and_init() reads data from netCDF and calls
   !   k_dist%init(); users might want to use their own reading methods
@@ -376,13 +378,18 @@ program rrtmgp_rfmip_sw
     ! else
     !   call load_cld_padecoeff(cloud_optics, cloud_optics_file)
     ! end if
-
+    allocate(clwc(nlay, block_size,   nblocks), ciwc(nlay, block_size,   nblocks))
+    allocate(cloud_fraction(nlay, block_size,   nblocks))
     allocate(lwp(nlay,block_size,nblocks), iwp(nlay,block_size,nblocks))
     allocate(rel(nlay,block_size,nblocks), rei(nlay,block_size,nblocks))
     allocate(cloud_mask(nlay,block_size,nblocks))
     cloud_mask = .false.
+
+    ! clouds_provided = .true.
     ! Load CAMS cloud data (cloud liquid water and ice contents, cloud fraction)
-    call read_and_block_clouds_cams(input_file, block_size, clwc, ciwc, cloud_fraction)
+    ! if (clouds_provided) then
+      call read_and_block_clouds_cams(input_file, block_size, clwc, ciwc, cloud_fraction)
+    ! end if
 
     ! Particle effective size/radius
     rel_val = 0.5_wp * (cloud_optics%get_min_radius_liq() + cloud_optics%get_max_radius_liq())
@@ -393,28 +400,46 @@ program rrtmgp_rfmip_sw
     do b = 1, nblocks
       do icol = 1, block_size
         do ilay = 1, nlay
-          if (cloud_fraction(ilay,icol,b) > 0.0_wp) then
-            cloud_mask(ilay,icol,b) = .true.
-          end if
-          ! Compute in-cloud liquid and ice water path
-          ! if (config%is_homogeneous) then
-            ! Homogeneous solvers assume cloud fills the box
-            ! horizontally, so we don't divide by cloud fraction
-            factor = ( p_lev(ilay+1,icol,b) -p_lev(ilay,icol,b)  ) / 9.80665_wp
-          ! else
-          !   factor = ( p_lev(ilay+1,icol,b) -p_lev(ilay,icol,b)  ) / (9.80665_wp * cloud_fraction(ilay,icol,b))
-          ! end if
-          lwp(ilay,icol,b) = factor * clwc(ilay,icol,b)
-          iwp(ilay,icol,b) = factor * ciwc(ilay,icol,b)
+          ! if (clouds_provided) then
+            if (cloud_fraction(ilay,icol,b) > 0.0_wp) then
+              cloud_mask(ilay,icol,b) = .true.
+            end if
+            ! Compute in-cloud liquid and ice water path
+            ! if (config%is_homogeneous) then
+              ! Homogeneous solvers assume cloud fills the box
+              ! horizontally, so we don't divide by cloud fraction
+              factor = ( p_lev(ilay+1,icol,b) -p_lev(ilay,icol,b)  ) / 9.80665_wp
+            ! else
+            !   factor = ( p_lev(ilay+1,icol,b) -p_lev(ilay,icol,b)  ) / (9.80665_wp * cloud_fraction(ilay,icol,b))
+            ! end if
+            lwp(ilay,icol,b) = factor * clwc(ilay,icol,b)
+            iwp(ilay,icol,b) = factor * ciwc(ilay,icol,b)
 
-          rel(ilay,icol,b) = rel_val
-          rei(ilay,icol,b) = rei_val
+            rel(ilay,icol,b) = rel_val
+            rei(ilay,icol,b) = rei_val
+            ! looks like the cloud optics extension takes lwp and iwp in g/kg 
+            lwp(ilay,icol,b) = 1000 * lwp(ilay,icol,b)
+            iwp(ilay,icol,b) = 1000 * iwp(ilay,icol,b)
+            
+          ! else
+
+          !   cloud_mask(ilay,icol,b) = p_lev(ilay,icol,b) > 100._wp * 100._wp .and. &
+          !                       p_lev(ilay,icol,b) < 900._wp * 100._wp .and. &
+          !                       mod(icol, 3) /= 0
+          !   !
+          !   ! Ice and liquid will overlap in a few layers
+          !   !
+          !   lwp(ilay,icol,b) = merge(10._wp,  0._wp, cloud_mask(ilay,icol,b) .and. t_lay(ilay,icol,b) > 263._wp)
+          !   iwp(ilay,icol,b) = merge(10._wp,  0._wp, cloud_mask(ilay,icol,b) .and. t_lay(ilay,icol,b) < 273._wp)
+          !   rel(ilay,icol,b) = merge(rel_val, 0._wp, lwp(ilay,icol,b) > 0._wp)
+          !   rei(ilay,icol,b) = merge(rei_val, 0._wp, iwp(ilay,icol,b) > 0._wp)
+          ! end if
         end do
       end do
     end do
-    ! looks like the cloud optics extension takes lwp and iwp in g/kg 
-    lwp = 1000 * lwp
-    iwp = 1000 * iwp
+    ! ! looks like the cloud optics extension takes lwp and iwp in g/kg 
+    ! lwp = 1000 * lwp
+    ! iwp = 1000 * iwp
   end if
 
   !
@@ -715,6 +740,9 @@ program rrtmgp_rfmip_sw
     &   dim2_name="expt", dim1_name="site", &
     &   long_name="cosine of solar zenith angle")
 
+    call nndev_file_netcdf%define_variable("pres_level", &
+    &   dim3_name="expt", dim2_name="site", dim1_name="level", &
+    &   long_name="pressure at half-level")
 
     if (preprocess_rrtmgp_inputs) then
       cmt = "preprocessed inputs for RRTMGP shortwave gas optics"
@@ -831,6 +859,8 @@ program rrtmgp_rfmip_sw
     ! call nndev_file_netcdf%close()
     ! call nndev_file_netcdf%open(trim(nndev_file), redefine_existing=.true.,is_hdf5_file=.true.)
     ! call nndev_file_netcdf%end_define_mode()
+
+    call unblock_and_write(trim(nndev_file), 'pres_level', p_lev)
 
     call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
     call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)

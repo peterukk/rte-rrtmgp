@@ -155,7 +155,7 @@ module mo_gas_optics_rrtmgp
     !   n-solar-terms: quiet sun, facular brightening and sunspot dimming components
     !   following the NRLSSI2 model of Coddington et al. 2016, doi:10.1175/BAMS-D-14-00265.1.
     !
-    real(wp), dimension(:), allocatable :: solar_source         ! incoming solar irradiance, computed from other three terms (g-point)
+    real(wp), dimension(:), allocatable, public :: solar_source         ! incoming solar irradiance, computed from other three terms (g-point)
     real(wp), dimension(:), allocatable :: solar_source_quiet   ! incoming solar irradiance, quiet sun term (g-point)
     real(wp), dimension(:), allocatable :: solar_source_facular ! incoming solar irradiance, facular term (g-point)
     real(wp), dimension(:), allocatable :: solar_source_sunspot ! incoming solar irradiance, sunspot term (g-point)
@@ -439,7 +439,7 @@ contains
     ! output
     class(ty_optical_props_arry),  &
                                   intent(inout) :: optical_props
-    real(wp), dimension(:,:),     intent(  out) :: toa_src     ! Incoming solar irradiance(ncol,ngpt)
+    real(wp), dimension(:,:),     intent(  out) :: toa_src     ! Incoming solar irradiance(ngpt,ncol)
     character(len=128)                      :: error_msg
 
     ! Optional inputs 

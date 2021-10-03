@@ -19,7 +19,7 @@ import gc
 import numpy as np
 
 from ml_loaddata import ymeans_sw_abs, ysigma_sw_abs, ymeans_sw_ray, ysigma_sw_ray, \
-    load_inp_outp_rrtmgp, preproc_pow_gptnorm_reverse,scale_gasopt
+    load_rrtmgp, preproc_pow_gptnorm_reverse,scale_gasopt
 from ml_eval_funcs import plot_hist2d, plot_hist2d_T
 import matplotlib.pyplot as plt
 
@@ -71,11 +71,11 @@ retrain_mae = False
 
 # LOAD DATA given three separate datasets for training - validation - testing
 # Training data
-x_tr_raw,y_tr_raw,col_dry_tr        = load_inp_outp_rrtmgp(fpath, predictand) 
+x_tr_raw,y_tr_raw,col_dry_tr        = load_rrtmgp(fpath, predictand) 
 
 if (fpath_val != None and fpath_test != None): # If val and test data exists
-    x_val_raw, y_val_raw, col_dry_val   = load_inp_outp_rrtmgp(fpath_val, predictand)
-    x_test_raw,y_test_raw,col_dry_test  = load_inp_outp_rrtmgp(fpath_test, predictand)
+    x_val_raw, y_val_raw, col_dry_val   = load_rrtmgp(fpath_val, predictand)
+    x_test_raw,y_test_raw,col_dry_test  = load_rrtmgp(fpath_test, predictand)
 else: # if we only have one dataset, split manually
     from sklearn.model_selection import train_test_split
     train_ratio = 0.70

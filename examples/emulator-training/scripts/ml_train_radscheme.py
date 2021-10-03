@@ -20,7 +20,7 @@ import os
 import gc
 import numpy as np
 
-from ml_loaddata import load_inp_outp_radscheme, preproc_minmax_inputs, \
+from ml_loaddata import load_radscheme, preproc_minmax_inputs, \
     preproc_pow_gptnorm, preproc_pow_gptnorm_reverse
 from ml_eval_funcs import plot_hist2d
 import matplotlib.pyplot as plt
@@ -40,6 +40,9 @@ def calc_heatingrates(y, p):
 
 def rmse(predictions, targets,ax=0):
     return np.sqrt(((predictions - targets) ** 2).mean(axis=ax))
+
+def mse(predictions, targets,ax=0):
+    return ((predictions - targets) ** 2).mean(axis=ax)
 
 def mae(predictions,targets,ax=0):
     diff = predictions - targets
@@ -69,6 +72,14 @@ def plot_flux_and_hr_error(y_true, y_pred, pres):
     g = 9.81; cp = 1004 
     dTdt_true = -(24*3600)*(g/cp)*(dFdp_true) # K / h
     dTdt_pred = -(24*3600)*(g/cp)*(dFdp_pred) # K / h
+    bias_tot = np.mean(dTdt_pred.flatten()-dTdt_true.flatten())
+    rmse_tot = rmse(dTdt_true.flatten(), dTdt_pred.flatten())
+    mae_tot = mae(dTdt_true.flatten(), dTdt_pred.flatten())
+    str_hre = 'Heating rate error \nBias: {:0.3f} \nRMSE: {:0.3f} \nMAE: {:0.3f} '.format(bias_tot,rmse_tot, mae_tot)
+    mae_rsu = mae(fluxup_true.flatten(), fluxup_pred.flatten())
+    mae_rsd = mae(fluxdn_true.flatten(), fluxdn_pred.flatten())
+    str_rsu =  'Upwelling flux error \nMAE: {:0.2f}'.format(mae_rsu)
+    str_rsd =  'Downwelling flux error \nMAE: {:0.2f}'.format(mae_rsd)
     errfunc = mae
     #errfunc = rmse
     ind_p = 5
@@ -79,15 +90,16 @@ def plot_flux_and_hr_error(y_true, y_pred, pres):
                            (fluxdn_pred[:,ind_p:] - fluxup_pred[:,ind_p:] ))
     yy = 0.01*pres[:,:].mean(axis=0)
     fig, (ax0,ax1) = plt.subplots(ncols=2, sharey=True)
-    ax0.plot(hr_err,  yy[ind_p:], label='SW Heating rate error')
+    ax0.plot(hr_err,  yy[ind_p:], label=str_hre)
     ax0.invert_yaxis()
     ax0.set_ylabel('Pressure (hPa)',fontsize=15)
     ax0.set_xlabel('Heating rate (K h$^{-1}$)',fontsize=15); 
     ax1.set_xlabel('Flux (W m$^{-2}$)',fontsize=15); 
-    ax1.plot(fluxup_err,  yy[ind_p:], label='SW upward flux error')
-    ax1.plot(fluxdn_err,  yy[ind_p:], label='SW downward flux error')
-    ax1.plot(fluxnet_err,  yy[ind_p:], label='SW net flux error')
-    ax1.legend()
+    ax1.plot(fluxup_err,  yy[ind_p:], label=str_rsu)
+    ax1.plot(fluxdn_err,  yy[ind_p:], label=str_rsd)
+    ax1.plot(fluxnet_err,  yy[ind_p:], label='Net flux error')
+    ax0.legend(); ax1.legend()
+    ax0.grid(); ax1.grid()
 
 # ----------------------------------------------------------------------------
 # ----------------- RTE+RRTMGP EMULATION  ------------------------
@@ -95,16 +107,10 @@ def plot_flux_and_hr_error(y_true, y_pred, pres):
 
 #  ----------------- File paths -----------------
 datadir     = "/media/peter/samsung/data/CAMS/ml_training/"
-datadir     = "/home/puk/data/"
+# datadir     = "/home/puk/data/"
 fpath       = datadir + "/RADSCHEME_data_g224_CAMS_2009-2018_sans_2014-2015.nc"
 fpath_val   = datadir + "/RADSCHEME_data_g224_CAMS_2014.nc"
 fpath_test  = datadir +  "/RADSCHEME_data_g224_CAMS_2015.nc"
-
-# fpath       = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
-# fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
-# fpath_test   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
-
-# fpath_test = "/media/peter/samlinux/data/data_training/ml_data_g224_withclouds_CAMS_2011-2013_RFMIPstyle.nc"
 
 # ----------- config ------------
 
@@ -119,17 +125,19 @@ ml_library = 'tf-keras'
 # Model training: use GPU or CPU?
 use_gpu = False
 
-# Tune hyperparameters using KerasTuner?
-tune_params = False
+# Normalize outputs by inc flux? in this case, no other preproc. needed
+norm_by_incflux = True
 
 # ----------- config ------------
 
 # Load data
-x_tr_raw, y_tr_raw = load_inp_outp_radscheme(fpath, scale_p_h2o_o3 = scale_inputs)
+x_tr_raw, y_tr_raw, pres_tr = load_radscheme(fpath,  \
+                        scale_p_h2o_o3 = scale_inputs, return_pressures=True)
 
 if (fpath_val != None and fpath_test != None): # If val and test data exists
-    x_val_raw, y_val_raw   = load_inp_outp_radscheme(fpath_val, scale_p_h2o_o3 = scale_inputs)
-    x_test_raw,y_test_raw, pres_test  = load_inp_outp_radscheme(fpath_test, \
+    x_val_raw, y_val_raw, pres_val      = load_radscheme(fpath_val,  \
+                            scale_p_h2o_o3 = scale_inputs, return_pressures=True)
+    x_test_raw,y_test_raw, pres_test    = load_radscheme(fpath_test, \
                             scale_p_h2o_o3 = scale_inputs, return_pressures=True)
 else: # if we only have one dataset, split manually
     from sklearn.model_selection import train_test_split
@@ -148,6 +156,12 @@ else: # if we only have one dataset, split manually
 nx = x_tr_raw.shape[1]
 ny = y_tr_raw.shape[1]   
 
+# if norm_by_incflux: 
+#     nx = nx + 1
+#     x_tr_raw = np.hstack((x_tr_raw,     y_tr_raw[:,61].reshape(-1,1)))
+#     x_val_raw = np.hstack((x_val_raw,   y_val_raw[:,61].reshape(-1,1)))
+#     x_test_raw = np.hstack((x_test_raw, y_test_raw[:,61].reshape(-1,1)))
+
 
 if scale_inputs:
     x_tr        = np.copy(x_tr_raw)
@@ -156,13 +170,9 @@ if scale_inputs:
     
     fpath_xcoeffs = "../../../neural/data/nn_radscheme_xmin_xmax.txt"
     xcoeffs = np.loadtxt(fpath_xcoeffs, delimiter=',')
-    xmax = xcoeffs[0:542]
+    xmax = xcoeffs[0:nx]
+    xmin = np.repeat(0.0, nx)
 
-    # xmax = xcoeffs[542:]
-    # xmin = xcoeffs[0:542]
-    xmin = np.repeat(0.0, 542)
-
-    
     x_tr            = preproc_minmax_inputs(x_tr_raw, (xmin, xmax))
     # x_tr, xmin,xmax = preproc_minmax_inputs(x_tr_raw)
     x_val           = preproc_minmax_inputs(x_val_raw,  (xmin,xmax)) 
@@ -174,102 +184,55 @@ else:
     
     
 if scale_outputs: 
-    # y_mean = np.zeros(ny)
-    # y_sigma = np.zeros(ny)
-    # for i in range(ny):
-    #     y_mean[i] = y_tr_raw[:,i].mean()
-    #     # y_sigma[igpt] = y_raw[:,igpt].std()
-    # # y_mean = np.repeat(y_raw.mean(),ny)
-    # y_sigma = np.repeat(y_tr_raw.std(),ny)  # 467.72
-    # y_mean = np.array([374.46596068, 374.45956871, 374.45462027, 374.4511992 ,
-    #    374.45047469, 374.45502195, 374.4680579 , 374.49239519,
-    #    374.53055628, 374.58516238, 374.65892284, 374.75524611,
-    #    374.8792801 , 375.03542025, 375.22643646, 375.45378099,
-    #    375.71533287, 376.00285752, 376.30151249, 376.58998858,
-    #    376.84997017, 377.06088253, 377.1959924 , 377.2298344 ,
-    #    377.14753112, 376.9435507 , 376.61342392, 376.0964268 ,
-    #    375.33952337, 374.26344007, 372.82036231, 370.98542669,
-    #    368.80749149, 366.3915064 , 363.87406595, 361.26581523,
-    #    358.59414259, 355.66949237, 352.05744001, 347.27688142,
-    #    341.25040552, 334.76377694, 328.82791973, 323.08134132,
-    #    316.79175838, 309.09519245, 299.90917436, 288.99921467,
-    #    274.59731862, 257.36481124, 240.59263275, 226.58893258,
-    #    216.13279391, 208.64963063, 203.82791957, 200.9401672 ,
-    #    199.41826418, 198.6591551 , 198.25545666, 197.94484266,
-    #    197.83066985, 897.8497014 , 897.56832421, 897.18702832,
-    #    896.65574775, 895.92692424, 895.01315111, 893.947432  ,
-    #    892.81558392, 891.67935113, 890.56589866, 889.47075025,
-    #    888.3641525 , 887.21249947, 885.9978321 , 884.72128377,
-    #    883.3744413 , 881.95796854, 880.47806976, 878.94735622,
-    #    877.38503736, 875.785125  , 874.16277448, 872.56365052,
-    #    871.02421366, 869.54206684, 868.07279715, 866.51043363,
-    #    864.7201463 , 862.55637703, 859.83278134, 856.37222482,
-    #    852.03649377, 846.8212828 , 840.8255009 , 834.20929904,
-    #    826.98212955, 819.20462721, 810.68386777, 800.99420578,
-    #    789.71007101, 776.9060625 , 763.57679203, 750.85167967,
-    #    738.33882549, 725.31670556, 710.885572  , 695.07722868,
-    #    677.67695876, 656.78869705, 633.36680778, 611.07829043,
-    #    592.37422528, 578.04482565, 567.34107156, 559.94750542,
-    #    555.05698858, 552.03360581, 550.17168289, 548.97796299,
-    #    548.11269961, 547.68542119], dtype=np.float32)
-    # y_sigma = np.repeat(431.14175665, ny)
+    if norm_by_incflux:
+        y_tr    = y_tr_raw / np.repeat(y_tr_raw[:,61].reshape(-1,1),y_tr_raw.shape[1], axis=1)
+        y_val   = y_val_raw / np.repeat(y_val_raw[:,61].reshape(-1,1),y_val_raw.shape[1], axis=1)
+        y_test  = y_test_raw / np.repeat(y_test_raw[:,61].reshape(-1,1),y_test_raw.shape[1], axis=1)
+    else:
+        # y_mean = np.zeros(ny)
+        # y_sigma = np.zeros(ny)
+        # for i in range(ny):
+        #     y_mean[i] = y_tr_raw[:,i].mean()
+            # y_sigma[igpt] = y_raw[:,igpt].std()
+        # y_mean = np.repeat(y_raw.mean(),ny)
+        # y_sigma = np.repeat(y_tr_raw.std(),ny)  # 467.72
+        y_mean = np.array([374.46596068, 374.45956871, 374.45462027, 374.4511992 ,
+            374.45047469, 374.45502195, 374.4680579 , 374.49239519,
+            374.53055628, 374.58516238, 374.65892284, 374.75524611,
+            374.8792801 , 375.03542025, 375.22643646, 375.45378099,
+            375.71533287, 376.00285752, 376.30151249, 376.58998858,
+            376.84997017, 377.06088253, 377.1959924 , 377.2298344 ,
+            377.14753112, 376.9435507 , 376.61342392, 376.0964268 ,
+            375.33952337, 374.26344007, 372.82036231, 370.98542669,
+            368.80749149, 366.3915064 , 363.87406595, 361.26581523,
+            358.59414259, 355.66949237, 352.05744001, 347.27688142,
+            341.25040552, 334.76377694, 328.82791973, 323.08134132,
+            316.79175838, 309.09519245, 299.90917436, 288.99921467,
+            274.59731862, 257.36481124, 240.59263275, 226.58893258,
+            216.13279391, 208.64963063, 203.82791957, 200.9401672 ,
+            199.41826418, 198.6591551 , 198.25545666, 197.94484266,
+            197.83066985, 897.8497014 , 897.56832421, 897.18702832,
+            896.65574775, 895.92692424, 895.01315111, 893.947432  ,
+            892.81558392, 891.67935113, 890.56589866, 889.47075025,
+            888.3641525 , 887.21249947, 885.9978321 , 884.72128377,
+            883.3744413 , 881.95796854, 880.47806976, 878.94735622,
+            877.38503736, 875.785125  , 874.16277448, 872.56365052,
+            871.02421366, 869.54206684, 868.07279715, 866.51043363,
+            864.7201463 , 862.55637703, 859.83278134, 856.37222482,
+            852.03649377, 846.8212828 , 840.8255009 , 834.20929904,
+            826.98212955, 819.20462721, 810.68386777, 800.99420578,
+            789.71007101, 776.9060625 , 763.57679203, 750.85167967,
+            738.33882549, 725.31670556, 710.885572  , 695.07722868,
+            677.67695876, 656.78869705, 633.36680778, 611.07829043,
+            592.37422528, 578.04482565, 567.34107156, 559.94750542,
+            555.05698858, 552.03360581, 550.17168289, 548.97796299,
+            548.11269961, 547.68542119], dtype=np.float32)
+        y_sigma = np.repeat(np.float32(431.14175665), ny)
+        nfac = 1
+        y_tr    = preproc_pow_gptnorm(y_tr_raw, nfac, y_mean, y_sigma)
+        y_val   = preproc_pow_gptnorm(y_val_raw, nfac, y_mean, y_sigma)
+        y_test  = preproc_pow_gptnorm(y_test_raw, nfac, y_mean, y_sigma)
 
-    # nfac = 1
-    # y_tr    = preproc_pow_gptnorm(y_tr_raw, nfac, y_mean, y_sigma)
-    # y_val   = preproc_pow_gptnorm(y_val_raw, nfac, y_mean, y_sigma)
-    # y_test  = preproc_pow_gptnorm(y_test_raw, nfac, y_mean, y_sigma)
-    
-    
-    # ymax = np.array([1106.67077637, 1106.67883301, 1106.69067383, 1106.71191406,
-    #    1106.74243164, 1106.78503418, 1106.8527832 , 1106.95166016,
-    #    1107.08068848, 1107.23999023, 1107.43652344, 1107.68518066,
-    #    1107.99768066, 1108.40307617, 1108.90881348, 1109.50048828,
-    #    1110.1505127 , 1110.86206055, 1111.68774414, 1112.68432617,
-    #    1113.90551758, 1115.41320801, 1117.12915039, 1118.87609863,
-    #    1120.45800781, 1121.84082031, 1123.11462402, 1142.57910156,
-    #    1161.6862793 , 1171.68432617, 1167.14025879, 1180.18505859,
-    #    1176.45690918, 1215.22619629, 1231.7310791 , 1186.79760742,
-    #    1158.34008789, 1132.04345703, 1132.84082031, 1133.69396973,
-    #    1134.60595703, 1135.56274414, 1136.55029297, 1137.56518555,
-    #    1138.61450195, 1139.70458984, 1141.68896484, 1144.60693359,
-    #    1146.64282227, 1150.00219727, 1154.28479004, 1159.4420166 ,
-    #    1163.51220703, 1166.53942871, 1169.04846191, 1171.00195312,
-    #    1172.51855469, 1173.93200684, 1175.37036133, 1176.5057373 ,
-    #    1177.14978027, 1412.        , 1411.80639648, 1411.45690918,
-    #    1410.92602539, 1410.22106934, 1409.41320801, 1408.20141602,
-    #    1406.98095703, 1405.66809082, 1404.35900879, 1403.08483887,
-    #    1401.98425293, 1400.96813965, 1399.96374512, 1398.90148926,
-    #    1397.67907715, 1396.29101562, 1394.9140625 , 1393.57666016,
-    #    1391.9921875 , 1390.19213867, 1388.72570801, 1388.23840332,
-    #    1387.67346191, 1387.10205078, 1397.42102051, 1410.49414062,
-    #    1428.5078125 , 1425.93115234, 1424.50305176, 1421.10839844,
-    #    1405.4251709 , 1410.58605957, 1431.6817627 , 1401.53491211,
-    #    1397.09655762, 1390.52099609, 1388.16149902, 1387.62597656,
-    #    1388.03027344, 1387.17871094, 1384.89868164, 1383.89562988,
-    #    1384.18164062, 1384.18481445, 1383.9173584 , 1383.35375977,
-    #    1382.60229492, 1382.34399414, 1382.96887207, 1383.37194824,
-    #    1383.5723877 , 1383.6027832 , 1383.47607422, 1383.45092773,
-    #    1383.88903809, 1384.18310547, 1384.43457031, 1384.64086914,
-    #    1384.79309082, 1384.87719727])
-    # ymin = np.repeat(0.0, ny)
-
-
-    # y_tr            = preproc_minmax_inputs(y_tr_raw, (ymin, ymax))
-    # # y_tr, ymin,ymax = preproc_minmax_inputs(y_tr_raw)
-    # y_val           = preproc_minmax_inputs(y_val_raw,  (ymin,ymax)) 
-    # y_test          = preproc_minmax_inputs(y_test_raw, (ymin,ymax)) 
-    
-    
-    y_tr    = y_tr_raw / np.repeat(y_tr_raw[:,61].reshape(-1,1),y_tr_raw.shape[1], axis=1)
-    y_val   = y_val_raw / np.repeat(y_val_raw[:,61].reshape(-1,1),y_val_raw.shape[1], axis=1)
-    y_test  = y_test_raw / np.repeat(y_test_raw[:,61].reshape(-1,1),y_test_raw.shape[1], axis=1)
-    
-    rldm = 1431.6817626953
-    x_tr = np.hstack((x_tr, y_tr_raw[:,61].reshape(-1,1)/rldm))
-    x_val = np.hstack((x_val,y_val_raw[:,61].reshape(-1,1)/rldm))
-    x_test = np.hstack((x_test,y_test_raw[:,61].reshape(-1,1)/rldm))
-    nx = nx + 1
-    
 else:
     y_tr    = y_tr_raw    
     y_val   = y_val_raw
@@ -278,24 +241,226 @@ else:
     
 hre_loss = True
 if hre_loss:
-    hre_tr      = calc_heatingrates(y_tr_raw,pres_tr)
-    hre_val     = calc_heatingrates(y_val_raw,pres_tr)
-    hre_test    = calc_heatingrates(y_test_raw,pres_test)
-    nlev = np.int(ny/2)
-    y_sigma_hr = np.std(hre_tr.flatten())
-    y_sigma_hr = np.repeat(6.29414, nlev)
-    y_mean_hr = np.zeros(nlev)
-    for i in range(nlev):
-        y_mean_hr[i] = hre_tr[:,i].mean()
-    
-    hre_tr_sc = preproc_pow_gptnorm(hre_tr, 1, y_mean_hr, y_sigma_hr)
-    
+    pres_tr_grad = np.gradient(pres_tr,axis=1)
+    pres_val_grad = np.gradient(pres_val,axis=1)
+    pres_test_grad = np.gradient(pres_test,axis=1)
+
 
 gc.collect()
 # Ready for training
 
+# TENSORFLOW-KERAS TRAINING
+if (ml_library=='tf-keras'):
+    import tensorflow as tf
+    from tensorflow.keras import losses, optimizers, layers, Input, Model
+    from tensorflow.keras.callbacks import EarlyStopping
+    from ml_trainfuncs_keras import create_model_mlp, savemodel, COCOB
+    import tensorflow.keras.backend as K
+    import time
+    
+    mymetrics   = ['mean_absolute_error']
+    valfunc     = 'val_mean_absolute_error'
+    
+    # Model architecture
+    # First hidden layer (input layer) activation
+    activ0      = 'softsign'
+    # activ0       = 'relu'
+    # Activation in other hidden layers
+    activ       =  activ0    
+    # Activation for last layer
+    activ_last   = 'linear'
+    # activ_last   = 'relu'
+    activ_last   = 'sigmoid'
+
+    epochs      = 100000
+    patience    = 25
+    lossfunc    = losses.mean_squared_error
+    ninputs     = x_tr.shape[1]
+    lr          = 0.001
+    # lr          = 0.0001 
+    # lr          = 0.0002 
+    batch_size  = 256
+    # batch_size  = 1024
+    neurons     = [182, 182]
+    # neurons     = [256,256] #0.994935
+    neurons     = [128, 128]  #0.99804565
+    # neurons     = [64, 64]  # 0.9952047
+    # neurons     = [128]     # 0.9980413605
+                    # 0.9996379952819034    
+                    
+    
+    if use_gpu:
+        devstr = '/gpu:0'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
+    else:
+        num_cpu_threads = 12
+        devstr = '/cpu:0'
+        # Maximum number of threads to use for OpenMP parallel regions.
+        os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
+        # Without setting below 2 environment variables, it didn't work for me. Thanks to @cjw85 
+        os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_cpu_threads)
+        os.environ["TF_NUM_INTEROP_THREADS"] = str(1)
+        os.environ['KMP_BLOCKTIME'] = '1' 
+
+        tf.config.threading.set_intra_op_parallelism_threads(
+            num_cpu_threads
+        )
+        tf.config.threading.set_inter_op_parallelism_threads(
+            1
+        )
+        tf.config.set_soft_device_placement(True)
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    
+
+    
+    if hre_loss:
+        
+        def my_gradient_tf(a):
+            rght = tf.concat((a[..., 1:], tf.expand_dims(a[..., -1], -1)), -1)
+            left = tf.concat((tf.expand_dims(a[...,0], -1), a[..., :-1]), -1)
+            ones = tf.ones_like(rght[..., 2:], tf.float32)
+            one = tf.expand_dims(ones[...,0], -1)
+            divi = tf.concat((one, ones*2, one), -1)
+            return (rght-left) / divi
+        
+        def calc_heatingrates_tf_dp(y, dp):
+            #  flux_net =   flux_up   - flux_dn
+            F = tf.subtract(y[:,0:61], y[:,61:])
+            dF = my_gradient_tf(F)
+            dFdp = tf.divide(dF, dp)
+            coeff = -844.2071713147411#  -(24*3600) * (9.81/1004)  
+            dTdt_day = tf.multiply(coeff, dFdp)
+            return dTdt_day
+        
+        def CustomLoss(y_true, y_pred, input_tensor, dpres):
+            err_flux = K.sqrt(K.mean(K.square(y_true - y_pred)))
+            
+            # need to reshape incflux from (batchsize,)  to (batchsize, 122)            
+            fluxbig= tf.repeat(tf.expand_dims(input_tensor[:,542], axis=1), 122, axis=1)
+            
+            flux_true = tf.math.multiply(fluxbig, y_true)
+            flux_pred = tf.math.multiply(fluxbig, y_pred)
+            
+            HR_true = calc_heatingrates_tf_dp(flux_true, dpres)
+            HR_pred = calc_heatingrates_tf_dp(flux_pred, dpres)
+            err_hr = K.sqrt(K.mean(K.square(HR_true - HR_pred)))
+            
+            # alpha = 1
+            # alpha = 0.001
+            # alpha = 0.0005 # best so far, hybridloss.h5
+            # alpha = 0.0003 # hybridloss2
+            alpha   = 0.0007
+            # alpha = 0.0008 # best so far, hybridloss3
+            err = (alpha) * err_hr + (1 - alpha)*err_flux
+                
+            return err
+        
+        activ_last   = 'sigmoid'
+        batch_size  = 128
+        lr          = 0.001 
+        optim = optimizers.Adam(learning_rate=lr)
+        # optim = COCOB()
+        # neurons = [128] # super bad
+        neurons     = [128,128]
+        # neurons     = [192, 128]
+
+        dense   = layers.Dense(neurons[0], activation=activ0)
+        inp     = Input(shape=(nx,))
+        x       = dense(inp)
+        # more hidden layers
+        for i in range(1,np.size(neurons)):
+            x       = layers.Dense(neurons[i], activation=activ)(x)
+        out     = layers.Dense(ny, activation=activ_last)(x)
+        target  = Input((ny,))
+        dpres   = Input((61,))
+        model   = Model(inputs=[inp,target, dpres], outputs=out)
+        model.add_loss(CustomLoss(target,out,inp,dpres))
+        model.compile(loss=None, optimizer=optim)
+
+        callbacks = [EarlyStopping(monitor='val_loss',  patience=21, \
+                        verbose=1, mode='min',restore_best_weights=True)]
+        with tf.device(devstr):
+            history = model.fit(x=[x_tr,y_tr, pres_tr_grad], y=None,    \
+            epochs= epochs, batch_size=batch_size, shuffle = True,      \
+            validation_data=[x_val,y_val,pres_val_grad], callbacks=callbacks)
+            
+        y_pred      = model.predict([x_test,y_test,pres_test_grad]);
+
+    else:
+        batch_size  = 2048
+        lr          = 0.001 
+        optim = optimizers.Adam(learning_rate=lr)
+        
+        # Create and compile model
+
+        # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+        #                           activ_last = activ_last, kernel_init='he_uniform')
+        model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+                                 activ_last = activ_last, kernel_init='lecun_uniform')
+        
+        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
+            
+        model.summary()
+        # Create earlystopper and possibly other callbacks
+        earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
+        callbacks = [earlystopper]
+        
+        
+        # START TRAINING
+        with tf.device(devstr):
+            history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
+                                validation_data=(x_val,y_val), callbacks=callbacks)  
+            
+        start = time.time()
+        y_pred      = model.predict(x_test);  
+        end = time.time()
+        print(end - start)       
+
+       
+    if scale_outputs:
+        if norm_by_incflux:
+            y_pred = y_pred * np.repeat(y_test_raw[:,61].reshape(-1,1),y_test_raw.shape[1], axis=1)
+        else:
+            y_pred      = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean,y_sigma)
+    # TEST
+    
+    
+    cc = np.corrcoef(y_test_raw.flatten(), y_pred.flatten())
+    diff = np.abs(y_test_raw-y_pred)
+    rmse_err = np.sqrt(((y_pred - y_test_raw) ** 2).mean())
+    print("r {} max diff {} RMSE {}".format(cc[0,1],np.max(diff), rmse_err))
+        
+    plot_flux_and_hr_error(y_test_raw, y_pred, pres_test)
+
+
+    Fnet_test = y_test_raw[:,61:] - y_test_raw[:,0:61] 
+    Fnet_pred = y_pred[:,61:] - y_pred[:,0:61] 
+    fnet_err = mae(Fnet_test,Fnet_pred)
+
+    # SAVE MODEL
+    w1 = model.layers[1].get_weights()
+    w2 = model.layers[2].get_weights()
+    # w3 = model.layers[5].get_weights()
+    w3 = model.layers[3].get_weights()
+    w4 = model.layers[6].get_weights()
+    model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
+                          activ_last = activ_last, kernel_init='lecun_uniform')
+    model.layers[0].set_weights(w1)
+    model.layers[1].set_weights(w2)
+    model.layers[2].set_weights(w3)
+    model.layers[3].set_weights(w4)
+    kerasfile = "../../../neural/data/radscheme-128-128-128-hybridloss2.h5"
+    savemodel(kerasfile, model)
+    
+    from tensorflow.keras.models import load_model
+    kerasfile = "../../../neural/data/neural/data/radscheme-128.h5"
+    model = tf.lite.TFLiteConverter.from_keras_model(kerasfile)
+    model = load_model(kerasfile,compile=False)
+    
+    
 # PYTORCH TRAINING
-if (ml_library=='pytorch'):
+elif (ml_library=='pytorch'):
     from torch import nn
     import torch
     import pytorch_lightning as pl
@@ -350,190 +515,3 @@ if (ml_library=='pytorch'):
         plot_hist2d(y_test_raw,y_pred,20,True)      #  
     
     eval_valdata()
-
-
-# TENSORFLOW-KERAS TRAINING
-elif (ml_library=='tf-keras'):
-    if tune_params:
-        import optuna
-    import tensorflow as tf
-    from tensorflow.keras import losses, optimizers, layers
-    from tensorflow.keras.callbacks import EarlyStopping
-    from ml_trainfuncs_keras import create_model_mlp, savemodel
-    import tensorflow.keras.backend as K
-
-    mymetrics   = ['mean_absolute_error']
-    valfunc     = 'val_mean_absolute_error'
-    
-    # Model architecture
-    # First hidden layer (input layer) activation
-    activ0      = 'softsign'
-    # activ0       = 'relu'
-    # Activation in other hidden layers
-    activ       =  activ0    
-    # Activation for last layer
-    activ_last   = 'linear'
-    # activ_last   = 'relu'
-    activ_last   = 'sigmoid'
-
-    epochs      = 100000
-    patience    = 25
-    lossfunc    = losses.mean_squared_error
-    ninputs     = x_tr.shape[1]
-    # lr          = 0.001
-    lr          = 0.0001 
-    # lr          = 0.0002 
-    batch_size  = 256
-    batch_size  = 1024
-    neurons     = [182, 182]
-    # neurons     = [256,256] #0.994935
-    neurons     = [128, 128]  #0.99804565
-    neurons     = [64, 64]  # 0.9952047
-    neurons     = [128]     # 0.9980413605
-                    # 0.9996379952819034          
-    if use_gpu:
-        devstr = '/gpu:0'
-        os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-
-    else:
-        num_cpu_threads = 4
-        devstr = '/cpu:0'
-        # Maximum number of threads to use for OpenMP parallel regions.
-        os.environ["OMP_NUM_THREADS"] = str(num_cpu_threads)
-        # Without setting below 2 environment variables, it didn't work for me. Thanks to @cjw85 
-        os.environ["TF_NUM_INTRAOP_THREADS"] = str(num_cpu_threads)
-        os.environ["TF_NUM_INTEROP_THREADS"] = str(1)
-        os.environ['KMP_BLOCKTIME'] = '1' 
-
-        tf.config.threading.set_intra_op_parallelism_threads(
-            num_cpu_threads
-        )
-        tf.config.threading.set_inter_op_parallelism_threads(
-            1
-        )
-        tf.config.set_soft_device_placement(True)
-        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    
-    batch_size  = 2048
-    lr          = 0.001 
-    
-    optim = optimizers.Adam(learning_rate=lr)
-    
-    if hre_loss:
-        
-        def custom_loss_wrapper(input_tensor):
-
-            def custom_loss(y_true, y_pred):
-                err_flux = K.sqrt(K.mean(K.square(y_true - y_pred),axis=0))
-                
-                # HR_true = layers.Lambda(lambda x: x[:,542]) * y_true
-                # HR_pred = layers.Lambda(lambda x: x[:,542]) * y_pred
-
-                # HR_true = input_tensor[:-1,542] * y_true
-                # HR_pred = input_tensor[:-1,542] * y_pred
-                
-                # HR_true = tf.Variable(input_tensor[:-1,542] )
-                HR_true = K.mean(input_tensor)
-
-                # err_hr = K.sqrt(K.mean(K.square(HR_true - HR_pred),axis=0))
-                # alpha = 0.1
-                # err = (1-alpha) * err_hr + (alpha)*err_flux
-                return err_flux*HR_true
-            return custom_loss
-        
-        input_tensor = tf.keras.Input(shape=(nx,))
-
-        def create_model_func(nx,ny,neurons, activ0, activ, activ_last):
-            dense = layers.Dense(neurons[0], activation=activ0)
-            x = dense(input_tensor)
-            # further hidden layers
-            for i in range(1,np.size(neurons)):
-                x = layers.Dense(neurons[i], activation=activ)(x)
-            # output layer
-            outputs = layers.Dense(ny, activation=activ_last)(x)
-            model = tf.keras.Model(inputs=input_tensor, outputs=outputs, name="mnist_model")
-
-            return model
-        
-        model = create_model_func(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
-                         activ_last = activ_last)
-    
-        model.compile(loss=custom_loss_wrapper(input_tensor), optimizer='adam')
-        
-        history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True)
-        
-        
-        inp = tf.keras.Input(shape=(nx,))
-        def CustomLoss(y_true, y_pred, input_tensor):
-            err_flux = K.sqrt(K.mean(K.square(y_true - y_pred)))
-            
-            HR_true = input_tensor[:-1,542] * y_true
-            HR_pred = input_tensor[:-1,542] * y_pred
-            err_hr = K.sqrt(K.mean(K.square(HR_true - HR_pred)))
-            
-            alpha = 0.1
-            err = (1-alpha) * err_hr + (alpha)*err_flux
-                
-            return err_flux
-        
-        dense = layers.Dense(neurons[0], activation=activ0)
-        x = dense(inp)
-        out = layers.Dense(ny, activation=activ_last)(x)
-        target = tf.keras.Input((ny,))
-        model = tf.keras.Model(inputs=[inp,target], outputs=out)
-        model.add_loss(CustomLoss(target,out,inp))
-        model.compile(loss=None, optimizer='adam')
-        model.fit(x=[x_tr,y_tr],y=None)
-
-    # Create and compile model
-    if tune_params:
-        # 3. Create a study object and optimize the objective function.
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=100)
-    else:
-        # model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
-        #                          activ_last = activ_last, kernel_init='he_uniform')
-        model = create_model_mlp(nx=nx,ny=ny,neurons=neurons,activ0=activ0,activ=activ,
-                                 activ_last = activ_last, kernel_init='lecun_uniform')
-        
-        model.compile(loss=lossfunc, optimizer=optim, metrics=mymetrics)
-    model.summary()
-    
-    # Create earlystopper and possibly other callbacks
-    earlystopper = EarlyStopping(monitor=valfunc,  patience=patience, verbose=1, mode='min',restore_best_weights=True)
-    callbacks = [earlystopper]
-    
-    
-    # START TRAINING
-    with tf.device(devstr):
-        history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, shuffle=True,  verbose=1, 
-                            validation_data=(x_val,y_val), callbacks=callbacks)    
-        
-
-    # TEST
-    y_pred      = model.predict(x_test);  
-    # y_pred      = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean,y_sigma)
-    # y_pred = preproc_minmax_reverse(y_pred, (ymin,ymax))
-    y_pred = y_pred * np.repeat(y_test_raw[:,61].reshape(-1,1),y_test_raw.shape[1], axis=1)
-
-    
-    cc = np.corrcoef(y_test_raw.flatten(), y_pred.flatten())
-    diff = np.abs(y_test_raw-y_pred)
-    rmse_err = np.sqrt(((y_pred - y_test_raw) ** 2).mean())
-    print("r {} max diff {} RMSE {}".format(cc[0,1],np.max(diff), rmse_err))
-    
-    plot_hist2d(y_test_raw,y_pred,20,True)      # 
-    
-    plot_flux_and_hr_error(y_test_raw, y_pred, pres_test)
-
-    
-    # SAVE MODEL
-    kerasfile = "../../../neural/data/radscheme-128-128_incfluxnorm.h5"
-
-    savemodel(kerasfile, model)
-    
-    from tensorflow.keras.models import load_model
-    kerasfile = "s/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/radscheme-128.h5"
-    model = tf.lite.TFLiteConverter.from_keras_model(kerasfile)
-    model = load_model(kerasfile,compile=False)
-    

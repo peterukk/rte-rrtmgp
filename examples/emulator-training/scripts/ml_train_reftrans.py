@@ -19,7 +19,7 @@ Contributions welcome!
 import os,gc
 import numpy as np
 
-from ml_loaddata import load_inp_outp_reftrans, preproc_minmax_inputs, \
+from ml_loaddata import load_reftrans, preproc_minmax_inputs, \
     preproc_pow_gptnorm, preproc_pow_gptnorm_reverse, gen_synthetic_inp_outp_reftrans
 from ml_eval_funcs import plot_hist2d, plot_hist2d_reftrans
 
@@ -80,11 +80,11 @@ plot_eval = True
 # ----------- config ------------
 
 # LOAD DATA
-x_tr_raw,   y_tr_raw    = load_inp_outp_reftrans(fpath_tr, balance_samples)
+x_tr_raw,   y_tr_raw    = load_reftrans(fpath_tr, balance_samples)
 
 if (fpath_val != None and fpath_test != None): # If val and test data exists
-    x_val_raw,  y_val_raw   = load_inp_outp_reftrans(fpath_val, balance_samples)
-    x_test_raw, y_test_raw  = load_inp_outp_reftrans(fpath_test)
+    x_val_raw,  y_val_raw   = load_reftrans(fpath_val, balance_samples)
+    x_test_raw, y_test_raw  = load_reftrans(fpath_test)
     
     inds_val = np.isnan(y_val_raw[:,2])   
     y_val_raw = y_val_raw[~inds_val,:]; x_val_raw = x_val_raw[~inds_val,:]
