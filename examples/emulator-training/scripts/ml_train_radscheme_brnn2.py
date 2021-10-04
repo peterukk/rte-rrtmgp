@@ -61,20 +61,7 @@ def mae(predictions,targets,ax=0):
     diff = predictions - targets
     return np.mean(np.abs(diff),axis=ax)
 
-def plot_heatingrate_error(hr_true, hr_pred, pres):
-    # errfunc = mae
-    errfunc = rmse
-    ind_p = 5
-    hre_radscheme       = errfunc(hr_true[:,ind_p:], hr_pred[:,ind_p:])
-    yy = 0.01*pres[:,:].mean(axis=0)
-    figtitle = 'ERrror in shortwave heating rate'
-    fig, ax = plt.subplots(1)
-    ax.plot(hre_radscheme,  yy[ind_p:])
-    ax.invert_yaxis(); ax.grid()
-    ax.set_ylabel('Pressure (hPa)',fontsize=15)
-    ax.set_xlabel('Heating rate (W m$^{-2}$)',fontsize=15); 
-    fig.suptitle(figtitle, fontsize=16)
-    
+
 def plot_flux_and_hr_error(fluxup_true, fluxdn_true, fluxup_pred, fluxdn_pred, pres):
     dF_true = np.gradient((fluxdn_true - fluxup_true),axis=1)
     dF_pred = np.gradient((fluxdn_pred - fluxup_pred),axis=1)
@@ -134,7 +121,7 @@ fpath_test  = datadir +  "/RADSCHEME_data_g224_CAMS_2015_true_solar_angles.nc"
 # ----------- config ------------
 
 scale_inputs    = True
-scale_outputs   = True
+scale_outputs   = False
 
 # didn't seem to improve results
 # include_deltap = True
@@ -329,15 +316,26 @@ def CustomLoss(y_true, y_pred, x_aux, dp, rsd_top):
     HR_true = calc_heatingrates_tf_dp(rsd_true, rsu_true, dp)
     HR_pred = calc_heatingrates_tf_dp(rsd_pred, rsu_pred, dp)
     err_hr = K.sqrt(K.mean(K.square(HR_true - HR_pred)))
-    
     # alpha   = 1e-6
     alpha   = 1e-5
     # alpha   = 1e-4
-    # alpha = 0.3
-
-    # alpha   = 0.0
-
     return (alpha) * err_hr + (1 - alpha)*err_flux   
+
+def CustomLoss_weight_rsu(y_true, y_pred, x_aux, dp, rsd_top):
+    rsd_true, rsu_true, rsd_pred, rsu_pred = flux_from_y(y_true, y_pred, x_aux, rsd_top)
+
+    # tf.math.multiply
+    y_true[:,:,1] = 2.625*y_true[:,:,1] 
+    y_pred[:,:,1] = 2.625*y_pred[:,:,1] 
+    err_flux = K.mean(K.square(y_true - y_pred))
+
+    HR_true = calc_heatingrates_tf_dp(rsd_true, rsu_true, dp)
+    HR_pred = calc_heatingrates_tf_dp(rsd_pred, rsu_pred, dp)
+    err_hr = K.sqrt(K.mean(K.square(HR_true - HR_pred)))
+    # alpha   = 1e-6
+    alpha   = 1e-5
+    # alpha   = 1e-4
+    return (alpha) * err_hr + (1 - alpha)*err_flux  
 
 def rmse_hr(y_true, y_pred, x_aux, dp, rsd_top):
     
@@ -364,6 +362,7 @@ activ0 = 'relu'
 #activ0 = 'softsign' #worse?
 activ_last   = 'relu'
 activ_last   = 'sigmoid'
+# activ_last   = 'linear'
 
 epochs      = 100000
 patience    = 25
@@ -371,8 +370,8 @@ lossfunc    = losses.mean_squared_error
 lr          = 0.0001 
 batch_size  = 1024
 
-nneur = 64 
-# nneur = 32   
+# nneur = 64 
+nneur = 32   
 # nneur = 96
 # neur  = 128
 # Input for variable-length sequences of integers
@@ -423,7 +422,9 @@ layer_rnn = layers.GRU(nneur,return_sequences=True)
 hidden = layers.Bidirectional(layer_rnn, merge_mode=mergemode, name ='bidirectional')\
     (inputs, initial_state= [mlp_dense_inp1,mlp_dense_inp2])
     
-hidden2 = layers.Bidirectional(layer_rnn, merge_mode=mergemode, name ='bidirectional2')(hidden)
+# hidden2 = layers.Bidirectional(layer_rnn, merge_mode=mergemode, name ='bidirectional2')(hidden)
+hidden2 = layers.GRU(nneur,return_sequences=True)(hidden)
+
 outputs = TimeDistributed(layers.Dense(ny, activation=activ_last),name='dense_output')(hidden2)
 
 # outputs = TimeDistributed(layers.Dense(ny, activation=activ_last),name='dense_output')(hidden)
@@ -473,7 +474,8 @@ else:
 # 32, 2x BiRNN mult, aux1=mu0, aux2=alb, HR R2 shit
 # 32, 2x biRNN, concat, -:-, SIGMOIDLAST  HR R2 0.993 but sfc still a problem
 # same but mu0 as layerinp: HR r2 0.996, sfc MAE 1.5
-# same but 64, 1x
+# same but 64, 1x, not so good
+# 32, 1x BiRNN 1x RNN, mu0 lay: HR R2 0.996
 # 
 # EVALUATE
 # validation data
@@ -482,12 +484,49 @@ if mu0_as_layer_input:
     y_pred_val      = model.predict([x_val_m, x_val_aux, y_val, dp_val, rsd0_val_big]);  
     end = time.time()
     print(end - start)
+    
+    if scale_outputs:   y_pred_val[:,:,1] = y_pred_val[:,:,1] /fac
     rsd_pred_val, rsu_pred_val = build_y(y_pred_val[:,:,0],y_pred_val[:,:,1], rsd0_val, x_val_aux)
 
 else:
     y_pred_val      = model.predict([x_val_m, x_val_aux1, x_val_aux2, y_val, dp_val, rsd0_val_big]); 
     end = time.time()
     print(end - start)
+    if scale_outputs:   y_pred_val[:,:,1] = y_pred_val[:,:,1] /fac
     rsd_pred_val, rsu_pred_val = build_y(y_pred_val[:,:,0],y_pred_val[:,:,1], rsd0_val, x_val_aux[:,1])
 
 plot_flux_and_hr_error(rsu_val, rsd_val, rsu_pred_val, rsd_pred_val, pres_val)
+
+
+
+if mu0_as_layer_input:
+    y_pred_test      = model.predict([x_test_m, x_test_aux, y_test, dp_test, rsd0_test_big]);      
+    if scale_outputs:   y_pred_test[:,:,1] = y_pred_test[:,:,1] /fac
+    rsd_pred_test, rsu_pred_test = build_y(y_pred_test[:,:,0],y_pred_test[:,:,1], rsd0_test, x_test_aux)
+
+else:
+    y_pred_test      = model.predict([x_test_m, x_test_aux1, x_test_aux2, y_test, dp_test, rsd0_test_big]); 
+    if scale_outputs:   y_pred_test[:,:,1] = y_pred_test[:,:,1] /fac
+    rsd_pred_test, rsu_pred_test = build_y(y_pred_test[:,:,0],y_pred_test[:,:,1], rsd0_test, x_test_aux[:,1])
+
+plot_flux_and_hr_error(rsu_test, rsd_test, rsu_pred_test, rsd_pred_test, pres_test)
+
+
+
+from netCDF4 import Dataset
+
+rootdir = "../fluxes/"
+fname_out = rootdir+'CAMS_2015_rsud_RADSCHEME_RNN.nc'
+
+dat_out =  Dataset(fname_out,'a')
+var_rsu = dat_out.variables['rsu']
+var_rsd = dat_out.variables['rsd']
+
+nsite = dat_out.dimensions['site'].size
+ntime = dat_out.dimensions['time'].size
+var_rsu[:] = rsu_pred_test.reshape(ntime,nsite,nlay+1)
+var_rsd[:] = rsd_pred_test.reshape(ntime,nsite,nlay+1)
+
+dat_out.close()
+
+

@@ -712,25 +712,25 @@ contains
 #endif    
     end do
 
-    if (compare_reftrans) then
-        print *, "mae Rdif",  mae_3d(reftrans_true(:,:,:,1),reftrans_pred(:,:,:,1))
-        print *, "Tdif",      mae_3d(reftrans_true(:,:,:,2),reftrans_pred(:,:,:,2))
-        print *, "Rdir",      mae_3d(reftrans_true(:,:,:,3),reftrans_pred(:,:,:,3))
-        print *, "Tdir",      mae_3d(reftrans_true(:,:,:,4),reftrans_pred(:,:,:,4))
+    ! if (compare_reftrans) then
+    !     print *, "mae Rdif",  mae_3d(reftrans_true(:,:,:,1),reftrans_pred(:,:,:,1))
+    !     print *, "Tdif",      mae_3d(reftrans_true(:,:,:,2),reftrans_pred(:,:,:,2))
+    !     print *, "Rdir",      mae_3d(reftrans_true(:,:,:,3),reftrans_pred(:,:,:,3))
+    !     print *, "Tdir",      mae_3d(reftrans_true(:,:,:,4),reftrans_pred(:,:,:,4))
 
-        print *, "bias Rdif",  mean_3d(reftrans_true(:,:,:,1)) - mean_3d(reftrans_pred(:,:,:,1))
-        print *, "Tdif",      mean_3d(reftrans_true(:,:,:,2)) - mean_3d(reftrans_pred(:,:,:,2))
-        print *, "Rdir",      mean_3d(reftrans_true(:,:,:,3)) - mean_3d(reftrans_pred(:,:,:,3))
-        print *, "Tdir",      mean_3d(reftrans_true(:,:,:,4)) - mean_3d(reftrans_pred(:,:,:,4))
+    !     print *, "bias Rdif",  mean_3d(reftrans_true(:,:,:,1)) - mean_3d(reftrans_pred(:,:,:,1))
+    !     print *, "Tdif",      mean_3d(reftrans_true(:,:,:,2)) - mean_3d(reftrans_pred(:,:,:,2))
+    !     print *, "Rdir",      mean_3d(reftrans_true(:,:,:,3)) - mean_3d(reftrans_pred(:,:,:,3))
+    !     print *, "Tdir",      mean_3d(reftrans_true(:,:,:,4)) - mean_3d(reftrans_pred(:,:,:,4))
 
-        print *, "maxdiff Rdif",  maxval(abs(reftrans_true(:,:,:,1)) - reftrans_pred(:,:,:,1))
-        print *, "Tdif",      maxval(abs(reftrans_true(:,:,:,2)) - reftrans_pred(:,:,:,2))
-        print *, "Rdir",      maxval(abs(reftrans_true(:,:,:,3)) - reftrans_pred(:,:,:,3))
-        print *, "Tdir",      maxval(abs(reftrans_true(:,:,:,4)) - reftrans_pred(:,:,:,4))
+    !     print *, "maxdiff Rdif",  maxval(abs(reftrans_true(:,:,:,1)) - reftrans_pred(:,:,:,1))
+    !     print *, "Tdif",      maxval(abs(reftrans_true(:,:,:,2)) - reftrans_pred(:,:,:,2))
+    !     print *, "Rdir",      maxval(abs(reftrans_true(:,:,:,3)) - reftrans_pred(:,:,:,3))
+    !     print *, "Tdir",      maxval(abs(reftrans_true(:,:,:,4)) - reftrans_pred(:,:,:,4))
 
-        print *, "maxvals..", maxval(reftrans_true(:,:,:,1)), maxval(reftrans_true(:,:,:,2)),&
-         maxval(reftrans_true(:,:,:,3)), maxval(reftrans_true(:,:,:,4))
-    end if
+    !     print *, "maxvals..", maxval(reftrans_true(:,:,:,1)), maxval(reftrans_true(:,:,:,2)),&
+    !      maxval(reftrans_true(:,:,:,3)), maxval(reftrans_true(:,:,:,4))
+    ! end if
 
   end subroutine sw_solver_2stream
   ! -------------------------------------------------------------------------------------------------

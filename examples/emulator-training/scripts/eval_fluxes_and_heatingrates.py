@@ -53,8 +53,8 @@ def rmsee(diff,ax):
     return np.sqrt(((diff) ** 2).mean(axis=ax))
 
 
-def bias(predictions, targets,ax):
-    return np.mean(predictions-targets,axis=ax)
+def bias(var1, var2,ax):
+    return np.mean(var1-var2,axis=ax)
 
 def calc_heatingrate(fluxup,fluxdn,p):
     
@@ -84,8 +84,8 @@ fname_ref       = rootdir+'CAMS_2015_rsud_REFERENCE.nc'
 fname_reftrans  = rootdir+'CAMS_2015_rsud_REFTRANS.nc'
 fname_rrtmgp    = rootdir+'CAMS_2015_rsud_RRTMGP.nc'
 fname_rrtmgp_old = rootdir+'CAMS_2015_rsud_RRTMGP_2020.nc'
-# fname_radscheme = rootdir+'CAMS_2015_rsud_RADSCHEME.nc'
-fname_radscheme = rootdir+'tmp.nc'
+fname_radscheme = rootdir+'CAMS_2015_rsud_RADSCHEME.nc'
+# fname_radscheme = rootdir+'tmp.nc'
 fname_radscheme_r = rootdir+'CAMS_2015_rsud_RADSCHEME_RNN.nc'
 
 
@@ -204,27 +204,20 @@ ind_p = 2
 
 ncols = 3 # metrics
 nrows = 4 # models
-fig, ax = plt.subplots(nrows,ncols, sharey=True)
+fig, ax = plt.subplots(nrows,ncols)#, sharey=True)
 
 for i in range(nrows): # different models
     for j in range(2): # downwelling, then shortwelling
-
-    # j = 0 # downwelling
-
-        # diff = fluxes_dn[i] - fluxdn_ref
-        var    = fluxes[i][j]
-        varref = fluxes_ref[j]
+        var    = fluxes[i][j]; varref = fluxes_ref[j]
         diff = var - varref
         
-        p5  = np.percentile(diff, 5, axis=0)
-        p95 = np.percentile(diff, 95, axis=0)
+        p5  = np.percentile(diff, 5, axis=0); p95 = np.percentile(diff, 95, axis=0)
         xb  = np.mean(diff, axis=0)
         x = np.mean(np.abs(diff),axis=0)
         
         ax[i,j].plot(x[ind_p:], yy[ind_p:],'b', label=l_mae, ls='--')
         ax[i,j].plot(xb[ind_p:], yy[ind_p:],'b', label=l_bias)    
         ax[i,j].fill_betweenx(yy[ind_p:], p5[ind_p:], p95[ind_p:], color='b', alpha=.1)
-        ax[i,j].invert_yaxis(); ax[i,j].grid()
         ax[i,j].set_xlim(xlim)
         
         if (i==1 and j==0):  ax[i,j].legend(fontsize=10,loc='upper left')
@@ -264,7 +257,6 @@ for i in range(nrows): # different models
     ax[i,j].plot(x[ind_p:], yy[ind_p:],'b', label=l_mae, ls='--')
     ax[i,j].plot(xb[ind_p:], yy[ind_p:],'b', label=l_bias)    
     ax[i,j].fill_betweenx(yy[ind_p:], p5[ind_p:], p95[ind_p:], color='b', alpha=.1)
-    ax[i,j].invert_yaxis(); ax[i,j].grid()
     ax[i,j].set_xlim(xlim2)
     
     if (i==1 and j==0):  ax[i,j].legend(fontsize=10)
@@ -287,6 +279,11 @@ for i in range(nrows): # different models
     ax[i,j].annotate(str4, xy=xyc4, xycoords=xycc,size=ts)
 
 
+for i in range(nrows): # different models
+    for j in range(ncols): 
+            ax[i,j].invert_yaxis(); ax[i,j].grid()
+
+
 xpad = 70
 ypad = 40
 rowtitles = ['FNN-Radscheme', 'RNN-RadScheme', 'FNN-RefTrans', 'FNN-RRTMGP']
@@ -300,8 +297,8 @@ for axx, row in zip(ax[:,0], rowtitles):
 def annotate_axis(ax,var,var_ref, xyc1, xyc2, xycc, ts):
         diff = np.abs(var-var_ref)
         varbias = (var-var_ref).mean() 
-        str1= 'MAE : {:0.2f} ({:0.1f}%)'.format(diff.mean(), np.abs(100*diff.mean()/varref.mean()))
-        str2= 'Bias: {:0.2f} ({:0.1f}%)'.format(varbias, 100*varbias/varref.mean())
+        str2= 'MAE : {:0.2f} ({:0.1f}%)'.format(diff.mean(), np.abs(100*diff.mean()/var_ref.mean()))
+        str1= 'Bias: {:0.2f} ({:0.1f}%)'.format(varbias, 100*varbias/var_ref.mean())
 
         ax.annotate(str1, xy=xyc1, xycoords=xycc,size=ts,color='k')
         ax.annotate(str2, xy=xyc2, xycoords=xycc,size=ts,color='k')
@@ -327,77 +324,94 @@ import cartopy.crs as ccrs
 
 fs_bigtitle = 16
 z0 = rsu_toa_ref.mean(axis=0)
-z1 = mae(rsu_toa_ref,rsu_toa_radscheme,0)
-z2 = mae(rsu_toa_ref,rsu_toa_radscheme_r,0)
-z3 = mae(rsu_toa_ref,rsu_toa_reftrans,0)
-z4 = mae(rsu_toa_ref,rsu_toa_rrtmgp,0)
+func = bias
+# func = mae
+z1 = func(rsu_toa_ref,rsu_toa_radscheme,0)
+z2 = func(rsu_toa_ref,rsu_toa_radscheme_r,0)
+z3 = func(rsu_toa_ref,rsu_toa_reftrans,0)
+z4 = func(rsu_toa_ref,rsu_toa_rrtmgp,0)
 
-vmin = 0
-vmax = 5.0
-bounds =  np.linspace(vmin,vmax,10)
+vmin = -4.0
+vmax = 4.0
+# bounds =  np.linspace(vmin,vmax,9)
+bounds =  np.linspace(vmin,vmax,17)
+
 ts2 = 11
 xb = 1.02
 xyc1 = (xb, 0.87)
 xyc2 = (xb, 0.77)
+incl_absval = True
+coastcolor = 'gray'
 
 proj = ccrs.EqualEarth()
-
 x, y, _ = proj.transform_points(ccrs.PlateCarree(), lon, lat).T
+
+cmap = plt.get_cmap('RdBu')
 
 fig = plt.figure(figsize=(16,9))
 fig.suptitle('Upwelling flux at top-of-atmosphere', fontsize = fs_bigtitle)
 
-incl_absval = True
-
 i = 1
 if incl_absval:
-    rowtitles = ['(a) TOA flux', '(b) FNN-RadScheme',  '(c) RNN-RadScheme',
-             '(d) FNN-RefTrans', '(e) FNN-RRTMGP']
+    rowtitles = ['(a) REF', '(b) REF - \nFNN-RadScheme',  '(c) REF - \nRNN-RadScheme',
+             '(d) REF - \nFNN-RefTrans', '(e) REF - \nFNN-RRTMGP']
     nrows = 5
     ax0 = plt.subplot(nrows, 1, i,projection=proj)
     cs0 = ax0.tricontourf(x, y, z0)
     ax0.coastlines(color='white')
     xvals_cbar = [1.15, -0.4, 0.08, 3.1]
     i = i +1
+    
 else:
     rowtitles = ['(a) FNN-RadScheme',  '(b) RNN-RadScheme',
              '(c) FNN-RefTrans', '(d) FNN-RRTMGP']
     xvals_cbar = [1.15, -0.6, 0.08, 2.5]
     nrows = 4
+    
+xvals_cbar2 = [-0.25, -0.33, 1.5, 0.15]
 
 cax0= ax0.inset_axes([1.15 ,0.13, 0.08, 0.8], transform=ax0.transAxes)
-colorbar0 = fig.colorbar(cs0, cax=cax0); cax0.set_xlabel('Flux (W m$^{-2}$)',fontsize=11,  labelpad=11)
+colorbar0 = fig.colorbar(cs0, cax=cax0); 
+cax0.set_xlabel('Flux (W m$^{-2}$)',fontsize=11,  labelpad=11)
 
 ax1 = plt.subplot(nrows, 1, i,projection=proj)
-cs1 = ax1.tricontourf(x, y, z1, levels=bounds)
-ax1.coastlines(color='white')
+cs1 = ax1.tricontourf(x, y, z1, levels=bounds, cmap=cmap)
+ax1.coastlines(color=coastcolor)
 annotate_axis(ax1,rsu_toa_radscheme,rsu_toa_ref, xyc1, xyc2, xycc, ts2)
 i = i +1
 
 ax2 = plt.subplot(nrows, 1, i,projection=proj)
-cs2 = ax2.tricontourf(x, y, z2, levels=bounds)
-ax2.coastlines(color='white')
+cs2 = ax2.tricontourf(x, y, z2, levels=bounds, cmap=cmap)
+ax2.coastlines(color=coastcolor)
 annotate_axis(ax2,rsu_toa_radscheme_r,rsu_toa_ref, xyc1, xyc2, xycc, ts2)
 i = i +1
 
 ax3 = plt.subplot(nrows, 1, i,projection=proj)
-cs3 = ax3.tricontourf(x, y, z3, levels=bounds)
-ax3.coastlines(color='white')
+cs3 = ax3.tricontourf(x, y, z3, levels=bounds, cmap=cmap)
+ax3.coastlines(color=coastcolor)
 annotate_axis(ax3,rsu_toa_reftrans,rsu_toa_ref, xyc1, xyc2, xycc, ts2)
 i = i +1
 
 # cax = ax3.inset_axes(xvals_cbar, transform=ax3.transAxes)
-# colorbar = fig.colorbar(cs3, cax=cax,orientation='horizontal') 
+# colorbar = fig.colorbar(cs3, cax=cax) 
 # cax.set_xlabel('Flux (W m$^{-2}$)',fontsize=11, labelpad=11)
 
 ax4 = plt.subplot(nrows, 1, i, projection=proj)
-cs4 = ax4.tricontourf(x, y, z4, levels=bounds)
-ax4.coastlines(color='white')
+cs4 = ax4.tricontourf(x, y, z4, levels=bounds, cmap=cmap)
+ax4.coastlines(color=coastcolor)
 annotate_axis(ax4,rsu_toa_rrtmgp,rsu_toa_ref, xyc1, xyc2, xycc, ts2)
 i = i +1
 
+cax = ax4.inset_axes(xvals_cbar2, transform=ax4.transAxes)
+colorbar = fig.colorbar(cs4, cax=cax,orientation='horizontal') 
+cax.set_xlabel('Flux (W m$^{-2}$)',fontsize=11, labelpad=11)
+
 xpad = 110
+xpad = 125
+# xpad = 145
+
 ypad = 40
+ypad = 35
 
 if incl_absval:
     axrow = [ax0,ax1,ax2,ax3,ax4]
@@ -406,35 +420,37 @@ else:
 
 
 for axx, row in zip(axrow, rowtitles):
+    # axx.annotate(row, xy=(5, 0.5), xytext=(-axx.yaxis.labelpad +xpad, 0 + ypad),
+    #             xycoords=axx.yaxis.label, textcoords='offset points',
+    #             size=14, ha='right', va='center', rotation=45)
     axx.annotate(row, xy=(5, 0.5), xytext=(-axx.yaxis.labelpad +xpad, 0 + ypad),
-                xycoords=axx.yaxis.label, textcoords='offset points',
-                size=14, ha='right', va='center', rotation=45)
-                
+      xycoords=axx.yaxis.label, textcoords='offset points',
+      size=14, ha='right', va='center', rotation=0)      
 
 
 
 
 
 
-z0 = rsu_toa_ref.mean(axis=0)
-# z0 = rsd_sfc_ref.mean(axis=0)
+# z0 = rsu_toa_ref.mean(axis=0)
+# # z0 = rsd_sfc_ref.mean(axis=0)
 
 
-z0 = sza[7,:]
-# z0 = sza.mean(axis=0)
-# z0 = np.mean(cloudfrac.sum(axis=2),axis=0)
+# z0 = sza[7,:]
+# # z0 = sza.mean(axis=0)
+# # z0 = np.mean(cloudfrac.sum(axis=2),axis=0)
 
-x, y, _ = proj.transform_points(ccrs.PlateCarree(), lon, lat).T
+# x, y, _ = proj.transform_points(ccrs.PlateCarree(), lon, lat).T
 
-fig = plt.figure(figsize=(16,9))
-proj = ccrs.EqualEarth()
+# fig = plt.figure(figsize=(16,9))
+# proj = ccrs.EqualEarth()
 
-proj = ccrs.EqualEarth()
-ax = plt.axes(projection=proj)
-cs = ax.tricontourf(x, y, z0)
-ax.coastlines(color='white')
+# proj = ccrs.EqualEarth()
+# ax = plt.axes(projection=proj)
+# cs = ax.tricontourf(x, y, z0)
+# ax.coastlines(color='white')
 
-cax = ax.inset_axes([1.05, 0.1, 0.05, 0.9], transform=ax.transAxes)
-colorbar = fig.colorbar(cs, cax=cax)
+# cax = ax.inset_axes([1.05, 0.1, 0.05, 0.9], transform=ax.transAxes)
+# colorbar = fig.colorbar(cs, cax=cax)
 
 

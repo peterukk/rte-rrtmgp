@@ -533,8 +533,10 @@ elif (ml_library=='tf-keras'):
     # neurons = [8]
     retrain_mae = False
     
-    batch_size  = 4096
-    lr          = 0.01
+    # batch_size  = 4096
+    batch_size = 1024
+    batch_size = 2048
+    # lr          = 0.01
     
     optim = optimizers.Adam(lr=lr)
 
@@ -552,29 +554,32 @@ elif (ml_library=='tf-keras'):
     # lossfunc = mae_sine_and_y_weight
     # lossfunc = mse_sineweight_nfac2_2
     
-    # def mse_sineweight_nfac2_5(y_true, y_pred):
+    # def mse_sineweight_nfac2(y_true, y_pred):
     #     weights = 2.0 * (K.sin(1.0 * K.square(y_true) )) - 0.4
     #     wg = np.array([2.5, 1.0, 2.5, 2.0], dtype=np.float32)
     #     # wg = np.reshape(wg,(1,4)).repeat(batch_size,axis=0)
-    
     #     y_true = y_true*wg
     #     y_pred = y_pred*wg
-
     #     return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
 
-
-    def mse_sineweight_nfac2_6(y_true, y_pred):
+    def mse_sineweight_nfac2(y_true, y_pred):
         weights = 1.5 * (K.sin(1.1 * K.square(y_true) )) 
         wg = np.array([2.5, 1.0, 2.5, 2.0], dtype=np.float32)
-        # wg = np.reshape(wg,(1,4)).repeat(batch_size,axis=0)
-        
         y_true = y_true*wg
         y_pred = y_pred*wg
-    
-    
         return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
 
-    lossfunc =  mse_sineweight_nfac2_6
+    lossfunc =  mse_sineweight_nfac2
+    
+    def mae_weights(y_true,y_pred):
+        wg = np.array([2.0, 1.0, 3.0, 2.0], dtype=np.float32)
+        # wg = np.array([2.5, 1.0, 2.0, 2.5], dtype=np.float32)
+        y_true = y_true*wg
+        y_pred = y_pred*wg
+        return K.mean(K.abs(y_true - y_pred),axis=0)
+    
+    lossfunc = losses.mean_absolute_error
+    lossfunc = mae_weights
     valfunc     = 'val_loss'
     patience    = 21
     
@@ -604,6 +609,8 @@ elif (ml_library=='tf-keras'):
     
     # (optional) recompile with MAE and continue training
     if retrain_mae:
+        # loss_new = mae_weights
+        # model.compile(loss=loss_new, optimizer=optim,metrics=['mean_squared_error'])
         model.compile(loss=losses.mean_absolute_error, optimizer=optim,metrics=['mean_squared_error'])
         callbacks = [EarlyStopping(monitor='val_loss',  patience=patience, verbose=1, mode='min',restore_best_weights=True)]
         with tf.device(devstr):
@@ -611,13 +618,13 @@ elif (ml_library=='tf-keras'):
                                 validation_data=(x_val,y_val), callbacks=callbacks)
         
     # PREDICT OUTPUTS FOR TEST DATA
-    y_pred = model.predict(x_test);  
+    y_pred = model.predict(x_val);  
     if scale_outputs:
         y_pred = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
   
     # ----- SAVE MODEL ------
     # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-mse-hardsig.h5"
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-mse-NEW.h5"
+    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-mae2-NEW.h5"
 
     # kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-std.h5"
     savemodel(kerasfile, model)
@@ -637,13 +644,13 @@ else:
 # EVALUATE
 yvars = ['Rdif',      'Tdif','Rdir','Tdir']
 for i in range(4):
-    r = np.corrcoef(y_test_raw[:,i],y_pred[:,i])[0,1]
+    r = np.corrcoef(y_val_raw[:,i],y_pred[:,i])[0,1]
     print("R2 {}: {:0.5f} ; maxdiff {:0.5f}, bias {:0.5f}".format(yvars[i], \
-      r**2,np.max(np.abs(y_test_raw[:,i]-y_pred[:,i])), np.mean(y_test_raw[:,i]-y_pred[:,i])))   
+      r**2,np.max(np.abs(y_val_raw[:,i]-y_pred[:,i])), np.mean(y_val_raw[:,i]-y_pred[:,i])))   
     # if plot_eval:
     #     plot_hist2d(y_test_raw[:,i],y_pred[:,i],20,True) 
     #     plt.suptitle("{}".format(yvars[i]))
         
-plot_hist2d_reftrans(y_test_raw,y_pred,50,True) 
+plot_hist2d_reftrans(y_val_raw,y_pred,50,True) 
 
  # y_pred[:,i].mean(), y_pred[:,i].max(), y_pred[:,i].min()
