@@ -43,7 +43,8 @@ ifeq ($(BLASLIB),blis)
 	FCINCLUDE   += -I$(BLAS_DIR)/include/blis
 	LIBS      	+= $(BLAS_DIR)/lib/libblis.a -lm -lpthread 
 else ifeq ($(BLASLIB),blis-amd)
-	FCINCLUDE   += -I$(BLAS_DIR)/include/blis
+#	FCINCLUDE   += -I$(BLAS_DIR)/include/blis
+	FCINCLUDE   += -I$(BLAS_DIR)/include
 	LIBS      	+= $(BLAS_DIR)/lib/libblis-mt.a -lm -lpthread 
 else ifeq ($(BLASLIB),openblas)
 	LIBS 		+= -lopenblas 

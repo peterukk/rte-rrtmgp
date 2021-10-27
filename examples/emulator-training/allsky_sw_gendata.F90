@@ -338,8 +338,8 @@ program rrtmgp_rfmip_sw
   !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
   ! end do
 
-  ! call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle,  sza_fill_randoms_in=.true.)
-  call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
+  call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle,  sza_fill_randoms_in=.true.)
+  ! call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
 
   !
   ! Read k-distribution information. load_and_init() reads data from netCDF and calls
@@ -437,9 +437,6 @@ program rrtmgp_rfmip_sw
         end do
       end do
     end do
-    ! ! looks like the cloud optics extension takes lwp and iwp in g/kg 
-    ! lwp = 1000 * lwp
-    ! iwp = 1000 * iwp
   end if
 
   !
@@ -687,6 +684,8 @@ program rrtmgp_rfmip_sw
 #ifdef USE_OPENACC  
   istat = cublasDestroy(h) 
 #endif
+  print *, "mean cloud optical depth for last column block", mean_3d(clouds%tau)
+
   print *, "Finished with computations!"
   print *, "-------------------------------------------------------------------------"
 

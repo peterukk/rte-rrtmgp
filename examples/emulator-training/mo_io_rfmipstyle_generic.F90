@@ -683,8 +683,6 @@ contains
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("read_and_block_clouds: Haven't read problem size yet.")
     if(mod(ncol_l*nexp_l, blocksize) /= 0 ) call stop_on_err("read_and_block_clouds: number of columns doesn't fit evenly into blocks.")
     nblocks = (ncol_l*nexp_l)/blocksize
-    ! allocate(clwc(nlay_l, blocksize,   nblocks), ciwc(nlay_l, blocksize,   nblocks))
-    ! allocate(cloud_fraction(nlay_l, blocksize,   nblocks))
 
     if(nf90_open(trim(fileName), NF90_NOWRITE, ncid) /= NF90_NOERR) &
       call stop_on_err("read_and_block_clouds: can't find file " // trim(fileName))

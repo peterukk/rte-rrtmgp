@@ -25,15 +25,15 @@ Compute shortwave fluxes using refererence code and save them to fluxes subdirec
 
 Save input output data for training machine learning emulators (modify Fortran program to specify the outputs and other options):
 
-` ./allsky_sw_gendata 8 data_input/CAMS_2014_RFMIPstyle.nc ../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc ../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  /media/peter/samsung/data/CAMS/ml_training/RADSCHEME_data_g224_CAMS_2014.nc `
+` ./allsky_sw_gendata 8 data_input/CAMS_2015_RFMIPstyle.nc ../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc ../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc  /media/peter/samsung/data/CAMS/ml_training/RADSCHEME_data_g224_CAMS_2014.nc `
 
 Test an existing ML emulator, e.g. neural network to accelerate RRTMGP kernel (saving fluxes):
 
-`/allsky_sw_testmodels 4 data_input/CAMS_2015_RFMIPstyle.nc ../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc ../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc fluxes/CAMS_2015_rsud_RRTMGP.nc rrtmgp ../../neural/data/tau-sw-abs-7-16-16-CAMS-NEW.txt ../../neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.txt ` 
+`/allsky_sw_testmodels 4 data_input/CAMS_2015_RFMIPstyle.nc ../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc ../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc fluxes/tmp.nc rrtmgp ../../neural/data/tau-sw-abs-7-16-16-CAMS-NEW.txt ../../neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.txt ` 
 
 Or emulate the entire scheme using the final RADSCHEME model:
 
-`./allsky_sw_testmodels 5120 /media/peter/samsung/data/CAMS/CAMS_2015_RFMIPstyle.nc ../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc ../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc fluxes/CAMS_2015_rsud_RADSCHEME.nc both ../../neural/data/radscheme-128-128-128-fluxnorm-hybridloss.txt ` 
+`./allsky_sw_testmodels 5120 data_input/CAMS_2015_RFMIPstyle.nc ../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc ../../extensions/cloud_optics/rrtmgp-cloud-optics-coeffs-sw.nc fluxes/tmp.nc both ../../neural/data/radscheme-128-128-128-hybridloss_new.txt ` 
 
 Or emulate reflectance-transmittance computations using the final REFTRANS model:
 

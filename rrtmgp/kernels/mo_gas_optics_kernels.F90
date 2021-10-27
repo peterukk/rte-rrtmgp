@@ -1134,14 +1134,14 @@ contains
       do ilay = 1, nlay
         do igpt = 1, ngpt
           tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
-          if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+          ! if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
             ! ssa = tau_rayleigh / tau_tot
               tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
             ! ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
             !   tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_wp)
-          else
-              tau_ray(igpt,ilay,icol) = 0._wp
-          end if
+          ! else
+              ! tau_ray(igpt,ilay,icol) = 0._wp
+          ! end if
         end do
       end do
     end do

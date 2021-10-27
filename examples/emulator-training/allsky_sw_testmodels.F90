@@ -534,6 +534,7 @@ program rrtmgp_rfmip_sw
   !$OMP PARALLEL shared(nn_models, k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,atmos)
   !$OMP DO 
 #endif
+  if (use_rte_rrtmgp_nn) def_tsi_s = sum(k_dist%solar_source)
   do b = 1, nblocks
 
     fluxes%flux_up => flux_up(:,:,b)
@@ -555,25 +556,24 @@ program rrtmgp_rfmip_sw
                                     p_lay(:,:,b), t_lay(:,:,b), gas_conc_array(b),           &
                                     input_rrtmgp(:,:,:,b), input_names))
       ! Use emulator for whole radiation scheme
-                                          !
+#ifdef USE_TIMING
+        ret =  gptlstart('preproc1')
+#endif
       ! Cosine of the solar zenith angle
       !$acc parallel loop
       do icol = 1, block_size
         mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
 
-        do igpt = 1,ngpt
-            toa_flux(igpt,icol) = k_dist%solar_source(igpt)
-        end do
-        def_tsi(icol) = sum(toa_flux(:,icol),dim=1)
-
         do igpt  = 1, ngpt
           ! Normalize incoming solar flux to match RFMIP specification
-          toa_flux(igpt,icol) = toa_flux(igpt,icol) * total_solar_irradiance(icol,b)/def_tsi(icol)
+          toa_flux(igpt,icol) = k_dist%solar_source(igpt) * total_solar_irradiance(icol,b)/def_tsi_s
           ! Apply boundary condition
           toa_flux(igpt,icol) = toa_flux(igpt,icol) * mu0(icol)
         end do
       end do
-
+#ifdef USE_TIMING
+        ret =  gptlstop('preproc1')
+#endif
 
       call predict_nn_radscheme_sw(block_size, nlay, ninputs_rrtmgp, & 
                         input_rrtmgp(:,:,:,b), & ! RRTMGP inputs (gas concentrations + T + p)
@@ -828,9 +828,8 @@ program rrtmgp_rfmip_sw
 
   end if
 
-
   ! Save fluxes?  we might want to evaluate the fluxes predicted with neural networks
-  if (save_flux) then
+  if ((save_flux) .and. (len(trim(flx_file))>0 )) then
     ! flx_file = 'fluxes/CAMS_2018_rsud_REF.nc'
     print *, "Attempting to save broadband fluxes to ", flx_file
 
@@ -971,34 +970,13 @@ program rrtmgp_rfmip_sw
     integer :: nlev, nx, ny, i, j
     integer :: i1e, i2s, i2e, i3s, i3e, i4, i5
     real(wp), dimension(:,:), allocatable   :: nn_inputs, nn_outputs
-    real(sp), dimension(122)               :: ymeans = (/374.46596068, 374.45956871, 374.45462027, 374.4511992 , &
-    374.45047469, 374.45502195, 374.4680579 , 374.49239519, 374.53055628, 374.58516238, 374.65892284, 374.75524611, &
-    374.8792801 , 375.03542025, 375.22643646, 375.45378099, 375.71533287, 376.00285752, 376.30151249, 376.58998858, &
-    376.84997017, 377.06088253, 377.1959924 , 377.2298344 , 377.14753112, 376.9435507 , 376.61342392, 376.0964268 , &
-    375.33952337, 374.26344007, 372.82036231, 370.98542669, 368.80749149, 366.3915064 , 363.87406595, 361.26581523, &
-    358.59414259, 355.66949237, 352.05744001, 347.27688142, 341.25040552, 334.76377694, 328.82791973, 323.08134132, &
-    316.79175838, 309.09519245, 299.90917436, 288.99921467, 274.59731862, 257.36481124, 240.59263275, 226.58893258, &
-    216.13279391, 208.64963063, 203.82791957, 200.9401672 , 199.41826418, 198.6591551 , 198.25545666, 197.94484266, &
-    197.83066985, 897.8497014 , 897.56832421, 897.18702832, 896.65574775, 895.92692424, 895.01315111, 893.947432  , &
-    892.81558392, 891.67935113, 890.56589866, 889.47075025, 888.3641525 , 887.21249947, 885.9978321 , 884.72128377, &
-    883.3744413 , 881.95796854, 880.47806976, 878.94735622, 877.38503736, 875.785125  , 874.16277448, 872.56365052, &
-    871.02421366, 869.54206684, 868.07279715, 866.51043363, 864.7201463 , 862.55637703, 859.83278134, 856.37222482, &
-    852.03649377, 846.8212828 , 840.8255009 , 834.20929904, 826.98212955, 819.20462721, 810.68386777, 800.99420578, &
-    789.71007101, 776.9060625 , 763.57679203, 750.85167967, 738.33882549, 725.31670556, 710.885572  , 695.07722868, &
-    677.67695876, 656.78869705, 633.36680778, 611.07829043, 592.37422528, 578.04482565, 567.34107156, 559.94750542, &
-    555.05698858, 552.03360581, 550.17168289, 548.97796299, 548.11269961, 547.68542119 /)   ! output standard-scaling coefficient 
-    real(sp)                                :: ysigma = 431.14175665                        ! output standard-scaling coefficient
-    real(sp), dimension(543)                :: xmin, xmax
+    real(sp), dimension(542)                :: xmin, xmax
     ! load input scaling coefficients
     open(20,file="../../neural/data/nn_radscheme_xmin_xmax.txt",status="old",action="read")
-    ! do i = 1, 1084
-    do i = 1, 543
+    do i = 1, 542
       read(20,*) xmax(i)
     end do
     close(20)
-    ! xmin = xvals(1:542)
-    ! xmax = xvals(543:1084)
-    ! xmax =  xvals(1:542)
     xmin = 0.0_wp
     
     ! number of samples (profiles) nbatch = ncol
@@ -1008,6 +986,9 @@ program rrtmgp_rfmip_sw
     ! scalars mu+ and sfc_alb 
     ! Incoming flux at top of the atmosphere is assumed constant! (not spectrally constant, but the solar gpt flux is still an array of constants)
     !           gases,         clouds,  mu0, sfc_alb
+#ifdef USE_TIMING
+        ret =  gptlstart('preproc2')
+#endif
     nx    =    nlay*nx_gasopt + 2*nlay  + 1 + 1     +1
     ! outputs
     nlev = nlay + 1
@@ -1015,14 +996,20 @@ program rrtmgp_rfmip_sw
     allocate(nn_inputs (nx, nbatch))
     allocate(nn_outputs(ny, nbatch))
 
-    i1e = nlay*nx_gasopt
-    i2s = i1e + 1
-    i2e = i1e + nlay 
-    i3s = i2e + 1
+    i1e = nlay*nx_gasopt  ! 1-420
+    i2s = i1e + 1         ! 421-480
+    i2e = i1e + nlay  
+    i3s = i2e + 1         ! 481-540
     i3e = i2e + nlay 
-    i4  = i3e + 1
-    i5  = i4 + 1
-    ! print *, "inds1", 1, "-", i1e, "inds2", i2s, "-", i2e, "inds3", i3s, "-", i3e, "ind4", i4, "ind5", i5
+    i4  = i3e + 1         ! 541
+    i5  = i4 + 1          ! 542
+
+    
+    do i = 1, nx
+      if (xmax(i) < 1e-9) then 
+         xmax(i) = 1.0_sp
+      end if
+    end do
 
     ! print *, "xmax", xmax
     ! print *, "CLOUD LWP MAX", maxval(cloud_lwp), "IWP", maxval(cloud_iwp)
@@ -1036,18 +1023,11 @@ program rrtmgp_rfmip_sw
       nn_inputs(i3s:i3e,j)   = cloud_iwp(:,j)
       nn_inputs(i4,j)        = mu0(j)
       nn_inputs(i5,j)        = sfc_alb(j)
-      nn_inputs(i5+1,j)      = incflux(j)
-      ! nn_inputs(1:420,j)     = reshape(rrtmgp_inputs(:,:,j),(/nx_gasopt*nlay/))
-      ! nn_inputs(421:480,j)   = cloud_lwp(:,j)
-      ! nn_inputs(481:540,j)   = cloud_iwp(:,j)
-      ! nn_inputs(541,j)        = mu0(j)
-      ! nn_inputs(542,j)        = sfc_alb(j)
 
       do i = 1, nx
-        ! nn_inputs(i,j) = (nn_inputs(i,j) - xmin(i)) / (xmax(i) - xmin(i))
-        if (xmax(i) /= 0.0_sp) then 
+        ! if (xmax(i) /= 0.0_sp) then 
           nn_inputs(i,j) = nn_inputs(i,j) / xmax(i)
-        end if
+        ! end if
       end do
       ! print *, "i 177 2",nn_inputs(177,j)
 
@@ -1055,15 +1035,23 @@ program rrtmgp_rfmip_sw
       ! print *, "2", nn_inputs(i2s:i2e,j)
       ! print *, "mean nn inp",j,":", mean(nn_inputs(1:i1e,j))
     end do 
+#ifdef USE_TIMING
+        ret =  gptlstop('preproc2')
+#endif
+    ! do i = 1, nx
+    !     print *, i, ":", maxval(nn_inputs(i,:))
+    ! end do
 
 #ifndef DOUBLE_PRECISION
     call neural_net % output_sgemm_flat(nx, ny, nbatch, nn_inputs, nn_outputs)
+#endif
+#ifdef USE_TIMING
+        ret =  gptlstart('postproc')
 #endif
     ! print *, "mean nn outp 1", mean_2d(nn_outputs)
     do j = 1, nbatch
       ! Postprocess: reverse standard scaling
       do i = 1, ny
-        ! nn_outputs(i, j) = (ysigma*nn_outputs(i, j) + ymeans(i))
         nn_outputs(i, j) =  nn_outputs(i, j) * incflux(j)
         nn_outputs(i, j) = max(0.0, nn_outputs(i,j))
       end do
@@ -1071,6 +1059,9 @@ program rrtmgp_rfmip_sw
       fluxes%flux_up(1:nlev,j) = nn_outputs(1:nlev,j)
       fluxes%flux_dn(1:nlev,j) = nn_outputs(nlev+1:2*nlev,j)
     end do
+#ifdef USE_TIMING
+        ret =  gptlstop('postproc')
+#endif
     ! print *, "mean nn outp 2", mean_2d(nn_outputs)
 
   end subroutine predict_nn_radscheme_sw

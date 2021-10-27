@@ -19,7 +19,7 @@ import gc
 import numpy as np
 
 from ml_loaddata import ymeans_sw_abs, ysigma_sw_abs, ymeans_sw_ray, ysigma_sw_ray, \
-    load_rrtmgp, preproc_pow_gptnorm_reverse,scale_gasopt
+    load_rrtmgp, preproc_pow_standardization_reverse,scale_gasopt
 from ml_eval_funcs import plot_hist2d, plot_hist2d_T
 import matplotlib.pyplot as plt
 
@@ -31,13 +31,16 @@ import matplotlib.pyplot as plt
 # ----------------------------------------------------------------------------
 
 #  ----------------- File paths -----------------
-fpath    = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2012-2016_noclouds.nc"
-fpath_val   = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2017_noclouds.nc"
-fpath_test  = "/media/peter/samlinux/data/data_training/ml_data_g224_CAMS_2018_noclouds.nc"
+datadir     = "/media/peter/samsung/data/CAMS/ml_training/"
+datadir     = "/home/peter/data/"
 
-fpath    = "/media/peter/samsung/data/CAMS/ml_training/RRTMGP_data_g224_CAMS_2009-2018_sans_2014-2015_RND.nc"
-fpath_val   = "/media/peter/samsung/data/CAMS/ml_training/RRTMGP_data_g224_CAMS_2014_RND.nc"
-fpath_test  = "/media/peter/samsung/data/CAMS/ml_training/RRTMGP_data_g224_CAMS_2015_RND.nc"
+fpath       = datadir+"ml_data_g224_CAMS_2012-2016_noclouds.nc"
+fpath_val   = datadir+"ml_data_g224_CAMS_2017_noclouds.nc"
+fpath_test  = datadir+"ml_data_g224_CAMS_2018_noclouds.nc"
+
+fpath       = datadir+"RRTMGP_data_g224_CAMS_2009-2018_sans_2014-2015_RND.nc"
+fpath_val   = datadir+"RRTMGP_data_g224_CAMS_2014_RND.nc"
+fpath_test  = datadir+"RRTMGP_data_g224_CAMS_2015_RND.nc"
 
 
 # Just one dataset
@@ -200,7 +203,7 @@ if (ml_library=='pytorch'):
     
         # np.corrcoef(y_test.flatten(),y_pred.flatten())
         
-        y_pred = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
+        y_pred = preproc_pow_standardization_reverse(y_pred, nfac, y_mean, y_sigma)
         if predictand not in ['planck_frac', 'ssa_sw']:
             y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
         
@@ -298,7 +301,7 @@ elif (ml_library=='tf-keras'):
     # PREDICT OUTPUTS FOR TEST DATA
     def eval_valdata():
         y_pred       = model.predict(x_val);  
-        y_pred       = preproc_pow_gptnorm_reverse(y_pred, nfac, y_mean, y_sigma)
+        y_pred       = preproc_pow_standardization_reverse(y_pred, nfac, y_mean, y_sigma)
         
         if predictand not in ['planck_frac', 'ssa_sw']:
             y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
@@ -309,9 +312,9 @@ elif (ml_library=='tf-keras'):
     eval_valdata()
 
     # SAVE MODEL
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.h5"
-    savemodel(kerasfile, model)
+    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.h5"
+    # savemodel(kerasfile, model)
     
-    from keras.models import load_model
+    # from keras.models import load_model
     # kerasfile = rootdir+"soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16.h5"
-    model = load_model(kerasfile,compile=False)
+    # model = load_model(kerasfile,compile=False)

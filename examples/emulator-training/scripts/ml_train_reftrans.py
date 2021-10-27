@@ -20,7 +20,7 @@ import os,gc
 import numpy as np
 
 from ml_loaddata import load_reftrans, preproc_minmax_inputs, \
-    preproc_pow_gptnorm, preproc_pow_gptnorm_reverse, gen_synthetic_inp_outp_reftrans
+    preproc_pow_standardization, preproc_pow_standardization_reverse, gen_synthetic_inp_outp_reftrans
 from ml_eval_funcs import plot_hist2d, plot_hist2d_reftrans
 
 import matplotlib.pyplot as plt
@@ -37,9 +37,12 @@ warnings.filterwarnings("ignore")
 # fpath_rfmip = "/media/peter/samlinux/data/data_training/ml_data_reftrans_RFMIP.nc"
 # fpath  ='/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc'
 
-fpath_tr    = "/media/peter/samsung/data/CAMS/ml_training/REFTRANS_data_g224_CAMS_2009-2018_sans_2014-2015_RND.nc"
-fpath_val   = "/media/peter/samsung/data/CAMS/ml_training/REFTRANS_data_g224_CAMS_2014_RND.nc"
-fpath_test  = "/media/peter/samsung/data/CAMS/ml_training/REFTRANS_data_g224_CAMS_2015_RND.nc"
+datadir     = "/media/peter/samsung/data/CAMS/ml_training/"
+datadir     = "/home/peter/data/"
+
+fpath_tr    = datadir+"REFTRANS_data_g224_CAMS_2009-2018_sans_2014-2015_RND.nc"
+fpath_val   = datadir+"REFTRANS_data_g224_CAMS_2014_RND.nc"
+fpath_test  = datadir+"/REFTRANS_data_g224_CAMS_2015_RND.nc"
 
 # fpath_tr    = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2011-2013_clouds.nc"
 # fpath_val   = "/home/puk/soft/rte-rrtmgp-nn/examples/emulator-training/data_training/ml_data_g224_CAMS_2018_clouds.nc"
@@ -146,7 +149,7 @@ if synthetic_data_supplement:
 
     # The observed distribution has mostly small tau values
     minmax_tau  = (0.1, 20.0)
-    nsamples    = np.int(16)
+    nsamples    = np.int(1e6)
     x_raw2, y_raw2 = gen_synthetic_inp_outp_reftrans(nsamples, minmax_tau, minmax_ssa, minmax_g,
                                 minmax_mu0)
     x_tr_raw = np.concatenate((x_tr_raw,x_raw2),axis=0)
@@ -333,9 +336,9 @@ if scale_outputs:
     # y_mean =  np.array([0.03724393, 0.58150858, 0.04533824, 0.04622386],
     #                     dtype=np.float32)
     
-    y_tr    = preproc_pow_gptnorm(y_tr_raw, nfac, y_mean, y_sigma)
-    y_val   = preproc_pow_gptnorm(y_val_raw, nfac, y_mean, y_sigma)
-    y_test  = preproc_pow_gptnorm(y_test_raw, nfac, y_mean, y_sigma)
+    y_tr    = preproc_pow_standardization(y_tr_raw, nfac, y_mean, y_sigma)
+    y_val   = preproc_pow_standardization(y_val_raw, nfac, y_mean, y_sigma)
+    y_test  = preproc_pow_standardization(y_test_raw, nfac, y_mean, y_sigma)
 else:
     y_tr    = y_tr_raw    
     y_val   = y_val_raw
@@ -433,7 +436,7 @@ if (ml_library=='pytorch'):
     y_pred = mlp(x_test_torch)
     y_pred = y_pred.detach().numpy()
     if scale_outputs:
-        y_pred      = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
+        y_pred      = preproc_pow_standardization_reverse(y_pred,nfac, y_mean,y_sigma)
         
     # # SAVE MODEL TO NEURAL-FORTRAN ASCII MODEL FILE
     # # Proved to be tricky..first convert to ONNX
@@ -620,20 +623,20 @@ elif (ml_library=='tf-keras'):
     # PREDICT OUTPUTS FOR TEST DATA
     y_pred = model.predict(x_val);  
     if scale_outputs:
-        y_pred = preproc_pow_gptnorm_reverse(y_pred,nfac, y_mean,y_sigma)
+        y_pred = preproc_pow_standardization_reverse(y_pred,nfac, y_mean,y_sigma)
   
     # ----- SAVE MODEL ------
     # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-mse-hardsig.h5"
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-mae2-NEW.h5"
+    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-mae2-NEW.h5"
 
     # kerasfile = "/home/puk/soft/rte-rrtmgp-nn/neural/data/reftrans-8-8-logtau-sqrt-std.h5"
-    savemodel(kerasfile, model)
+    # savemodel(kerasfile, model)
     # -----------------------
     
     # ----- LOAD MODEL ------
-    from tensorflow.keras.models import load_model
-    kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-sinemse2-mae-NEW.h5"
-    model = load_model(kerasfile,compile=True)
+    # from tensorflow.keras.models import load_model
+    # kerasfile = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/reftrans-12-12-sinemse2-mae-NEW.h5"
+    # model = load_model(kerasfile,compile=True)
     # model = tf.lite.TFLiteConverter.from_keras_model(kerasfile)
     # -----------------------
 

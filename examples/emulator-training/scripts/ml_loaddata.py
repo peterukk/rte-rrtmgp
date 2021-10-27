@@ -186,7 +186,8 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     
     return x,y,col_dry
 
-def load_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True, return_pressures=False):
+def load_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True, 
+                   return_pressures=False, add_coldry=False):
     # Load data for training a RADIATION SCHEME (RTE+RRTMGP) emulator,
     # where inputs are vertical PROFILES of atmospheric conditions (T,p, gas concentrations)
     # and outputs (predictand) are PROFILES of broadband fluxes (upwelling and downwelling)
@@ -201,13 +202,18 @@ def load_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True
             
     # temperature, pressure, and gas concentrations...
     x_gasopt = dat.variables['rrtmgp_sw_input'][:].data  # (nexp,ncol,nlay,ngas+2)
+    
+    (nexp,ncol,nlay,nx) = x_gasopt.shape
+    nlev = nlay+1
+    ns = nexp*ncol # number of samples (profiles)
+    if add_coldry:
+        vmr_h2o = x_gasopt[:,:,:,2].reshape(ns,nlay)
     if scale_p_h2o_o3:
         # Log-scale pressure, power-scale H2O and O3
         x_gasopt[:,:,:,1] = np.log(x_gasopt[:,:,:,1])
         x_gasopt[:,:,:,2] = x_gasopt[:,:,:,2]**(1.0/4) 
         x_gasopt[:,:,:,3] = x_gasopt[:,:,:,3]**(1.0/4)
-    
-    (nexp,ncol,nlay,nx) = x_gasopt.shape
+
     # plus surface albedo, which !!!FOR THIS DATA!!! is spectrally constant
     sfc_alb = dat.variables['sfc_alb'][:].data # (nexp,ncol,ngpt)
     sfc_alb = sfc_alb[:,:,0] # (nexp,ncol)
@@ -240,17 +246,26 @@ def load_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True
     
     # Reshape to profiles...
     ns = nexp*ncol # number of samples (profiles)
-    y  = np.zeros((ns,nlev*2))
+    y  = np.zeros((ns,nlev*2),dtype=np.float32)
     # inputs: one input vector consists of the atmospheric profile (T,p,gases),
     # plus mu0 (1) plus surface albedo (1)...these need to be flattened and
     # stacked on top of each other
+    x_gasopt = x_gasopt.reshape((ns,nlay,nx))
+
+    if add_coldry:
+        pres = dat.variables['pres_level'][:,:,:].data       # (nexp,ncol, nlev)
+        pres = np.reshape(pres,(ns,nlev))
+        coldry = get_col_dry(vmr_h2o,pres)
+        coldry = coldry.reshape(ns,nlay,1)
+        x_gasopt = np.concatenate((x_gasopt, coldry),axis=2)
+        nx = nx + 1
     x_gasopt = np.reshape(x_gasopt,(nexp,ncol,nlay*nx)) # to profiles
     nx_gasopt = nlay*nx
     # nx_rte = ngpt + 1 # inc flux + albedo
     nx_rte = 1 + 1 # solar angle + albedo
     nx_clouds = 0
     if clouds: nx_clouds = 2*nlay
-    x  = np.zeros((ns,(nx_gasopt + nx_rte + nx_clouds)))
+    x  = np.zeros((ns,(nx_gasopt + nx_rte + nx_clouds)),dtype=np.float32)
     # need to reshape mu0 and sfc alb so they are also 3D
     mu0     = np.reshape(mu0,(nexp,ncol,1))
     sfc_alb = np.reshape(sfc_alb,(nexp,ncol,1))
@@ -271,7 +286,7 @@ def load_radscheme(fname, predictand='rsu_rsd', scale_p_h2o_o3=True, clouds=True
                i = i + 1
            
     print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
-    
+
     if not return_pressures:
         dat.close()
         return x,y
@@ -744,28 +759,20 @@ def preproc_tau_to_crossection(tau, col_dry):
     return y
 
 @njit(parallel=True)
-def preproc_pow_gptnorm(y, nfac, means,sigma):
+def preproc_pow_standardization(y, nfac, means,sigma):
     # scale y to y', where y is a data matrix of shape (nsamples, ng) consisting
     # consisting of ng outputs; e.g. g-point vector of absorption cross-sections,
     # and y' has been scaled for more effective neural network training
     # y is first power-scaled by y = y**(1/nfac) and then normalized by
-    # y'g =  (y_g - mean(y_g)) / std(y_g), where g is a single g-point
+    # y'g =  (y_g - mean(y_g)) / std(y_g), 
+    # when training correlated-k gas optics models, g is a single g-point.
     # using means of individual g-points but sigma across g-points 
     # is recommended as it preserves correlations but scales to a common range
     # the means and sigma(s) are input arguments as they need to be fixed 
     # for production
     (nobs,ngpt) = y.shape
     y_scaled = np.zeros(y.shape,dtype=np.float32)
-    # if ( nfac==1):
-    #     for iobs in range(nobs):
-    #         for igpt in range(ngpt):
-    #             y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
-    # else:
-    #     nfacc = 1/nfac
-    #     for iobs in prange(nobs):
-    #         for igpt in prange(ngpt):
-    #             y_scaled[iobs,igpt] = np.power(y[iobs,igpt],nfacc)
-    #             y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
+
     nfacc = 1/nfac
     for iobs in prange(nobs):
        for igpt in prange(ngpt):
@@ -774,8 +781,10 @@ def preproc_pow_gptnorm(y, nfac, means,sigma):
                 
     return y_scaled
 
+
+
 @njit(parallel=True)
-def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
+def preproc_pow_standardization_reverse(y_scaled, nfac, means,sigma):
     # y has shape (nobs,gpts)
     y = np.zeros(y_scaled.shape)
 
@@ -785,6 +794,27 @@ def preproc_pow_gptnorm_reverse(y_scaled, nfac, means,sigma):
             y[iobs,igpt] = (y_scaled[iobs,igpt] * sigma[igpt]) + means[igpt]
             y[iobs,igpt] = np.power(y[iobs,igpt],nfac)
 
+    return y
+
+@njit(parallel=True)
+def preproc_standardization(y, means,sigma):
+    (nobs,ngpt) = y.shape
+    y_scaled = np.copy(y)
+    for iobs in prange(nobs):
+       for igpt in prange(ngpt):
+           y_scaled[iobs,igpt] = (y_scaled[iobs,igpt] - means[igpt]) / sigma[igpt]
+                
+    return y_scaled
+
+@njit(parallel=True)
+def preproc_standardization_reverse(y_scaled, means,sigma):
+    # y has shape (nobs,gpts)
+    y = np.zeros(y_scaled.shape)
+    (nobs,ngpt) = y_scaled.shape
+    for iobs in prange(nobs):
+        for igpt in prange(ngpt):
+            y[iobs,igpt] = (y_scaled[iobs,igpt] * sigma[igpt]) + means[igpt]
+            
     return y
 
 def preproc_minmax_inputs(x, xcoeffs=None):
@@ -883,7 +913,7 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         # Scale by layer number of molecules to obtain absorption cross section
         y   = preproc_tau_to_crossection(y_raw, col_dry)
         # Scale using power-scaling followed by standard-scaling
-        y   = preproc_pow_gptnorm(y, nfac, y_mean, y_sigma)
+        y   = preproc_pow_standardization(y, nfac, y_mean, y_sigma)
     else:
         y = y_raw
         

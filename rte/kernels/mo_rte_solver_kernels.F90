@@ -608,9 +608,9 @@ contains
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
       !
-#ifdef USE_TIMING
-    ret =  gptlstart('sw_two_stream')
-#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('sw_two_stream')
+! #endif
 
       if (present(neural_net)) then
         Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
@@ -661,20 +661,20 @@ contains
         ! Tdir = min(max(0.0_wp, Tdir),1.0_wp)
       end if
       ! end if     
-#ifdef USE_TIMING
-    ret =  gptlstop('sw_two_stream')
-#endif    
+! #ifdef USE_TIMING
+!     ret =  gptlstop('sw_two_stream')
+! #endif    
       !
       ! Direct-beam and source for diffuse radiation
       !
-#ifdef USE_TIMING
-    ret =  gptlstart('sw_source_2str')
-#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('sw_source_2str')
+! #endif
       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
                           source_up, source_dn, source_srf, radn_dir)
-#ifdef USE_TIMING
-    ret =  gptlstop('sw_source_2str')
-#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstop('sw_source_2str')
+! #endif
 ! #ifdef USE_TIMING
 !     ret =  gptlstart('sw_two_stream_source')
 ! #endif 
@@ -687,29 +687,29 @@ contains
       !
       ! Transport
       !
-#ifdef USE_TIMING
-    ret =  gptlstart('adding')
-#endif
+! #ifdef USE_TIMING
+!     ret =  gptlstart('adding')
+! #endif
       call adding(ngpt, nlay, top_at_1,            &
                      sfc_alb_dif(:,icol), Rdif, Tdif, &
                      source_dn, source_up, source_srf, radn_up, radn_dn)
-#ifdef USE_TIMING
-    ret =  gptlstop('adding')
-#endif                    
+! #ifdef USE_TIMING
+!     ret =  gptlstop('adding')
+! #endif                    
       !
       ! adding computes only diffuse flux; flux_dn is total
       !
       radn_dn = radn_dn + radn_dir
-#ifdef USE_TIMING
-    ret =  gptlstart('sum_broadband_nocol')
-#endif  
+! #ifdef USE_TIMING
+!     ret =  gptlstart('sum_broadband_nocol')
+! #endif  
       ! Compute broadband fluxes
       call sum_broadband_nocol(ngpt, nlay+1, radn_dir, flux_dir(:,icol) )
       call sum_broadband_nocol(ngpt, nlay+1, radn_up, flux_up(:,icol) )
       call sum_broadband_nocol(ngpt, nlay+1, radn_dn, flux_dn(:,icol) )
-#ifdef USE_TIMING
-    ret =  gptlstop('sum_broadband_nocol')
-#endif    
+! #ifdef USE_TIMING
+!     ret =  gptlstop('sum_broadband_nocol')
+! #endif    
     end do
 
     ! if (compare_reftrans) then

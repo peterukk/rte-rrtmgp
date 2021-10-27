@@ -1,0 +1,95 @@
+TIMINGS for radiation scheme emulation using RTE+RRTMGP-NN; Ryzen 5800h single threaded + GCC 11 + AMD-Blis 3.0.6; RTX 3060 Ti
+"Overhead sum" refers to the overhead from the GPTL timing library and should be reduced from the timings
+
+-------  REFERENCE ------- 
+best results - blocksize 16
+
+  radiation_total_shortwave            1     -      18.639   18.639   18.639   100.00
+    cloud_optics                    5120     -       0.285 1.88e-04 4.40e-05     1.53
+    gas_optics_sw                   5120     -       5.615 2.19e-03 8.96e-04    30.12
+      compute_tau_kernel            5120     -       3.348 1.44e-03 5.28e-04    17.96
+      compute_tau_ray_kernel        5120     -       0.728 5.48e-04 1.23e-04     3.91
+      combine_taus_compute_ssa      5120     -       0.347 5.90e-04 4.10e-05     1.86
+    clouds_deltascale_increment     5120     -       0.452 5.52e-04 6.80e-05     2.42
+    rte_sw                          5120     -      12.234 3.11e-03 2.09e-03    65.64
+Overhead sum =    0.0765 wallclock seconds
+
+
+
+------- FNN-REFTRANS ------- 
+best results - blocksize 8
+
+  radiation_total_shortwave            1     -      26.510   26.510   26.510   100.00
+    cloud_optics                   10240     -       0.309 1.80e-04 2.20e-05     1.17
+    gas_optics_sw                  10240     -       6.064 1.18e-03 5.05e-04    22.87
+      compute_tau_kernel           10240     -       3.631 8.26e-04 2.91e-04    13.70
+      compute_tau_ray_kernel       10240     -       0.675 3.48e-04 5.70e-05     2.55
+      combine_taus_compute_ssa     10240     -       0.454 3.93e-04 3.80e-05     1.71
+    clouds_deltascale_increment    10240     -       0.433 3.24e-04 3.70e-05     1.63
+    rte_sw                         10240     -      19.628 3.98e-03 1.72e-03    74.04
+      prep_input                   81920     -       1.328 2.96e-04 1.10e-05     5.01
+        log                        81920     -       0.636 2.10e-04 6.00e-06     2.40
+      kernel                       81920     -      11.010 6.07e-04 1.20e-04    41.53
+        first_sgemm                81920     -       2.061 3.07e-04 2.10e-05     7.78
+        bias_and_activ1            81920     -       1.422 2.59e-04 1.40e-05     5.36
+        middle_sgemm               81920     -       3.507 3.21e-04 3.80e-05    13.23
+        bias_and_activ_mid         81920     -       1.429 2.42e-04 1.40e-05     5.39
+        last_sgemm                 81920     -       1.473 2.72e-04 1.50e-05     5.55
+        bias_and_activ_fin         81920     -       0.342 9.50e-05 2.00e-06     1.29
+      postproc                     81920     -       0.262 2.35e-04 1.00e-06     0.99
+Overhead sum =      1.93 wallclock seconds
+
+
+-------  FNN-GASOPT------- 
+best results - blocksize 8
+
+  radiation_total_shortwave            1     -      14.744   14.744   14.744   100.00
+    cloud_optics                   10240     -       0.303 2.21e-04 2.10e-05     2.06
+    gas_optics_sw                  10240     -       1.612 8.36e-04 1.27e-04    10.94
+      compute_nn_inputs            10240     -       0.042 1.43e-04 2.00e-06     0.28
+      compute_tau_abs              10240     -       0.649 5.34e-04 5.20e-05     4.40
+      compute_tau_ray              10240     -       0.558 2.63e-04 4.50e-05     3.78
+      combine_taus_compute_ssa     10240     -       0.145 2.05e-04 1.10e-05     0.99
+    clouds_deltascale_increment    10240     -       0.430 2.70e-04 3.30e-05     2.92
+    rte_sw                         10240     -      12.316 4.28e-03 1.04e-03    83.53
+
+Overhead sum =     0.179 wallclock seconds 
+
+NN GAS OPT KERNEL SPEEDUP:   (5.615 - (4/7)*0.0765) /  (1.612 - (5/8)*0.18)  = 3.715
+
+
+-------  FNN-RADSCHEME ------- 
+best results - blocksize 2560
+
+  radiation_total_shortwave        1     -       0.352    0.352    0.352   100.00
+    predict_nn_radscheme_sw       32     -       0.352    0.012    0.010    99.98
+      preproc1                    32     -    3.71e-03 3.20e-04 8.70e-05     1.05
+      preproc2                    32     -       0.020 1.23e-03 4.05e-04     5.64
+      postproc                    32     -       0.011 6.82e-04 2.87e-04     3.07
+Overhead sum =   0.00028 wallclock seconds
+
+    
+    
+------- RNN-RADSCHEME WITH ONNX ------- 
+
+Evaluated within ml_train_radscheme_brnn2.py
+
+start = time.time()
+y_pred = sess.run(["dense_output"], {"inputs_aux_albedo": xaux, "inputs_main": x_main})[0]
+end = time.time()
+print(end - start)
+4.0964531898498535
+
+!!WITH CUDA ONNX!!
+0.34079742431640625
+
+------- FNN-RADSCHEME WITH ONNX ------- 
+
+start = time.time()
+y_pred = sess.run(["dense_11"], {"dense_8_input": x_val})[0]
+end = time.time()
+print(end - start)
+0.21129322052001953
+
+!!WITH CUDA ONNX!!
+0.04602503776550293
