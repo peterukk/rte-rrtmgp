@@ -35,7 +35,7 @@ examples/emulator-training/allsky_sw_testmodels
 examples/emulator-training/scripts/CAMS_download_and_preprocess/tmp/*
 examples/emulator-training/scripts/lightning_logs/
 examples/emulator-training/scripts/logs/
-#examples/emulator-training/fluxes/*
+examples/emulator-training/fluxes/*
 
 *.pgprof
 *.gprof
