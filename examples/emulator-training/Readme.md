@@ -2,7 +2,7 @@
 
 Code for generating training data to replace RRTMGP and/or RTE, train emulators, and evaluating these emulators
 
-This example shortwave program loads atmospheric profiles from a netCDF file, computes gas optical properties with RRTMGP, optionally computes cloud optical properties, and then computes fluxes with RTE. It can also be used to generate training data (save the input-output of the radiation scheme), or test existing models (see below)
+These example Fortran programs load atmospheric profiles from a netCDF file, compute gas optical properties with RRTMGP, optionally compute cloud optical properties, and then compute shortwave fluxes with RTE. They can also be used to generate training data (allsky_sw_gendata.F90), or test an emulator by replacing a physical component with it (allsky_sw_testmodels.F90) - see below for examples. In the `scripts/` subdirectory, Python code for training neural network-based emulators can be found, as well as code for retrieving and pre-processing CAMS reanalysis data.
 
 This code is associated with a paper submitted to Journal of Advances in Modeling Earth Systems (JAMES) and all data has been uploaded to [Zenodo](https://doi.org/10.5281/zenodo.5513434)
 
