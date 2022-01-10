@@ -1,8 +1,10 @@
 **Generate training data for ML emulators** 
 
-Code for generating training data to replace RRTMGP and/or RTE, and test trainde emulators 
+Code for generating training data to replace RRTMGP and/or RTE, train emulators, and evaluating these emulators
 
 This example shortwave program loads atmospheric profiles from a netCDF file, computes gas optical properties with RRTMGP, optionally computes cloud optical properties, and then computes fluxes with RTE. It can also be used to generate training data (save the input-output of the radiation scheme), or test existing models (see below)
+
+This code is associated with a paper submitted to Journal of Advances in Modeling Earth Systems (JAMES) and all data has been uploaded to [Zenodo](https://doi.org/10.5281/zenodo.5513434)
 
 ------
 

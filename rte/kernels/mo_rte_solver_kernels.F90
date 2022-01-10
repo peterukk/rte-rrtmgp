@@ -40,8 +40,7 @@ module mo_rte_solver_kernels
   !
   ! Timing library
   !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
-                                   gptlpercent, gptloverhead
+  use gptl,                  only: gptlstart, gptlstop
 #endif
   implicit none
   private
@@ -160,7 +159,7 @@ contains
     real(wp), dimension(ngpt,nlay)                  ::  source_up, source_dn
 
     real(wp), parameter :: pi = acos(-1._wp)
-    real(wp)            :: fac
+    real(wp)            :: fac, sums_up(4), sums_dn(4)
     integer             :: ilev, icol, igpt, ilay, top_level, sfc_level
     ! Used when approximating scattering
     real(wp), dimension(:,:), allocatable :: An, Cn
@@ -243,17 +242,31 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('compute_trans_exp()')
 #endif  
-      !
-      ! Source function for diffuse radiation, plus transport without scattering
-      !
+
 #ifdef USE_TIMING
     ret =  gptlstart('lw_source_transport_noscat')
 #endif  
+      ! !
+      ! ! Source function for diffuse radiation, plus transport without scattering
+      ! !
+      ! call lw_sources_transport_noscat_dn(ngpt, nlay, top_at_1, &
+      !                     lay_source(:,:,icol), lev_source(:,:,icol), &
+      !                     tau_loc, trans, source_up, source_dn, radn_dn) 
+      !
 
-      call lw_sources_transport_noscat_dn(ngpt, nlay, top_at_1, &
-                          lay_source(:,:,icol), lev_source(:,:,icol), &
-                          tau_loc, trans, source_up, source_dn, radn_dn) 
-
+      ! Source function for diffuse radiation
+      !
+      call lw_source_noscat(ngpt, nlay, &
+                            lay_source(:,:,icol), lev_source(:,:,icol), &
+                            tau_loc, trans, source_dn, source_up)
+      !
+      ! Transport down
+      !
+      call lw_transport_noscat_dn(ngpt, nlay, top_at_1, trans, source_dn, radn_dn)
+ 
+#ifdef USE_TIMING
+    ret =  gptlstop('lw_source_transport_noscat')
+#endif
       ! Surface reflection and emission                                     albedo
       radn_up (:,sfc_level)                     = radn_dn(:,sfc_level)*(1-sfc_emis(:,icol)) + sfc_emis(:,icol) *  sfc_source(:,icol)
       if (compute_Jac) radn_up_Jac(:,sfc_level) = sfc_emis(:,icol) * sfc_source_Jac(:,icol)
@@ -268,26 +281,44 @@ contains
         call lw_transport_noscat_up(ngpt, nlay, top_at_1, trans, & 
                                 source_up, radn_up, radn_up_Jac)  
       end if
-
-#ifdef USE_TIMING
-    ret =  gptlstop('lw_source_transport_noscat')
-#endif  
+  
       !
       ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
       !
       fac         = 2._wp * pi * weight
-      radn_dn     = fac * radn_dn   
-      radn_up     = fac * radn_up   
-      if (compute_Jac) radn_up_Jac = fac * radn_up_Jac
+      if (nmus/=1) then
+        radn_dn     = fac * radn_dn   
+        radn_up     = fac * radn_up   
+        if (compute_Jac) radn_up_Jac = fac * radn_up_Jac
+      end if
 
 #ifdef USE_TIMING
     ret =  gptlstart('spectral_reduction')
 #endif
       ! Inline the computation of broadband fluxes
       if (nmus==1) then ! ..but only if the number of quadrature angles is 1, otherwise do this within lw_solver_noscat_GaussQuad
-        call sum_broadband_nocol(ngpt, nlay+1, radn_up, flux_up(:,icol) )
-        call sum_broadband_nocol(ngpt, nlay+1, radn_dn, flux_dn(:,icol) )
-        if (compute_Jac) call sum_broadband_nocol(ngpt, nlay+1, radn_up_Jac, flux_up_Jac(:,icol) )
+
+        ! flux_up(:,icol) = sum(radn_up, 1)
+        ! flux_dn(:,icol) = sum(radn_dn, 1)
+        if (mod(ngpt,4) == 0)  then
+          do ilay = 1, nlay+1
+            sums_up = 0.0_wp
+            sums_dn = 0.0_wp
+            do igpt = 1, ngpt, 4
+              sums_up(1) = sums_up(1) + fac*radn_up(igpt,   ilay); sums_up(2) = sums_up(2) + fac*radn_up(igpt+1, ilay)
+              sums_up(3) = sums_up(3) + fac*radn_up(igpt+2, ilay); sums_up(4) = sums_up(4) + fac*radn_up(igpt+3, ilay)
+
+              sums_dn(1) = sums_dn(1) + fac*radn_dn(igpt,   ilay); sums_dn(2) = sums_dn(2) + fac*radn_dn(igpt+1, ilay)
+              sums_dn(3) = sums_dn(3) + fac*radn_dn(igpt+2, ilay); sums_dn(4) = sums_dn(4) + fac*radn_dn(igpt+3, ilay)
+            end do
+            flux_up(ilay,icol) = sums_up(1) + sums_up(2) + sums_up(3) + sums_up(4)
+            flux_dn(ilay,icol) = sums_dn(1) + sums_dn(2) + sums_dn(3) + sums_dn(4)
+          end do
+        else 
+          flux_up(:,icol) = sum(radn_up, 1)
+          flux_dn(:,icol) = sum(radn_dn, 1)
+        end if
+        if (compute_Jac) flux_up_Jac(:,icol) = sum(radn_up_Jac, 1)
       end if
 #ifdef USE_TIMING
     ret =  gptlstop('spectral_reduction')
@@ -535,7 +566,9 @@ contains
     ! -------------------------------------------
     real(wp), dimension(:,:), contiguous, pointer   ::  radn_up, radn_dn, radn_dir             ! G-point fluxes [W/m2], local array
     real(wp), dimension(ngpt,nlay+1),     target    ::  radn_up_arr, radn_dn_arr, radn_dir_arr ! G-point fluxes [W/m2], pointer
-    integer :: icol, igpt, top_level
+    integer :: icol, igpt, ilay, top_level, j
+    real(wp)            :: sums_dir(4), sums_up(4), sums_dn(4)
+
     !real(wp), dimension(ngpt,nlay) :: Rdif, Tdif, Rdir, Tdir, Tnoscat
     !!TEMPORARY CODE FOR ML EXPERIMENTS!!
     real(wp), dimension(ngpt,nlay) :: Tnoscat
@@ -570,7 +603,9 @@ contains
       allocate(reftrans_variables_nocol(ngpt,nlay,4))
       call C_F_POINTER (C_LOC(reftrans_variables_nocol), nn_output, [ngpt*nlay,4])
     end if
-
+#ifdef USE_TIMING
+    ret =  gptlstart('sw_2stream')
+#endif 
     do icol = 1, ncol
 
       !!TEMPORARY CODE FOR ML EXPERIMENTS!!
@@ -604,7 +639,6 @@ contains
       ! Apply boundary condition
       radn_dir(:,top_level) = inc_flux(:,icol) * mu0(icol)
       radn_dn(:,top_level)  = inc_flux_dif(:,icol)
-
       !
       ! Cell properties: transmittance and reflectance for direct and diffuse radiation
       !
@@ -612,54 +646,54 @@ contains
 !     ret =  gptlstart('sw_two_stream')
 ! #endif
 
-      if (present(neural_net)) then
-        Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
-       ! call NN code to predict other reftrans variables
-       call predict_nn_reftrans(nlay, ngpt, &
-                neural_net,         &
-                tau(:,:,icol), ssa(:,:,icol), g(:,:,icol), Tnoscat, mu0(icol), &
-                nn_output)
+      ! if (present(neural_net)) then
+      !   Tnoscat = exp_fast(-tau(:,:,icol)*(1/mu0(icol)))
+      !  ! call NN code to predict other reftrans variables
+      !  call predict_nn_reftrans(nlay, ngpt, &
+      !           neural_net,         &
+      !           tau(:,:,icol), ssa(:,:,icol), g(:,:,icol), Tnoscat, mu0(icol), &
+      !           nn_output)
 
-        if (compare_reftrans) then
-          call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-          Rdif_arr, Tdif_arr, Rdir_arr, Tdir_arr, Tnoscat)
-          Rdif_arr = min(max(0.0_wp, Rdif_arr),1.0_wp)
-          Tdif_arr = min(max(0.0_wp, Tdif_arr),1.0_wp)
-          Rdir_arr = min(max(0.0_wp, Rdir_arr),1.0_wp)
-          Tdir_arr = min(max(0.0_wp, Tdir_arr),1.0_wp)
-          reftrans_true(:,:,icol,1) = Rdif_arr
-          reftrans_true(:,:,icol,2) = Tdif_arr
-          reftrans_true(:,:,icol,3) = Rdir_arr
-          reftrans_true(:,:,icol,4) = Tdir_arr
-          reftrans_pred(:,:,icol,1) = Rdif
-          reftrans_pred(:,:,icol,2) = Tdif
-          reftrans_pred(:,:,icol,3) = Rdir
-          reftrans_pred(:,:,icol,4) = Tdir
-        ! if (icol < 3) then 
-        !   print *, "pred", Rdif(1,1), Tdif(1,1), Rdir(1,1), Tdir(1,1)
-        !   print *, "pred1", Rdif(ngpt,1), Tdif(ngpt,1), Rdir(ngpt,1), Tdir(ngpt,1)
-        !   print *, "pred2", Rdif(ngpt,nlay), Tdif(ngpt,nlay), Rdir(ngpt,nlay), Tdir(ngpt,nlay)
+      !   if (compare_reftrans) then
+      !     call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+      !     tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+      !     Rdif_arr, Tdif_arr, Rdir_arr, Tdir_arr, Tnoscat)
+      !     Rdif_arr = min(max(0.0_wp, Rdif_arr),1.0_wp)
+      !     Tdif_arr = min(max(0.0_wp, Tdif_arr),1.0_wp)
+      !     Rdir_arr = min(max(0.0_wp, Rdir_arr),1.0_wp)
+      !     Tdir_arr = min(max(0.0_wp, Tdir_arr),1.0_wp)
+      !     reftrans_true(:,:,icol,1) = Rdif_arr
+      !     reftrans_true(:,:,icol,2) = Tdif_arr
+      !     reftrans_true(:,:,icol,3) = Rdir_arr
+      !     reftrans_true(:,:,icol,4) = Tdir_arr
+      !     reftrans_pred(:,:,icol,1) = Rdif
+      !     reftrans_pred(:,:,icol,2) = Tdif
+      !     reftrans_pred(:,:,icol,3) = Rdir
+      !     reftrans_pred(:,:,icol,4) = Tdir
+      !   ! if (icol < 3) then 
+      !   !   print *, "pred", Rdif(1,1), Tdif(1,1), Rdir(1,1), Tdir(1,1)
+      !   !   print *, "pred1", Rdif(ngpt,1), Tdif(ngpt,1), Rdir(ngpt,1), Tdir(ngpt,1)
+      !   !   print *, "pred2", Rdif(ngpt,nlay), Tdif(ngpt,nlay), Rdir(ngpt,nlay), Tdir(ngpt,nlay)
 
-          ! print *, "true", Rdif_arr(1,1), Tdif_arr(1,1), Rdir_arr(1,1), Tdir_arr(1,1)
-          ! print *, "true1", Rdif_arr(ngpt,1), Tdif_arr(ngpt,1), Rdir_arr(ngpt,1), Tdir_arr(ngpt,1)
-          ! print *, "true2", Rdif_arr(ngpt,nlay), Tdif_arr(ngpt,nlay), Rdir_arr(ngpt,nlay), Tdir_arr(ngpt,nlay)
-        ! end if
-        ! Rdif = Rdif_arr
-        ! Tdif = Tdif_arr
-        ! Rdir = Rdir_arr
-        ! Tdir = Tdir_arr
-        end if
+      !     ! print *, "true", Rdif_arr(1,1), Tdif_arr(1,1), Rdir_arr(1,1), Tdir_arr(1,1)
+      !     ! print *, "true1", Rdif_arr(ngpt,1), Tdif_arr(ngpt,1), Rdir_arr(ngpt,1), Tdir_arr(ngpt,1)
+      !     ! print *, "true2", Rdif_arr(ngpt,nlay), Tdif_arr(ngpt,nlay), Rdir_arr(ngpt,nlay), Tdir_arr(ngpt,nlay)
+      !   ! end if
+      !   ! Rdif = Rdif_arr
+      !   ! Tdif = Tdif_arr
+      !   ! Rdir = Rdir_arr
+      !   ! Tdir = Tdir_arr
+      !   end if
 
-      else
-        call sw_two_stream(ngpt, nlay, mu0(icol),                                &
-                          tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
-                          Rdif, Tdif, Rdir, Tdir, Tnoscat)
-        ! Rdif = min(max(0.0_wp, Rdif),1.0_wp)
-        ! Tdif = min(max(0.0_wp, Tdif),1.0_wp)
-        ! Rdir = min(max(0.0_wp, Rdir),1.0_wp)
-        ! Tdir = min(max(0.0_wp, Tdir),1.0_wp)
-      end if
+      ! else
+      !   call sw_two_stream(ngpt, nlay, mu0(icol),                                &
+      !                     tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), &
+      !                     Rdif, Tdif, Rdir, Tdir, Tnoscat)
+      !   ! Rdif = min(max(0.0_wp, Rdif),1.0_wp)
+      !   ! Tdif = min(max(0.0_wp, Tdif),1.0_wp)
+      !   ! Rdir = min(max(0.0_wp, Rdir),1.0_wp)
+      !   ! Tdir = min(max(0.0_wp, Tdir),1.0_wp)
+      ! end if
       ! end if     
 ! #ifdef USE_TIMING
 !     ret =  gptlstop('sw_two_stream')
@@ -670,48 +704,90 @@ contains
 ! #ifdef USE_TIMING
 !     ret =  gptlstart('sw_source_2str')
 ! #endif
-      call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
-                          source_up, source_dn, source_srf, radn_dir)
+!       call sw_source_2str(ngpt, nlay, top_at_1, Rdir, Tdir, Tnoscat, sfc_alb_dir(:,icol),&
+!                           source_up, source_dn, source_srf, radn_dir)
 ! #ifdef USE_TIMING
 !     ret =  gptlstop('sw_source_2str')
 ! #endif
-! #ifdef USE_TIMING
-!     ret =  gptlstart('sw_two_stream_source')
-! #endif 
-!       call sw_two_stream_source(ngpt, nlay, top_at_1, mu0(icol),                                &
-!       tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), sfc_alb_dir(:,icol), &
-!       Rdif, Tdif, source_up, source_dn, radn_dir, source_srf)     
-! #ifdef USE_TIMING
-!     ret =  gptlstop('sw_two_stream_source')
-! #endif 
+#ifdef USE_TIMING
+    ret =  gptlstart('sw_two_stream_source')
+#endif 
+      call sw_two_stream_source(ngpt, nlay, top_at_1, mu0(icol),                                &
+      tau (:,:,icol), ssa (:,:,icol), g(:,:,icol), sfc_alb_dir(:,icol), &
+      Rdif, Tdif, source_up, source_dn, radn_dir, source_srf)     
+#ifdef USE_TIMING
+    ret =  gptlstop('sw_two_stream_source')
+#endif 
       !
       ! Transport
       !
-! #ifdef USE_TIMING
-!     ret =  gptlstart('adding')
-! #endif
+#ifdef USE_TIMING
+    ret =  gptlstart('adding')
+#endif
       call adding(ngpt, nlay, top_at_1,            &
                      sfc_alb_dif(:,icol), Rdif, Tdif, &
                      source_dn, source_up, source_srf, radn_up, radn_dn)
-! #ifdef USE_TIMING
-!     ret =  gptlstop('adding')
-! #endif                    
-      !
-      ! adding computes only diffuse flux; flux_dn is total
-      !
-      radn_dn = radn_dn + radn_dir
-! #ifdef USE_TIMING
-!     ret =  gptlstart('sum_broadband_nocol')
-! #endif  
-      ! Compute broadband fluxes
-      call sum_broadband_nocol(ngpt, nlay+1, radn_dir, flux_dir(:,icol) )
-      call sum_broadband_nocol(ngpt, nlay+1, radn_up, flux_up(:,icol) )
-      call sum_broadband_nocol(ngpt, nlay+1, radn_dn, flux_dn(:,icol) )
-! #ifdef USE_TIMING
-!     ret =  gptlstop('sum_broadband_nocol')
-! #endif    
-    end do
+#ifdef USE_TIMING
+    ret =  gptlstop('adding')
+#endif                    
 
+#ifdef USE_TIMING
+    ret =  gptlstart('sum_broadband_nocol')
+#endif  
+      ! Compute broadband fluxes
+      ! Here doing the reduction manually for different fluxes within a single loop, and combining this  
+      ! with unrolling the inner loop, can greatly improve instruction-level parallelism
+      if (mod(ngpt,4) == 0)  then
+        do ilay = 1, nlay+1
+          sums_up = 0.0_wp; sums_dn = 0.0_wp; sums_dir = 0.0_wp
+          do igpt = 1, ngpt, 4
+
+            ! sums_up(1) = sums_up(1) + radn_up(igpt,   ilay); sums_up(2) = sums_up(2) + radn_up(igpt+1, ilay)
+            ! sums_up(3) = sums_up(3) + radn_up(igpt+2, ilay); sums_up(4) = sums_up(4) + radn_up(igpt+3, ilay)
+
+            ! sums_dir(1) = sums_dir(1) + radn_dir(igpt,   ilay); sums_dir(2) = sums_dir(2) + radn_dir(igpt+1, ilay)
+            ! sums_dir(3) = sums_dir(3) + radn_dir(igpt+2, ilay); sums_dir(4) = sums_dir(4) + radn_dir(igpt+3, ilay)
+
+            ! radn_dn(igpt, ilay) = radn_dn(igpt, ilay) + radn_dir(igpt, ilay)
+            ! radn_dn(igpt+1, ilay) = radn_dn(igpt+1, ilay) + radn_dir(igpt+1, ilay)
+            ! radn_dn(igpt+2, ilay) = radn_dn(igpt+2, ilay) + radn_dir(igpt+2, ilay)
+            ! radn_dn(igpt+3, ilay) = radn_dn(igpt+3, ilay) + radn_dir(igpt+3, ilay)
+
+            ! sums_dn(1) = sums_dn(1) + radn_dn(igpt,   ilay); sums_dn(2) = sums_dn(2) + radn_dn(igpt+1, ilay)
+            ! sums_dn(3) = sums_dn(3) + radn_dn(igpt+2, ilay); sums_dn(4) = sums_dn(4) + radn_dn(igpt+3, ilay)
+            do j = 1,  4
+              ! Upward flux
+              sums_up(j) = sums_up(j) + radn_up(igpt+(j-1), ilay)
+              ! Downward direct flux
+              sums_dir(j) = sums_dir(j) + radn_dir(igpt+(j-1), ilay)
+  
+              if (save_gpt_flux) then
+                ! adding computes only diffuse flux; flux_dn is total
+                radn_dn(igpt+(j-1), ilay) = radn_dn(igpt+(j-1), ilay) + radn_dir(igpt+(j-1), ilay)
+                ! Downward total flux
+                sums_dn(j) = sums_dn(j) + radn_dn(igpt+(j-1), ilay)
+              else
+                sums_dn(j) = sums_dn(j) + radn_dn(igpt+(j-1), ilay) + radn_dir(igpt+(j-1), ilay)
+              end if
+            end do
+          end do
+          flux_up(ilay,icol) = sums_up(1) + sums_up(2) + sums_up(3) + sums_up(4)
+          flux_dn(ilay,icol) = sums_dn(1) + sums_dn(2) + sums_dn(3) + sums_dn(4)
+          flux_dir(ilay,icol) = sums_dir(1) + sums_dir(2) + sums_dir(3) + sums_dir(4)
+        end do
+      else 
+        radn_dn = radn_dn + radn_dir
+        flux_dir(:,icol) = sum(radn_dir, 1)
+        flux_up(:,icol) = sum(radn_up, 1)
+        flux_dn(:,icol) = sum(radn_dn, 1)
+      end if
+#ifdef USE_TIMING
+    ret =  gptlstop('sum_broadband_nocol')
+#endif    
+    end do
+#ifdef USE_TIMING
+    ret =  gptlstop('sw_2stream')
+#endif 
     ! if (compare_reftrans) then
     !     print *, "mae Rdif",  mae_3d(reftrans_true(:,:,:,1),reftrans_pred(:,:,:,1))
     !     print *, "Tdif",      mae_3d(reftrans_true(:,:,:,2),reftrans_pred(:,:,:,2))
@@ -743,14 +819,52 @@ contains
   ! See Clough et al., 1992, doi: 10.1029/92JD01419, Eq 15
   !
   ! ---------------------------------------------------------------
-  subroutine lw_source_noscat(ngpt, nlay, lay_source, lev_source_up, lev_source_dn, tau, trans, &
+  ! subroutine lw_source_noscat(ngpt, nlay, lay_source, lev_source_up, lev_source_dn, tau, trans, &
+  !                             source_dn, source_up) bind(C, name="lw_source_noscat")
+  !   integer,                         intent(in) :: ngpt, nlay
+  !   real(wp), dimension(ngpt, nlay), intent(in) :: lay_source, & ! Planck source at layer center
+  !                                                  lev_source_up, & ! Planck source at levels (layer edges),
+  !                                                  lev_source_dn, & !   increasing/decreasing layer index
+  !                                                  tau,        & ! Optical path (tau/mu)
+  !                                                  trans         ! Transmissivity (exp_fast(-tau))
+  !   real(wp), dimension(ngpt, nlay), intent(out):: source_dn, source_up
+  !                                                                  ! Source function at layer edges
+  !                                                                  ! Down at the bottom of the layer, up at the top
+  !   ! --------------------------------
+  !   integer             :: igpt, ilay
+  !   real(wp)            :: fact
+  !   real(wp), parameter :: tau_thresh = sqrt(epsilon(tau))
+  !   ! ---------------------------------------------------------------
+  !   do ilay = 1, nlay
+  !     do igpt = 1, ngpt
+  !     !
+  !     ! Weighting factor. Use 2nd order series expansion when rounding error (~tau^2)
+  !     !   is of order epsilon (smallest difference from 1. in working precision)
+  !     !   Thanks to Peter Blossey
+  !     !
+  !     if(tau(igpt, ilay) > tau_thresh) then
+  !       fact = (1._wp - trans(igpt,ilay))/tau(igpt,ilay) - trans(igpt,ilay)
+  !     else
+  !       fact = tau(igpt, ilay) * (0.5_wp - 1._wp/3._wp*tau(igpt, ilay))
+  !     end if
+  !     !
+  !     ! Equation below is developed in Clough et al., 1992, doi:10.1029/92JD01419, Eq 13
+  !     !
+  !     source_dn(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source_dn(igpt,ilay) + &
+  !                             2._wp * fact * (lay_source(igpt,ilay) - lev_source_dn(igpt,ilay))
+  !     source_up(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source_up(igpt,ilay  ) + &
+  !                             2._wp * fact * (lay_source(igpt,ilay) - lev_source_up(igpt,ilay))
+  !     end do
+  !   end do
+    
+  ! end subroutine lw_source_noscat
+  subroutine lw_source_noscat(ngpt, nlay, lay_source, lev_source, tau, trans, &
                               source_dn, source_up) bind(C, name="lw_source_noscat")
     integer,                         intent(in) :: ngpt, nlay
     real(wp), dimension(ngpt, nlay), intent(in) :: lay_source, & ! Planck source at layer center
-                                                   lev_source_up, & ! Planck source at levels (layer edges),
-                                                   lev_source_dn, & !   increasing/decreasing layer index
                                                    tau,        & ! Optical path (tau/mu)
                                                    trans         ! Transmissivity (exp_fast(-tau))
+    real(wp), dimension(ngpt,nlay+1), intent(in )   :: lev_source
     real(wp), dimension(ngpt, nlay), intent(out):: source_dn, source_up
                                                                    ! Source function at layer edges
                                                                    ! Down at the bottom of the layer, up at the top
@@ -771,17 +885,15 @@ contains
       else
         fact = tau(igpt, ilay) * (0.5_wp - 1._wp/3._wp*tau(igpt, ilay))
       end if
-      !
       ! Equation below is developed in Clough et al., 1992, doi:10.1029/92JD01419, Eq 13
-      !
-      source_dn(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source_dn(igpt,ilay) + &
-                              2._wp * fact * (lay_source(igpt,ilay) - lev_source_dn(igpt,ilay))
-      source_up(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source_up(igpt,ilay  ) + &
-                              2._wp * fact * (lay_source(igpt,ilay) - lev_source_up(igpt,ilay))
+      source_dn(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source(igpt,ilay+1) + &
+                            2._wp * fact * (lay_source(igpt,ilay) - lev_source(igpt,ilay+1))
+      source_up(igpt,ilay) = (1._wp - trans(igpt,ilay)) * lev_source(igpt,ilay) + &
+                            2._wp * fact * (lay_source(igpt,ilay) - lev_source(igpt,ilay))
       end do
     end do
+    
   end subroutine lw_source_noscat
-
   ! ---------------------------------------------------------------
   !
   ! Longwave no-scattering transport downward, with source computation inlined to improve efficiency
@@ -986,6 +1098,34 @@ contains
 
   end subroutine lw_transport_noscat_up
 
+  subroutine lw_transport_noscat_dn(ngpt_in, nlay_in, top_at_1,     &
+                                   trans, source_dn, radn_dn) bind(C, name="lw_transport_noscat_dn")
+    integer,                          intent(in   ) :: ngpt_in, nlay_in ! Number of columns, layers, g-points
+    logical(wl),                      intent(in   ) :: top_at_1   !
+    real(wp), dimension(ngpt,nlay  ), intent(in   ) :: trans      ! transmissivity = exp(-tau)
+    real(wp), dimension(ngpt,nlay  ), intent(in   ) :: source_dn  ! Diffuse radiation emitted by the layer
+    real(wp), dimension(ngpt,nlay+1), intent(inout) :: radn_dn    ! Radiances [W/m2-str] Top level must contain incident flux boundary condition
+
+    ! ---------------------------------------------------
+    ! Local variables
+    integer :: ilev
+    ! ---------------------------------------------------
+    if(top_at_1) then
+      !
+      ! Top of domain is index 1
+      !
+      do ilev = 2, nlay+1
+        radn_dn(:,ilev) = trans(:,ilev-1)*radn_dn(:,ilev-1) + source_dn(:,ilev-1)
+      end do
+    else
+      !
+      ! Top of domain is index nlay+1
+      !
+      do ilev = nlay, 1, -1
+        radn_dn(:,ilev) = trans(:,ilev  )*radn_dn(:,ilev+1) + source_dn(:,ilev)
+      end do
+    end if
+  end subroutine lw_transport_noscat_dn
   ! -------------------------------------------------------------------------------------------------
   !
   ! Longwave two-stream solutions to diffuse reflectance and transmittance for a layer
@@ -1480,8 +1620,9 @@ contains
     ! Variables used in Meador and Weaver
     real(wp), dimension(ngpt) :: gamma1, gamma2, gamma3, gamma4, alpha1, alpha2, k
     ! Ancillary variables
-    real(wp), dimension(ngpt) :: exp_minusktau, exp_minus2ktau, RT_term, Tnoscat
-    real(wp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv, Rdir, Tdir
+    real(wp), dimension(ngpt) :: exp_minusktau, Tnoscat
+    real(wp) :: k_gamma3, k_gamma4, k_mu, k_mu2, mu0_inv
+    real(wp) :: Rdir, Tdir, exp_minus2ktau, RT_term
     real(wp), pointer, contiguous, dimension(:) :: dir_flux_inc, dir_flux_trans
 
     ! ---------------------------------
@@ -1497,6 +1638,11 @@ contains
         dir_flux_inc   => flux_dn_dir(:,ilev+1)
         dir_flux_trans => flux_dn_dir(:,ilev  )
       end if
+
+      !
+      ! Transmittance of direct, unscattered beam. Also used below
+      !
+      Tnoscat(:) = exp_fast(-tau(:,ilev)*mu0_inv)
 
       !$OMP SIMD
       do igpt = 1, ngpt
@@ -1520,27 +1666,17 @@ contains
       !
       !$OMP SIMD
       do igpt = 1, ngpt
-        exp_minus2ktau(igpt)  = exp_minusktau(igpt) * exp_minusktau(igpt)
+        exp_minus2ktau  = exp_minusktau(igpt) * exp_minusktau(igpt)
 
         ! Refactored to avoid rounding errors when k, gamma1 are of very different magnitudes
-        RT_term(igpt) = 1._wp / (k(igpt) * (1._wp + exp_minus2ktau(igpt)) + gamma1(igpt) * (1._wp - exp_minus2ktau(igpt)) )
+        RT_term = 1._wp / (k(igpt) * (1._wp + exp_minus2ktau) + gamma1(igpt) * (1._wp - exp_minus2ktau) )
 
         ! Equation 25
-        Rdif(igpt,ilev) = RT_term(igpt) * gamma2(igpt) * (1._wp - exp_minus2ktau(igpt))
+        Rdif(igpt,ilev) = RT_term * gamma2(igpt) * (1._wp - exp_minus2ktau)
 
         ! Equation 26
-        Tdif(igpt,ilev) = RT_term(igpt) * 2._wp * k(igpt) * exp_minusktau(igpt)
-      end do
+        Tdif(igpt,ilev) = RT_term * 2._wp * k(igpt) * exp_minusktau(igpt)
 
-      !
-      ! Transmittance of direct, unscattered beam. Also used below
-      !
-      Tnoscat(:) = exp_fast(-tau(:,ilev)*mu0_inv)
-      !
-      ! Direct reflect and transmission
-      !
-      !$OMP SIMD
-      do igpt = 1, ngpt
         k_mu     = k(igpt) * mu0
         k_mu2    = k_mu*k_mu
         k_gamma3 = k(igpt) * gamma3(igpt)
@@ -1548,13 +1684,13 @@ contains
         !
         ! Equation 14, multiplying top and bottom by exp_fast(-k*tau)
         !   and rearranging to avoid div by 0.         
-        RT_term(igpt) =  w0(igpt,ilev) *  &
-        RT_term(igpt) / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
+        RT_term =  w0(igpt,ilev) *  &
+        RT_term / merge(1._wp - k_mu2, epsilon(1._wp), abs(1._wp - k_mu2) >= epsilon(1._wp))
         !  --> divide by (1 - kmu2) when (1-kmu2)> eps, otherwise divide by eps
 
-        Rdir = RT_term(igpt)  *                              &
+        Rdir = RT_term  *                              &
                 (   (1._wp - k_mu) * (alpha2(igpt) + k_gamma3) -  &
-                   (1._wp + k_mu) * (alpha2(igpt) - k_gamma3) * exp_minus2ktau(igpt) - &
+                   (1._wp + k_mu) * (alpha2(igpt) - k_gamma3) * exp_minus2ktau - &
              2.0_wp * (k_gamma3 - alpha2(igpt) * k_mu)  * exp_minusktau (igpt) * Tnoscat(igpt)  )
         !
         ! Equation 15, multiplying top and bottom by exp(-k*tau),
@@ -1562,9 +1698,9 @@ contains
         !   prefer underflow to overflow
         ! Omitting direct transmittance
         !
-        Tdir = -RT_term(igpt) *                                                                 &
+        Tdir = -RT_term *                                                             &
                     ((1._wp + k_mu) * (alpha1(igpt) + k_gamma4)                     * Tnoscat(igpt) - &
-                     (1._wp - k_mu) * (alpha1(igpt) - k_gamma4) * exp_minus2ktau(igpt) * Tnoscat(igpt) - &
+                     (1._wp - k_mu) * (alpha1(igpt) - k_gamma4) * exp_minus2ktau * Tnoscat(igpt) - &
                      2.0_wp * (k_gamma4 + alpha1(igpt) * k_mu)  * exp_minusktau (igpt))
 
         source_up  (igpt,ilev) =   Rdir    *   dir_flux_inc(igpt) 
@@ -1656,6 +1792,7 @@ contains
       albedo(:,ilev)  = albedo_sfc(:)
       ! ... and source of diffuse radiation is surface emission
       src(:,ilev) = src_sfc(:)
+      
       !
       ! From bottom to top of atmosphere --
       !   compute albedo and source of upward radiation

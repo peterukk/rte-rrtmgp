@@ -172,7 +172,7 @@ program rrtmgp_rfmip_lw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_rrtmgp_nn      = .true.
+  use_rrtmgp_nn      = .false.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -335,7 +335,7 @@ program rrtmgp_rfmip_lw
   !
 #ifdef USE_TIMING
   ret =  gptlstart('clear_sky_total (LW)')
- do i = 1, 4
+ do i = 1, 32
 #endif
 
 #ifdef USE_OPENMP
