@@ -25,9 +25,10 @@ export NFHOME = /usr/
 # --------------------------------------------------------------------------
 # -------  (REQUIRED) BLAS library for neural network computations ---------
 # --------------------------------------------------------------------------
-export BLASLIB  = blis-amd
-export BLAS_DIR = $(HOME)/blis-amd
-
+# export BLASLIB  = blis-amd
+# export BLAS_DIR = $(HOME)/blis-amd
+export BLASLIB  = blis
+export BLAS_DIR = $(HOME)/blis-0.8.1-zen2
 # --------------------------------------------------------------------------
 # -------  (OPTIONAL) GPTL library for timing ------------------------------
 # --------------------------------------------------------------------------

@@ -1035,10 +1035,22 @@ contains
   !   ! Where it the top of atmosphere: at index 1 if top_at_1 true, otherwise nlay+1
   !   if(top_at_1) then
   !     top_level = 1
+  !     ! sfc_level = nlay+1
   !   else
   !     top_level = nlay+1
+  !     ! sfc_level = 1
   !   end if
     
+  !   !$acc enter data create(flux_up, flux_dn, flux_dir)
+
+
+  !   !$acc kernels
+  !   flux_up = 0.0_wp
+  !   flux_dn = 0.0_wp
+  !   flux_dir = 0.0_wp
+  !   !$acc end kernels
+
+
   !   !$acc parallel loop collapse(2) default(present) private(Rdif, Tdif, albedo, denom, source, source_dn, source_srf) 
   !   do icol = 1, ncol
   !     do igpt = 1, ngpt
@@ -1058,7 +1070,7 @@ contains
   !       !                 
   !       call adding_flux_stencil(ngpt, nlay, ncol, icol, igpt, top_at_1, save_gpt_flux, &
   !           sfc_alb_dif, Rdif, Tdif, albedo,  denom, source_dn, source, source_srf,    &
-  !            radn_up, radn_dn)
+  !            radn_up, radn_dn, radn_dir, flux_up, flux_dn, flux_dir)
 
   !     end do
   !   end do

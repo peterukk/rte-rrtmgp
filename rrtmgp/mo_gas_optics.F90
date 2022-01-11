@@ -65,66 +65,15 @@ module mo_gas_optics
       ! Optional inputs
       real(wp), dimension(:,:), intent(in   ), &
                              optional, target :: col_dry ! Column dry amount; dim(nlay,ncol)
-      ! real(sp), dimension(:,:,:),     intent(inout), optional          :: nn_inputs             
-      ! real(sp), dimension(:,:),       intent(inout), optional          :: col_dry_arr   
     ! Optional input: neural network model (uses NN kernel if present)
                              type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model 
     end function gas_optics_ext_abstract
 
-    !--------------------------------------------------------------------------------------------------------------------
-    ! function gas_optics_ext_nn_abstract(this,                         &
-    !                                  play, plev, tlay, gas_desc,   & ! mandatory inputs
-    !                                  neural_nets,                  & 
-    !                                  optical_props, toa_src,       & ! mandatory outputs
-    !                                  col_dry) result(error_msg)      ! optional input
-    !   import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, network_type
-    !   class(ty_gas_optics), intent(in) :: this
-    !   real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
-    !                                              plev, &   ! level pressures [Pa, mb]; (nlay+1,ncol)
-    !                                              tlay      ! layer temperatures [K]; (nlay,ncol)
-    !   type(ty_gas_concs),       intent(in   ) :: gas_desc  ! Gas volume mixing ratios
-    !   type(network_type), dimension(2), intent(in)    :: neural_nets
-    !   class(ty_optical_props_arry),  &
-    !                             intent(inout) :: optical_props
-    !   real(wp), dimension(:,:), intent(  out) :: toa_src     ! Incoming solar irradiance(ncol,ngpt)
-    !   character(len=128)                      :: error_msg
-    !   ! Optional inputs
-    !   real(wp), dimension(:,:), intent(in   ), &
-    !                          optional, target :: col_dry ! Column dry amount; dim(nlay,ncol)
-                        
-    ! end function gas_optics_ext_nn_abstract
-
-    !--------------------------------------------------------------------------------------------------------------------
-    ! function gas_optics_int_abstract(this,                             &
-    !                                  play, plev, tlay, tsfc, gas_desc, &
-    !                                  optical_props, sources,           &
-    !                                  col_dry, tlev, nn_inputs, col_dry_arr) result(error_msg)
-    !   import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw
-    !   class(ty_gas_optics),     intent(in   ) :: this
-    !   real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
-    !                                              plev, &   ! level pressures [Pa, mb]; (nlay+1,ncol)
-    !                                              tlay      ! layer temperatures [K]; (nlay,ncol)
-    !   real(wp), dimension(:),   intent(in   ) :: tsfc      ! surface skin temperatures [K]; (ncol)
-    !   type(ty_gas_concs),       intent(in   ) :: gas_desc  ! Gas volume mixing ratios
-    !   class(ty_optical_props_arry),  &
-    !                             intent(inout) :: optical_props ! Optical properties
-    !   class(ty_source_func_lw    ),  &
-    !                             intent(inout) :: sources       ! Planck sources
-    !   character(len=128)                      :: error_msg
-    !   real(wp), dimension(:,:), intent(in   ), &
-    !                         optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
-    !                                                tlev        ! level temperatures [K]l (nlay+1,ncol)
-    !   real(sp), dimension(:,:,:),     intent(inout), optional          :: nn_inputs             
-    !   real(sp), dimension(:,:),       intent(inout), optional          :: col_dry_arr                                 
-    ! end function gas_optics_int_abstract
 
     function gas_optics_int_abstract(this,                             &
                                      play, plev, tlay, tsfc, gas_desc, &
                                      optical_props, sources,           &
-                                    col_dry, tlev, neural_nets       &
-#ifdef DEV_MODE
-                                    ,nn_inputs, col_dry_arr          &
-#endif
+                                     col_dry, tlev, neural_nets       &
                                       ) result(error_msg)
       import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw, network_type
       class(ty_gas_optics),     intent(in   ) :: this
@@ -142,13 +91,7 @@ module mo_gas_optics
                             optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
                                                    tlev        ! level temperatures [K]l (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-      type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model 
-      ! real(sp), dimension(:,:,:),     intent(inout), optional          :: nn_inputs             
-      ! real(sp), dimension(:,:),       intent(inout), optional          :: col_dry_arr     
-#ifdef DEV_MODE
-    real(sp), dimension(:,:,:), intent(inout)         :: nn_inputs
-    real(sp), dimension(:,:),   intent(inout),target  :: col_dry_arr
-#endif                       
+      type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                   
     end function gas_optics_int_abstract
 
     !--------------------------------------------------------------------------------------------------------------------

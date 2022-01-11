@@ -44,15 +44,27 @@ module mo_fluxes
   !
   ! -----------------------------------------------------------------------------------------------
   type, extends(ty_fluxes), public :: ty_fluxes_broadband
-    real(wp), dimension(:,:), pointer :: flux_up => NULL(), flux_dn => NULL()
-    real(wp), dimension(:,:), pointer :: flux_net => NULL()    ! Net (down - up)
-    real(wp), dimension(:,:), pointer :: flux_dn_dir => NULL() ! Direct flux down
+    ! Broadband fluxes (nlay+1, ncol)
+    real(wp), dimension(:,:), contiguous, pointer :: flux_up => NULL(), flux_dn => NULL()
+    real(wp), dimension(:,:), contiguous, pointer :: flux_net => NULL()    ! Net (down - up)
+    real(wp), dimension(:,:), contiguous, pointer :: flux_dn_dir => NULL() ! Direct flux down
   contains
     procedure, public :: reduce      => reduce_broadband
     procedure, public :: are_desired => are_desired_broadband
   end type ty_fluxes_broadband
   ! -----------------------------------------------------------------------------------------------
+  ! More generic class which includes pointers to g-point fluxes, which may or may not be used/needed
+  type, extends(ty_fluxes_broadband), public :: ty_fluxes_flexible
+    ! Fluxes by g-point (ngpt, nlay+1, ncol)
+    real(wp), dimension(:,:,:), contiguous, pointer :: gpt_flux_up => NULL(), gpt_flux_dn => NULL()
+    real(wp), dimension(:,:,:), contiguous, pointer :: gpt_flux_net => NULL()    ! Net (down - up)
+    real(wp), dimension(:,:,:), contiguous, pointer :: gpt_flux_dn_dir => NULL() ! Direct flux down
+    real(wp), dimension(:,:,:), contiguous, pointer :: gpt_flux_up_Jac => NULL() ! Jacobian of flux up (longwave only)
 
+  contains
+    procedure, public :: are_desired_gpt  => are_desired_gpt
+
+  end type ty_fluxes_flexible
   ! -----------------------------------------------------------------------------------------------
   !
   ! Abstract interfaces: any implemntation has to provide routines with these interfaces
@@ -94,7 +106,7 @@ contains
   !
   ! --------------------------------------------------------------------------------------
   function reduce_broadband(this, gpt_flux_up, gpt_flux_dn, spectral_disc, top_at_1, gpt_flux_dn_dir) result(error_msg)
-    class(ty_fluxes_broadband),        intent(inout) :: this
+    class(ty_fluxes_broadband),           intent(inout) :: this
     real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_up ! Fluxes by gpoint [W/m2](ngpt, nlay+1, ncol)
     real(kind=wp), dimension(:,:,:),   intent(in   ) :: gpt_flux_dn ! Fluxes by gpoint [W/m2](ngpt, nlay+1, ncol)
     class(ty_optical_props),           intent(in   ) :: spectral_disc  !< derived type with spectral information
@@ -195,5 +207,15 @@ contains
                                   associated(this%flux_dn_dir), &
                                   associated(this%flux_net)] )
   end function are_desired_broadband
+
+  function are_desired_gpt(this)
+    class(ty_fluxes_flexible), intent(in   ) :: this
+    logical                                 :: are_desired_gpt
+
+    are_desired_gpt = any( [associated(this%gpt_flux_up),     &
+                            associated(this%gpt_flux_dn),     &
+                            associated(this%gpt_flux_dn_dir), &
+                            associated(this%gpt_flux_net)] )
+  end function are_desired_gpt
   ! --------------------------------------------------------------------------------------
 end module mo_fluxes

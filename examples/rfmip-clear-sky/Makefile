@@ -1,3 +1,10 @@
+# Set k-distribution files
+# KDIST_LW=rrtmgp-data-lw-g256-2018-12-04.nc
+# KDIST_SW=rrtmgp-data-sw-g224-2018-12-04.nc
+KDIST_LW=rrtmgp-data-lw-g128-210809.nc
+KDIST_SW=rrtmgp-data-sw-g112-210809.nc
+
+BLOCKSIZE = 36
 #
 # Here set variables RRTMGP_BUILD, NCHOME, NFHOME, TIME_DIR (for GPTL)
 # and link against BLAS library, or have those variables set in the environment
@@ -41,6 +48,7 @@ else ifeq ($(BLASLIB),openblas)
 	LIBS 		+= -lopenblas 
 else ifeq ($(BLASLIB),mkl)
 	FCINCLUDE   += -I${MKLROOT}/include
+	#LDFLAGS     += -L${MKLROOT}/lib/intel64 -lmkl_rt -lpthread -lm -ldl
 endif
 
 
@@ -115,6 +123,17 @@ rrtmgp_rfmip_sw.o: rrtmgp_rfmip_sw.F90 $(ADDITIONS)
 mo_rfmip_io.o:          mo_rfmip_io.F90          mo_simple_netcdf.o
 
 mo_load_coefficients.o: mo_load_coefficients.F90 mo_simple_netcdf.o
+
+tests: multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc # Also the template files
+	# Files need to have been generated/downloaded before
+	$(RUN_CMD) ./rrtmgp_rfmip_lw $(BLOCKSIZE) multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc ${RRTMGP_ROOT}/rrtmgp/data/$(KDIST_LW)
+	$(RUN_CMD) ./rrtmgp_rfmip_sw $(BLOCKSIZE) multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc ${RRTMGP_ROOT}/rrtmgp/data/$(KDIST_SW)
+
+check:
+	cd ${RRTMGP_ROOT}/examples/rfmip-clear-sky && python ./compare-to-reference.py --fail=7.e-4
+
+multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc:
+	bash ./stage_files.sh
 
 clean:
 	-rm rrtmgp_rfmip_sw rrtmgp_rfmip_lw *.o *.mod *.optrpt

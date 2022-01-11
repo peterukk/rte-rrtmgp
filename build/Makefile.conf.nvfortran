@@ -1,18 +1,21 @@
+export FC = nvfortran 
+
+#  ------- CPU ---------- 
+
+#export FCFLAGS = -O3 -g 
+# export FCFLAGS = -O3 -g  -Minline -Minfo=all
 
 #  ------- GPU ---------- 
 
 # export USE_OPENACC = 1 # Use the OpenACC kernels (required)
 
-export FC = nvfortran 
-
-#CPU
-export FCFLAGS = -O3 -g 
-
-# export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.2  -Mcuda -Mcudalib=cublas -Minfo=all   -DNGPT=224 -DNLAY=60
+export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.3  -Mcuda -Mcudalib=cublas -Minfo=all
+# export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.3  -Mcuda -Mcudalib=cublas -Minfo=all   -DNGPT=224 -DNLAY=60
 
 # export FCFLAGS = -O3 -g -acc=gpu -gpu=cuda11.2 -gpu=fastmath -Munroll=c:1 -fast -Minline -Mcuda -Mcudalib=cublas  -Minfo=all  -DNGPT=224 -DNLAY=60
 # export FCFLAGS =  -g -acc=gpu -gpu=cuda11.2  -Mcuda -Mcudalib=cublas  -Minfo=all -traceback #-Mchkfpstk -Mchkstk -Mdalign  -Mdclchk  -Mdepchk 
 # -Mchkptr causing problems 
+
 # # debugging
 # export FCFLAGS = -g -ta=tesla:lineinfo  -traceback  -Mcuda -Mcudalib=cublas
 # export FCFLAGS = -g   -acc=gpu -gpu=cuda11.0  -Minfo=all -traceback -Mchkfpstk -Mchkstk -Mdalign -Mchkptr  -Mdclchk -Mstandard -Mdepchk -Mrecursive  -Kieee -Ktrap=fp -Mallocatable=03 -Mpreprocess -Mcuda -Mcudalib=cublas
