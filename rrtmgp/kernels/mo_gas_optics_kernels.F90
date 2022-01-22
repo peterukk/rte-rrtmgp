@@ -17,7 +17,7 @@
 module mo_gas_optics_kernels
   use mo_rte_kind,      only : wp, wl, sp, dp
   use mo_rrtmgp_nn_constants
-  use mod_network,      only: network_type, output_sgemm_tau, output_sgemm_pfrac
+  use mod_network,      only: network_type, output_sgemm_tau, output_sgemm_tau2, output_sgemm_pfrac
   use, intrinsic :: ISO_C_BINDING
 #ifdef USE_TIMING
   ! Timing library
@@ -844,7 +844,6 @@ contains
 
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
-                          
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_abs')
 #endif
@@ -1125,26 +1124,36 @@ contains
   pure subroutine combine_2str_opt(ncol, nlay, ngpt, tau, tau_ray) &
       bind(C, name="combine_2str_opt")
     integer,                                intent(in)    :: ncol, nlay, ngpt
-    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs inputted, tau_tot outputted
-    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray inputted, ssa outputted
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau     ! tau_abs on input, tau_tot on output
+    real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau_ray ! tau_ray on input, ssa on output
     ! -----------------------
     integer  :: icol, ilay, igpt
     ! -----------------------
+    associate (ssa => tau_ray)
+
     do icol = 1, ncol
       do ilay = 1, nlay
+        ! do igpt = 1, ngpt
+        !   tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) 
+
+        !   if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
+        !     ssa(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
+        !     ! ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
+        !     !   tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_wp)
+        !   else
+        !       ssa(igpt,ilay,icol) = 0._wp
+        !   end if
+        ! end do
+
+        ! Is the check for very small tau needed? Near-zero tau not present in RFMIP data nor checked for in ecRAD
         do igpt = 1, ngpt
-          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) ! tau_tot = tau_abs 0 tau_ray
-          if(tau(igpt,ilay,icol) > 2._wp * tiny( tau(igpt,ilay,icol))) then
-            ! ssa = tau_rayleigh / tau_tot
-              tau_ray(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
-            ! ! FIX for bug when using GFortran compilers with --fast-math, ssa can become slightly larger than 1
-            !   tau_ray(igpt,ilay,icol) = min(tau_ray(igpt,ilay,icol), 1.0_wp)
-          else
-              tau_ray(igpt,ilay,icol) = 0._wp
-          end if
+          tau(igpt,ilay,icol) = tau(igpt,ilay,icol) + tau_ray(igpt,ilay,icol) 
+          ssa(igpt,ilay,icol) = tau_ray(igpt,ilay,icol) / tau(igpt,ilay,icol)
         end do
       end do
     end do
+
+    end associate
   end subroutine combine_2str_opt
   ! ----------------------------------------------------------
   !

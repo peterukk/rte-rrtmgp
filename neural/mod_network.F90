@@ -2,6 +2,7 @@ module mod_network
 
   use mo_rte_kind, only: sp
   use mod_layer, only: layer_type
+   use mod_activation, only : softsign_mat_b
 #ifdef USE_TIMING
   ! Timing library
   use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
@@ -31,7 +32,8 @@ module mod_network
     procedure, public, pass(self) :: init
     procedure, public, pass(self) :: load
     procedure, public, pass(self) :: output_opt, output_opt_flatmodel       ! Vector input, matrix-vector product
-    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau   ! Matrix-matrix using BLAS
+    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau, output_sgemm_tau2   ! Matrix-matrix using BLAS
+    procedure, public, pass(self) :: output_sgemm_flat, output_sgemm_flat_byrows
     procedure, public, pass(self) :: save
     procedure, public, pass(self) :: set_activation
 
@@ -183,27 +185,103 @@ contains
     end associate
   end subroutine
 
+  subroutine output_sgemm_flat(self, nx, ny, nbatch, x, output)
+    ! Optimized batched inference function for a multi-output (regression) neural network using BLAS/cuBLAS
+    ! Takes a 2D input array where the columns are the input vectors, outer dimension
+    ! is the number of samples (nbatch, block size) which could be ncol*nlay
+    ! Always in single-precision (sgemm) because more precision is redundant (nets trained in sp)
+    ! this version assumes a "flat" network structure with regard to hidden neurons (nneur1=nneur2)    
+    !
+    !                             Layer Weights (T)     Layer Inputs          Layer Outputs
+    ! Input (first hidden) layer    (nneur1 x nx)     * (nx x nbatch )      = (nneur1 x nbatch) 
+    ! Other hidden layers           (nneur2 x nneur1) * (nneur1 x nbatch )  = (nneur2 x nbatch) 
+    ! output layer                  (ny x nneur2)     * (nneur2 x nbatch )  = (ny x nbatch)  
+    ! in GEMM terms:                  A (m x k)       *  B (k x N )         = C (m x N) 
+    ! T = weights have been pre-transposed
+    !
+    class(network_type),              intent(in), target  :: self ! a neural network model
+    integer, intent(in)                           :: nx, ny, nbatch
+    real(sp), dimension(nx, nbatch), intent(in)  :: x            ! Model input
+    real(sp), dimension(ny, nbatch), intent(out) :: output       ! Model output
+    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
+                                          target  :: a1, a2       ! Temporary output/input between layers, of shape (neurons, nbatch)
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! The input to a layer is the output of the previous layer. To avoid memory
+                                                                  ! movement, we can use pointers and just switch them around after each layer
+    real(sp), dimension(:,:), contiguous, pointer :: wt           ! Weights
+    real(sp), dimension(:),   contiguous, pointer :: b            ! BIases
+    integer :: n, j, neurons, nlayers, i
+
+    neurons = size(self % layers(1) % w_transposed, 1)
+    nlayers = size(self % layers)
+
+    ! print *, "neurons", neurons, "nbatch", nbatch, "nx", nx, "ny", ny
+
+    !$acc enter data create(a1, a2)
+    associate(layers=>self%layers)    ! so it's easier to read
+
+      ! FIRST LAYER
+      wt => layers(1) % w_transposed 
+      a  => a1                        
+      b  => layers(2) % b            
+
+      !$acc host_data use_device(wt, x, a)
+      call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)  ! uses GPU version if USE_OPENACC=1
+      !$acc end host_data
+
+      call layers(2) % bias_and_activation(a, b)
+
+      ! INTERMEDIATE LAYERS
+      a_next => a2
+
+      do n = 3, nlayers-1
+
+        wt => layers(n-1) % w_transposed
+        b  => layers(n) % b
+
+        !$acc host_data use_device(wt, a, a_next)
+        call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
+        !$acc end host_data
+
+        call layers(n) % bias_and_activation(a_next, b)
+
+        ! Swap pointers
+        if(mod(n,2) .EQ. 1) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+
+      end do
+      
+      ! Output layer
+      wt => layers(n-1) % w_transposed
+      b  => layers(n) % b
+
+      !$acc host_data use_device(wt, a, output)
+      call sgemm("N","N", ny, nbatch, neurons, 1.0, wt, ny, a, neurons, 0.0, output, ny)
+      !$acc end host_data
+
+      call layers(n) % bias_and_activation(output, b)
+
+      end associate
+    !$acc exit data detach(a,a_next) delete(a1, a2)
+
+  end subroutine
 
   subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, ymeans, ysigma, output)
-    ! Optimized inference function for optical depth, using BLAS/cuBLAS and includes post-processing of outputs.
-    ! This routine takes a 2D input data array for batched predictions with a feed-forward network.
-    ! Assuming "flat model" i.e. the hidden layers have the same number of neurons
-    ! always in single-precision (sgemm) because why not
-    !
-    !                                   Layer Weights            Layer Inputs                Layer Outputs
-    ! First layer :                      (Nneurons x Nx)       * (Nx x nbatch )          = (Nneurons x nbatch) 
-    ! Intermediate layers :              (Nneurons x Nneurons) * (Nneurons x nbatch )    = (Nneurons x nbatch) 
-    ! Final layer:                       (Ngpoints x Nneurons) * (Nneurons x nbatch )    = (Ngpoints x nbatch)  
-    ! in GEMM terms:                         A                 *         B                = C
-    !                                     (m x k)              *      (k * N )            = (m  * N)  
+    ! Like output_sgemm_flat but for computing OPTICAL DEPTH, inlining the post-processing
+    ! Additional inputs: number of dry air molecules (coldry) and the mean and standard deviation
+    ! used for normalization (ymeans, ysigma)
     use, intrinsic :: iso_c_binding
     class(network_type),              intent(in), target  :: self
     integer, intent(in)                           :: nx, ngpt, nbatch
-    real(sp), dimension(nx, nbatch), intent(in)  :: x      ! (features, nbatch)
-    real(sp), dimension(nbatch),     intent(in)  :: coldry 
-    real(sp), dimension(ngpt),          intent(in)  :: ymeans
-    real(sp),                         intent(in)  :: ysigma
-    real(sp), dimension(ngpt, nbatch), intent(out) :: output ! (outputs, nbatch) 
+    real(sp), dimension(nx, nbatch),  intent(in)  :: x      ! (features, nbatch)
+    real(sp), dimension(nbatch),      intent(in)  :: coldry ! number of dry air molecules
+    real(sp), dimension(ngpt),        intent(in)  :: ymeans ! standard-scaling coefficient 
+    real(sp),                         intent(in)  :: ysigma ! standard-scaling coefficient
+    real(sp), dimension(ngpt, nbatch),intent(out) :: output ! absorption cross-section g-point vectors
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
                                           target  :: a1, a2  
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
@@ -217,30 +295,22 @@ contains
     !$acc enter data create(a1, a2) copyin(ymeans)
     associate(layers=>self%layers)
       
-      ! Assign pointers to layer weights, input-output arrays and biases
+      ! Assign pointers to layer weights, biases and input-output arrays
       wt      => layers(1) % w_transposed
       a       => a1
       a_next  => a2
       b       => layers(2) % b
       
-      ! 1. Multiply inputs with weights of first layer
+      ! 1. Multiply inputs with the weights of the first layer
 
       !$acc host_data use_device(wt, x, a)
       call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
       !$acc end host_data
 
       ! 2. Add biases and activation
-
-      !$acc parallel loop collapse(2) default(present)
-      do j = 1, nbatch
-        do i = 1, neurons
-          a(i, j) = a(i, j ) + b(i)
-          call activation_softsign(a(i, j))
-        end do
-      end do
-
-      ! 3. Repeat steps 1-2 until final layer reached
+     call layers(2) % bias_and_activation(a, b)
       
+      ! 3. Repeat steps 1-2 until final layer reached
       do n = 3, nlayers-1
 
         wt => layers(n-1) % w_transposed
@@ -250,13 +320,7 @@ contains
         call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
         !$acc end host_data
 
-        !$acc parallel loop collapse(2) default(present)
-        do j = 1, nbatch
-          do i = 1 , neurons 
-            a_next(i, j) = a_next(i, j ) + b(i)
-            call activation_softsign(a_next(i, j))
-          end do
-        end do 
+        call layers(n) % bias_and_activation(a_next, b)
 
         ! Swap pointers, the previous output is the next input
         if(mod(n,2) .EQ. 1) then
@@ -276,44 +340,423 @@ contains
       call sgemm("N","N", ngpt, nbatch, neurons, 1.0, wt, ngpt, a, neurons, 0.0, output, ngpt)
       !$acc end host_data
 
-      n = nlayers
-
       !$acc parallel loop gang default(present)
       do j = 1, nbatch
-        !DIR$ SIMD
-        !DIR$ VECTOR ALIGNED
+        !$OMP SIMD
         !$acc loop vector
         do i = 1, ngpt
-          ! Compute outputs and scale them to obtain molecular absorption 
-          ! output(i, j) = (ysigma*(output(i, j) + b(i)) + ymeans_lw_tau(i))**8
-
-          ! Scale with number of dry air molecules to obtain optical depth
-          ! output(i, j) =  output(i, j) * coldry(j)
+          ! Add bias to obtain model output (linear layer, no activation) 
+          output(i, j) = output(i, j) + b(i)
+          ! Postprocess 1: reverse standard scaling and square root scaling
+          output(i, j) = (ysigma*output(i, j) + ymeans(i))**8
+          ! Postprocess 2: scale with number of dry air molecules to obtain optical depth
+          output(i, j) = output(i, j) * coldry(j)
 
           ! One-line solution
-          output(i, j) = ((ysigma* (output(i, j) + b(i)) + ymeans(i))**8) * coldry(j)
-
+          ! output(i, j) = ((ysigma* (output(i, j) + b(i)) + ymeans(i))**8) * coldry(j)
         end do
       end do
 
     end associate
     !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
-
                                               
   end subroutine
 
-  ! subroutine output_sgemm_tau(self, nx, ny, nbatch, x, coldry, ymeans, ysigma, output)
-  !   ! Optimized inference function for optical depth, using BLAS/cuBLAS and includes post-processing of outputs.
-  !   ! This routine takes a 2D input data array for batched predictions with a feed-forward network.
-  !   ! Assuming "flat model" i.e. the hidden layers have the same number of neurons
-  !   ! always in single-precision (sgemm) because why waste precision on NNs which don't need it 
-  !   !
-  !   !                                   Layer Weights            Layer Inputs                Layer Outputs
-  !   ! First layer :                      (Nneurons x Nx)       * (Nx x nbatch )          = (Nneurons x nbatch) 
-  !   ! Intermediate layers :              (Nneurons x Nneurons) * (Nneurons x nbatch )    = (Nneurons x nbatch) 
-  !   ! Final layer:                       (Ngpoints x Nneurons) * (Nneurons x nbatch )    = (Ngpoints x nbatch)  
-  !   ! in GEMM terms:                         A                 *         B                = C
-  !   !                                     (m x k)              *      (k * N )            = (m  * N)  
+  subroutine output_sgemm_tau2(self, nx, ngpt, nbatch, x, coldry, ymeans, ysigma, output)
+    ! Like output_sgemm_flat but for computing OPTICAL DEPTH, inlining the post-processing
+    ! Additional inputs: number of dry air molecules (coldry) and the mean and standard deviation
+    ! used for normalization (ymeans, ysigma)
+    use, intrinsic :: iso_c_binding
+    class(network_type),              intent(in), target  :: self
+    integer, intent(in)                           :: nx, ngpt, nbatch
+    real(sp), dimension(nx, nbatch),  intent(in)  :: x      ! (features, nbatch)
+    real(sp), dimension(nbatch),      intent(in)  :: coldry ! number of dry air molecules
+    real(sp), dimension(ngpt),        intent(in)  :: ymeans ! standard-scaling coefficient 
+    real(sp),                         intent(in)  :: ysigma ! standard-scaling coefficient
+    real(sp), dimension(ngpt, nbatch),intent(out) :: output ! absorption cross-section g-point vectors
+    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
+                                          target  :: a1, a2  
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
+    real(sp), dimension(:,:), contiguous, pointer :: wt
+    real(sp), dimension(:),   contiguous, pointer :: b
+    integer                       :: n, j, neurons, nlayers, i
+
+    neurons = size(self % layers(1) % w_transposed, 1)
+    nlayers = size(self % layers)
+
+    !$acc enter data create(a1, a2) copyin(ymeans)
+    associate(layers=>self%layers)
+      
+      ! Assign pointers to layer weights, biases and input-output arrays
+      wt      => layers(1) % w_transposed
+      a       => a1
+      a_next  => a2
+      b       => layers(2) % b
+      
+      ! 1. Multiply inputs with the weights of the first layer
+
+      !$acc host_data use_device(wt, x, a)
+      call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
+      !$acc end host_data
+
+      ! 2. Add biases and activation
+     call layers(2) % bias_and_activation(a, b)
+      
+      ! 3. Repeat steps 1-2 until final layer reached
+      do n = 3, nlayers-1
+
+        wt => layers(n-1) % w_transposed
+        b => layers(n) % b
+
+        !$acc host_data use_device(wt, a, a_next)
+        call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
+        !$acc end host_data
+
+        call layers(n) % bias_and_activation(a_next, b)
+
+        ! Swap pointers, the previous output is the next input
+        if(mod(n,2) .EQ. 1) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+
+      end do
+
+      wt => layers(n-1) % w_transposed
+      b  => layers(n) % b
+
+      !$acc host_data use_device(wt, a, output)
+      call sgemm("N","N", ngpt, nbatch, neurons, 1.0, wt, ngpt, a, neurons, 0.0, output, ngpt)
+      !$acc end host_data
+
+      !$acc parallel loop gang default(present)
+      do j = 1, nbatch
+        !$OMP SIMD
+        !$acc loop vector
+        do i = 1, ngpt
+          ! Add bias to obtain model output (linear layer, no activation) 
+          ! output(i, j) = output(i, j) + b(i)
+          ! ! Postprocess 1: reverse standard scaling and square root scaling
+          ! output(i, j) = (ysigma*output(i, j) + ymeans(i))**8
+          ! ! Postprocess 2: scale with number of dry air molecules to obtain optical depth
+          ! output(i, j) = output(i, j) * coldry(j)
+
+          ! One-line solution
+          output(i, j) = ((ysigma* (output(i, j) + b(i)))**8) * coldry(j)
+        end do
+      end do
+
+    end associate
+    !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
+                                              
+  end subroutine
+
+  subroutine output_sgemm_pfrac(self, nx, ny, nbatch, x, output)
+    ! Like output_sgemm_tau but for predicting Planck fraction, which has different post-processing
+    class(network_type),              intent(in), target  :: self ! a neural network model
+    integer, intent(in)                           :: nx, ny, nbatch
+    real(sp), dimension(nx, nbatch), intent(in)  :: x            ! Model input
+    real(sp), dimension(ny, nbatch), intent(out) :: output       ! Model output
+    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
+                                          target  :: a1, a2       ! Temporary output/input between layers, of shape (neurons, nbatch)
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! The input to a layer is the output of the previous layer. To avoid memory
+                                                                  ! movement, we can use pointers and just switch them around after each layer
+    real(sp), dimension(:,:), contiguous, pointer :: wt           ! Weights
+    real(sp), dimension(:),   contiguous, pointer :: b            ! BIases
+    integer :: n, j, neurons, nlayers, i
+
+    neurons = size(self % layers(1) % w_transposed, 1)
+    nlayers = size(self % layers)
+
+    !$acc enter data create(a1, a2)
+    associate(layers=>self%layers)    ! so it's easier to read
+
+      ! FIRST LAYER
+      wt => layers(1) % w_transposed  ! Set the weights to the weights of the first layer
+      a  => a1                        
+      b  => layers(2) % b            
+
+      !$acc host_data use_device(wt, x, a)
+      call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)  ! uses GPU version if USE_OPENACC=1
+      !$acc end host_data
+
+      call layers(2) % bias_and_activation(a, b)
+
+      ! INTERMEDIATE LAYERS
+      a_next => a2
+
+      do n = 3, nlayers-1
+
+        wt => layers(n-1) % w_transposed
+        b  => layers(n) % b
+
+        !$acc host_data use_device(wt, a, a_next)
+        call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
+        !$acc end host_data
+
+        call layers(n) % bias_and_activation(a_next, b)
+
+        ! Swap pointers
+        if(mod(n,2) .EQ. 1) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+
+      end do
+
+      wt => layers(n-1) % w_transposed
+      b  => layers(n) % b
+      !$acc host_data use_device(wt, a, output)
+      call sgemm("N","N", ny, nbatch, neurons, 1.0, wt, ny, a, neurons, 0.0, output, ny)
+      !$acc end host_data
+
+      !$acc parallel loop gang default(present)
+      do j = 1, nbatch
+        !$acc loop vector
+        do i = 1, ny
+          output(i, j) = output(i, j ) + b(i)
+          output(i, j) = max(0.0_sp, output(i, j)) !RELU activation
+          output(i, j) = output(i, j)*output(i, j)
+        end do
+      end do
+      ! call layers(n) % bias_and_activation(output, b)
+      ! output = output*output
+
+      end associate
+    !$acc exit data detach(a,a_next) delete(a1, a2)
+
+  end subroutine
+
+  subroutine output_sgemm_flat_byrows(self, nx, ny, nbatch, x, output)
+    ! Generic inference function using BLAS/cuBLAS for batched prediction (many samples at a time)
+    ! In this version, the dimensions of inputs and outputs are reversed so that the individual
+    ! NN input/output vectors are strided across the outer dimension
+    ! This may be faster for very small networks
+    !                               layer input           weights             layer output
+    ! input (first hidden) layer    (nbatch x nx)     * (nx x nneur1)       = (nbatch x nneur1)
+    ! other hidden layers           (nbatch x nneur1) * (nneur1 x nneur2)   = (nbatch * nneur2)  
+    ! output layer                  (nbatch x nneur2) * (nneur2 x ny )      = (nbatch x ny)
+    ! in GEMM terms:                  A (m x k)       *  B (k x N )         = C (m x N) 
+    ! T = transposed weights
+    class(network_type),              intent(in), target  :: self ! a neural network model
+    integer, intent(in)                           :: nx, ny, nbatch
+    real(sp), dimension(nbatch, nx), intent(in)   :: x            ! Model input
+    real(sp), dimension(nbatch, ny), intent(out)  :: output       ! Model output
+    real(sp), dimension(nbatch, size(self % layers(1) % w_transposed, 1)), &
+                                      target      :: a1, a2       ! Temporary output/input between layers
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! The input to a layer is the output of the previous layer. To avoid memory
+                                                                  ! movement, we can use pointers and just switch them around after each layer
+    real(sp), dimension(:,:), contiguous, pointer :: w            ! Weights
+    real(sp), dimension(:),   contiguous, pointer :: b            ! BIases
+    integer :: n, j, neurons, nlayers, i
+
+    neurons = size(self % layers(1) % w, 2)
+    nlayers = size(self % layers)
+
+    !$acc enter data create(a1, a2)
+    associate(layers=>self%layers)    ! so it's easier to read
+
+      ! FIRST LAYER
+      w   => layers(1) % w  ! Set the weights to the weights of the first layer
+      a   => a1                        
+      b   => layers(2) % b            
+#ifdef USE_TIMING
+  ret =  gptlstart('first_sgemm')
+#endif
+      !$acc host_data use_device(w, x, a)
+      call sgemm('N','N', nbatch, neurons, nx, 1.0, x, nbatch, w, nx, 0.0, a, nbatch)
+      !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('first_sgemm')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('bias_and_activ1')
+#endif
+      call layers(2) % bias_and_activation(a, b)
+#ifdef USE_TIMING
+    ret =  gptlstop('bias_and_activ1')
+#endif
+      ! INTERMEDIATE LAYERS
+      a_next => a2
+      
+      do n = 3, nlayers-1
+
+        w => layers(n-1) % w
+        b => layers(n) % b
+#ifdef USE_TIMING
+  ret =  gptlstart('middle_sgemm')
+#endif
+        !$acc host_data use_device(w, a, a_next)
+        call sgemm("N","N", nbatch, neurons, neurons, 1.0, a, nbatch, w, neurons, 0.0, a_next, nbatch)
+        !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('middle_sgemm')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('bias_and_activ_mid')
+#endif
+        call layers(n) % bias_and_activation(a_next, b)
+#ifdef USE_TIMING
+    ret =  gptlstop('bias_and_activ_mid')
+#endif
+        ! Swap pointers
+        if(mod(n,2) .EQ. 1) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+
+      end do
+
+      w => layers(n-1) % w
+      b  => layers(n) % b
+#ifdef USE_TIMING
+  ret =  gptlstart('last_sgemm')
+#endif
+      !$acc host_data use_device(w, a, output)
+      call sgemm("N","N", nbatch, ny, neurons, 1.0, a, nbatch, w, neurons, 0.0, output, nbatch)
+      !$acc end host_data
+#ifdef USE_TIMING
+  ret =  gptlstop('last_sgemm')
+#endif
+#ifdef USE_TIMING
+    ret =  gptlstart('bias_and_activ_fin')
+#endif
+      call layers(n) % bias_and_activation(output, b)
+#ifdef USE_TIMING
+    ret =  gptlstop('bias_and_activ_fin')
+#endif
+      end associate
+    !$acc exit data detach(a,a_next) delete(a1, a2)
+
+  end subroutine
+
+
+elemental subroutine reluu(x) 
+!$acc routine seq
+  !! REctified Linear Unit (RELU) activation subroutine.
+  real(sp), intent(inout) :: x
+  x = max(0.0_sp, x)
+end subroutine reluu
+
+  
+elemental subroutine activation_softsign(x)
+!$acc routine seq
+  real(sp), intent(inout) :: x
+  x = x / (abs(x) + 1)
+end subroutine
+
+
+
+pure function matvecmul(matA,vecB,nrow,ncol)
+    implicit none
+    integer, intent(in) :: nrow,ncol
+    real(sp), intent(in) :: matA(nrow,ncol)
+    real(sp), intent(in) :: vecB(ncol)
+    integer :: i,j
+    real(sp) :: matvecmul(nrow)
+
+    ! each (row,here ncol) element in b (length e.g. 256) is obtained by :
+    ! loop through the different elements in vecB (length 50), multiply by the corresponding
+    ! column (still 50) element in matA for that particular row (outer loop), add the 50 values together
+
+    matvecmul = 0.0_sp
+    do j=1,ncol !   y            X          alpha
+        matvecmul = matvecmul + matA(:,j) * vecB(j) !length 256. this is for one column, and then the columns need to be added together ( b = b + ..)
+    enddo
+
+end function matvecmul
+
+subroutine gemm_matvecmul(m, k, n, matA, matB, matC)
+    implicit none
+    integer, intent(in) :: m,k,n
+    real(sp), intent(in) :: matA(m,k), matB(k,n)
+    real(sp), intent(out) :: matC(m,n)
+    integer :: i,j, jj
+
+    ! m = 4
+    ! k = 8
+
+    do jj = 1,n ! n > 1000
+
+      matC(:,jj) = 0.0_sp
+      do j=1,k 
+        matC(:,jj) = matC(:,jj) + matA(:,j) * matB(j,jj) 
+        ! call saxpy(m,matB(j,jj), matA(:,j), 1, matC(:,jj), 1)
+      enddo
+
+
+    end do
+
+end subroutine gemm_matvecmul
+
+pure subroutine forward_pass(nrow,ncol,nbatch, matA,x,b, a)
+!                           nx,  nneur,nbatch,weights,x,b,a
+  implicit none
+  integer, intent(in)   :: nrow  ! Nneur
+  integer, intent(in)   :: ncol  ! Nx
+  integer, intent(in)   :: nbatch
+  real(sp),intent(in)  :: matA(nrow,ncol) ! weights (Nneur x Nx) = layers(1) % w_transposed
+  real(sp), intent(in)  :: x(ncol,nbatch) ! (nx, nbatch)
+  real(sp), intent(in)  :: b(nrow)
+  real(sp), intent(out) :: a(nrow,nbatch) ! (nneur, nbatch)
+  real(sp):: scal
+  integer :: i,j,k
+
+  !$acc parallel loop gang worker default(present) 
+  do k  = 1, nbatch
+    !$acc loop vector
+    do i = 1, nrow
+      scal = 0.0_sp
+      do j=1,ncol 
+        scal = scal + matA(i,j) * x(j,k) 
+      end do 
+      a(i,k) = scal + b(i)
+      call activation_softsign(a(i, k))
+    end do  
+  end do
+
+end subroutine forward_pass
+
+  subroutine save(self, filename)
+    ! Saves the network to a file.
+    class(network_type), intent(in out) :: self
+    character(len=*), intent(in) :: filename
+    integer :: fileunit, n
+    open(newunit=fileunit, file=filename)
+    write(fileunit, fmt=*) size(self % dims)
+    write(fileunit, fmt=*) self % dims
+    do n = 2, size(self % dims)
+      write(fileunit, fmt=*) self % layers(n) % b
+    end do
+    do n = 1, size(self % dims) - 1
+      write(fileunit, fmt=*) self % layers(n) % w
+    end do
+    close(fileunit)
+  end subroutine save
+
+  pure subroutine set_activation(self, activation)
+    ! A thin wrapper around layer % set_activation().
+    ! This method can be used to set an activation function
+    ! for all layers at once.
+    class(network_type), intent(in out) :: self
+    character(len=*), intent(in) :: activation
+    integer :: n
+    do concurrent (n = 1:size(self % layers))
+      call self % layers(n) % set_activation(activation)
+    end do
+  end subroutine set_activation
+
+
+  ! subroutine output_sgemm_tau_sgemmbatched(self, nx, ny, nbatch, x, coldry, ymeans, ysigma, output)
   !   use, intrinsic :: iso_c_binding
   !   use cudafor
   !   use cublas
@@ -444,8 +887,7 @@ contains
 
   !     !$acc parallel loop gang vector collapse(2) default(present)
   !     do j = 1, nbatch
-  !       !DIR$ SIMD
-  !       !DIR$ VECTOR ALIGNED
+  !       !$OMP SIMD
   !       do i = 1, ny
   !         ! Compute outputs and scale them to obtain molecular absorption 
   !         ! output(i, j) = (ysigma*(output(i, j) + b(i)) + ymeans_lw_tau(i))**8
@@ -463,193 +905,6 @@ contains
   !   !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
 
                                               
-  ! end subroutine
-
-  subroutine output_sgemm_pfrac(self, nx, ny, nbatch, x, output)
-    ! Optimized inference function for Planck fraction, using BLAS/cuBLAS for batched prediction (many samples at a time)
-    ! Includes post-processing of outputs. The inputs have already been pre-processed
-    class(network_type),              intent(in), target  :: self ! a neural network model
-    integer, intent(in)                           :: nx, ny, nbatch
-    real(sp), dimension(nx, nbatch), intent(in)  :: x            ! Model input
-    real(sp), dimension(ny, nbatch), intent(out) :: output       ! Model output
-    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
-                                          target  :: a1, a2       ! Temporary output/input between layers, of shape (neurons, nbatch)
-    real(sp), dimension(:,:), contiguous, pointer :: a, a_next    ! The input to a layer is the output of the previous layer. To avoid memory
-                                                                  ! movement, we can use pointers and just switch them around after each layer
-    real(sp), dimension(:,:), contiguous, pointer :: wt           ! Weights
-    real(sp), dimension(:),   contiguous, pointer :: b            ! BIases
-    integer :: n, j, neurons, nlayers, i
-
-    neurons = size(self % layers(1) % w_transposed, 1)
-    nlayers = size(self % layers)
-
-    !$acc enter data create(a1, a2)
-    associate(layers=>self%layers)    ! so it's easier to read
-
-      ! FIRST LAYER
-      wt => layers(1) % w_transposed  ! Set the weights to the weights of the first layer
-      a  => a1                        
-      b  => layers(2) % b            
-
-      !$acc host_data use_device(wt, x, a)
-      call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)  ! uses GPU version if USE_OPENACC=1
-      !$acc end host_data
-
-      !$acc parallel loop collapse(2) default(present)
-      do j = 1, nbatch
-        do i = 1, neurons
-          a(i, j) = a(i, j ) + b(i)  ! 1. add bias
-          call activation_softsign(a(i, j))          ! 2. use activation function, here the softsign
-        end do
-      end do
-
-      ! INTERMEDIATE LAYERS
-      a_next => a2
-
-      do n = 3, nlayers-1
-
-        wt => layers(n-1) % w_transposed
-        b  => layers(n) % b
-
-        !$acc host_data use_device(wt, a, a_next)
-        call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
-        !$acc end host_data
-
-        !$acc parallel loop collapse(2) default(present)
-        do j = 1, nbatch
-          do i = 1 , neurons 
-            a_next(i, j) = a_next(i, j ) + b(i)
-            call activation_softsign(a_next(i, j))
-          end do
-        end do 
-
-        ! Swap pointers
-        if(mod(n,2) .EQ. 1) then
-          a       => a2
-          a_next  => a1  
-        else
-          a       => a1
-          a_next  => a2
-        end if
-
-      end do
-
-      wt => layers(n-1) % w_transposed
-      b  => layers(n) % b
-
-      !$acc host_data use_device(wt, a, output)
-      call sgemm("N","N", ny, nbatch, neurons, 1.0, wt, ny, a, neurons, 0.0, output, ny)
-      !$acc end host_data
-
-      n = nlayers
-
-      !$acc parallel loop gang default(present)
-      do j = 1, nbatch
-        !$acc loop vector
-        do i = 1, ny
-          output(i, j) = output(i, j ) + b(i)
-          output(i, j) = max(0.0_sp, output(i, j)) !RELU activation
-          output(i, j) = output(i, j)*output(i, j)
-        end do
-      end do
-
-      end associate
-    !$acc exit data detach(a,a_next) delete(a1, a2)
-
-  end subroutine
-
-
-elemental subroutine reluu(x) 
-!$acc routine seq
-  !! REctified Linear Unit (RELU) activation subroutine.
-  real(sp), intent(inout) :: x
-  x = max(0.0_sp, x)
-end subroutine reluu
-
-  
-elemental subroutine activation_softsign(x)
-!$acc routine seq
-  real(sp), intent(inout) :: x
-  x = x / (abs(x) + 1)
-end subroutine
-
-
-
-pure function matvecmul(matA,vecB,nrow,ncol)
-    implicit none
-    integer, intent(in) :: nrow,ncol
-    real(sp), intent(in) :: matA(nrow,ncol)
-    real(sp), intent(in) :: vecB(ncol)
-    integer :: i,j
-    real(sp) :: matvecmul(nrow)
-
-    ! each (row,here ncol) element in b (length e.g. 256) is obtained by :
-    ! loop through the different elements in vecB (length 50), multiply by the corresponding
-    ! column (still 50) element in matA for that particular row (outer loop), add the 50 values together
-
-    matvecmul = 0.0_sp
-    do j=1,ncol !  50
-        matvecmul = matvecmul + matA(:,j) * vecB(j) !length 256. this is for one column, and then the columns need to be added together ( b = b + ..)
-    enddo
-
-end function matvecmul
-
-pure subroutine forward_pass(nrow,ncol,nbatch, matA,x,b, a)
-!                           nx,  nneur,nbatch,weights,x,b,a
-  implicit none
-  integer, intent(in)   :: nrow  ! Nneur
-  integer, intent(in)   :: ncol  ! Nx
-  integer, intent(in)   :: nbatch
-  real(sp),intent(in)  :: matA(nrow,ncol) ! weights (Nneur x Nx) = layers(1) % w_transposed
-  real(sp), intent(in)  :: x(ncol,nbatch) ! (nx, nbatch)
-  real(sp), intent(in)  :: b(nrow)
-  real(sp), intent(out) :: a(nrow,nbatch) ! (nneur, nbatch)
-  real(sp):: scal
-  integer :: i,j,k
-
-  !$acc parallel loop gang worker default(present) 
-  do k  = 1, nbatch
-    !$acc loop vector
-    do i = 1, nrow
-      scal = 0.0_sp
-      do j=1,ncol 
-        scal = scal + matA(i,j) * x(j,k) 
-      end do 
-      a(i,k) = scal + b(i)
-      call activation_softsign(a(i, k))
-    end do  
-  end do
-
-end subroutine forward_pass
-
-  subroutine save(self, filename)
-    ! Saves the network to a file.
-    class(network_type), intent(in out) :: self
-    character(len=*), intent(in) :: filename
-    integer :: fileunit, n
-    open(newunit=fileunit, file=filename)
-    write(fileunit, fmt=*) size(self % dims)
-    write(fileunit, fmt=*) self % dims
-    do n = 2, size(self % dims)
-      write(fileunit, fmt=*) self % layers(n) % b
-    end do
-    do n = 1, size(self % dims) - 1
-      write(fileunit, fmt=*) self % layers(n) % w
-    end do
-    close(fileunit)
-  end subroutine save
-
-  pure subroutine set_activation(self, activation)
-    ! A thin wrapper around layer % set_activation().
-    ! This method can be used to set an activation function
-    ! for all layers at once.
-    class(network_type), intent(in out) :: self
-    character(len=*), intent(in) :: activation
-    integer :: n
-    do concurrent (n = 1:size(self % layers))
-      call self % layers(n) % set_activation(activation)
-    end do
-  end subroutine set_activation
-
+  ! end subroutine output_sgemm_tau_sgemmbatched
 
 end module mod_network

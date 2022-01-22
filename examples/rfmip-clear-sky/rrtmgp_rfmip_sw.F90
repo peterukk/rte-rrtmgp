@@ -163,7 +163,7 @@ program rrtmgp_rfmip_sw
   !
   !  ------------ I/O and settings -----------------
   ! Use neural networks for gas optics? 
-  use_rrtmgp_nn      = .false.
+  use_rrtmgp_nn      = .true.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -174,6 +174,8 @@ program rrtmgp_rfmip_sw
   ! Neural network models
   modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
   modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt"
+  ! modelfile_ray           = "../../neural/data/tau-sw-ray-tmp.txt"
+  ! modelfile_tau           = "../../neural/data/tau-sw-abs-tmp.txt" 
 
   if (use_rrtmgp_nn) then
 	  print *, 'loading shortwave absorption model from ', modelfile_tau
