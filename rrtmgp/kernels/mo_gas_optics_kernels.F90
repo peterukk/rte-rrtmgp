@@ -17,7 +17,7 @@
 module mo_gas_optics_kernels
   use mo_rte_kind,      only : wp, wl, sp, dp
   use mo_rrtmgp_nn_constants
-  use mod_network,      only: network_type, output_sgemm_tau, output_sgemm_tau2, output_sgemm_pfrac
+  use mod_network,      only: network_type, output_sgemm_tau, output_sgemm_pfrac
   use, intrinsic :: ISO_C_BINDING
 #ifdef USE_TIMING
   ! Timing library

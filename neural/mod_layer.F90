@@ -2,6 +2,10 @@ module mod_layer
 
   ! Defines the layer type and its methods.
 
+  ! Changelog: 
+  !   P.Ukkonen, 23.1.2022 : Change the code so that input layer is not included in layers (see mod_network)
+
+
   use mod_activation
   use mo_rte_kind, only: sp
   use mod_random, only: randn
@@ -35,15 +39,26 @@ module mod_layer
 
 contains
 
-  type(layer_type) function constructor(this_size, next_size) result(layer)
+  ! type(layer_type) function constructor(this_size, next_size) result(layer)
+  !   ! Layer class constructor. this_size is the number of neurons in the layer.
+  !   ! next_size is the number of neurons in the next layer, used to allocate
+  !   ! the weights.
+  !   integer, intent(in) :: this_size, next_size
+  !   allocate(layer % w(this_size,next_size))
+  !   allocate(layer % w_transposed(next_size,this_size))
+  !   allocate(layer % b(this_size))
+  !   layer % b = randn(this_size)
+  ! end function constructor
+
+  type(layer_type) function constructor(last_size, this_size) result(layer)
     ! Layer class constructor. this_size is the number of neurons in the layer.
     ! next_size is the number of neurons in the next layer, used to allocate
     ! the weights.
-    integer, intent(in) :: this_size, next_size
-    allocate(layer % w(this_size,next_size))
-    allocate(layer % w_transposed(next_size,this_size))
+    integer, intent(in) :: last_size, this_size
+    allocate(layer % w(last_size, this_size))
+    allocate(layer % w_transposed(this_size, last_size))
     allocate(layer % b(this_size))
-    layer % b = randn(this_size)
+    ! layer % b = randn(this_size)
   end function constructor
 
   pure subroutine set_activation(self, activation)
