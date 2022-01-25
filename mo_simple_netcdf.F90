@@ -56,10 +56,6 @@ contains
 
     if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) &
       call stop_on_err("read_field: can't find variable " // trim(varName))
-
-    ! print *, "error", nf90_get_var(ncid, varid, read_2d_field)  
-
-
     if(nf90_get_var(ncid, varid, read_2d_field)  /= NF90_NOERR) &
       call stop_on_err("read_field: can't read variable " // trim(varName))
 
@@ -110,21 +106,6 @@ contains
     if(nf90_get_var(ncid, varid, read_string)  /= NF90_NOERR) &
       call stop_on_err("read_field: can't read variable " // trim(varName))
   end function read_string
-  !--------------------------------------------------------------------------------------------------------------------
-  function read_1d_int_field(ncid, varName, nx)
-    integer,                intent(in) :: ncid
-    character(len=*),       intent(in) :: varName
-    integer,                intent(in) :: nx
-    integer,  dimension(nx)            :: read_1d_int_field
-
-    integer :: varid
-
-    if(nf90_inq_varid(ncid, trim(varName), varid) /= NF90_NOERR) &
-      call stop_on_err("read_field: can't find variable " // trim(varName))
-    if(nf90_get_var(ncid, varid, read_1d_int_field)  /= NF90_NOERR) &
-      call stop_on_err("read_field: can't read variable " // trim(varName))
-
-  end function read_1d_int_field
   !--------------------------------------------------------------------------------------------------------------------
   ! Writing functions
   !--------------------------------------------------------------------------------------------------------------------

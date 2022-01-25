@@ -4,6 +4,7 @@ NEURAL_SRC = \
   mod_io.o \
   mod_layer.o \
   mod_network.o \
+  mod_network_rrtmgp.o \
   mod_random.o
 
 ##################################
@@ -23,4 +24,7 @@ mod_layer.o: mod_activation.o mo_rte_kind.o mod_random.o mod_layer.F90
 mod_random.o: mo_rte_kind.o mod_random.F90
 
 mod_network.o: mo_rte_kind.o mod_layer.o mod_network.F90
+
+mod_network_rrtmgp.o: mo_rte_kind.o mod_layer.o mod_network.o mo_simple_netcdf.o mod_network_rrtmgp.F90 
+
 

@@ -35,7 +35,9 @@ mo_gas_ref_concentrations.o: mo_rte_kind.o mo_rrtmgp_util_string.o mo_gas_ref_co
 #
 # Gas optics
 #
-mo_gas_optics_kernels.o: mo_rte_kind.o mo_rrtmgp_nn_constants.o mod_network.o mo_gas_optics_kernels.F90
+mo_gas_optics_kernels.o: mo_rte_kind.o mo_rrtmgp_nn_constants.o mod_network_rrtmgp.o mo_gas_optics_kernels.F90
+
+mod_network_rrtmgp.o: mod_network.o
 
 mo_gas_optics.o: mo_rte_kind.o mo_rte_rrtmgp_config.o mo_gas_concentrations.o \
   mo_optical_props.o mo_source_functions.o \
@@ -47,5 +49,5 @@ mo_gas_optics_rrtmgp.o: mo_rte_kind.o mo_rrtmgp_constants.o mo_rrtmgp_nn_constan
   mo_gas_ref_concentrations.o \
   mo_optical_props.o mo_source_functions.o \
   mo_gas_optics.o \
-  mod_network.o \
+  mod_network_rrtmgp.o \
   mo_gas_optics_rrtmgp.F90

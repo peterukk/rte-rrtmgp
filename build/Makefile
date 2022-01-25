@@ -16,18 +16,24 @@ ifeq ($(USE_OPENACC),1)
   FCFLAGS += -DUSE_OPENACC
 endif
 
+#
+# netcdf library, module files
+# C and Fortran interfaces respectively
+#
+FCINCLUDE += -I$(NFHOME)/include
+# LDFLAGS   += -L$(NFHOME)/lib -L$(NCHOME)/lib
+# LIBS      += -lnetcdff -lnetcdf
+
+
+
 RTE_KERNEL_DIR += ../rte/kernels
 RRTMGP_KERNEL_DIR += ../rrtmgp/kernels
 NEURAL_DIR = ../neural
-VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL_DIR)
+EXAMPLES_DIR = ../examples
+VPATH = $(RTE_DIR):$(RTE_KERNEL_DIR):$(RRTMGP_DIR):$(RRTMGP_KERNEL_DIR):$(NEURAL_DIR):$(EXAMPLES_DIR)
 
 ifeq ($(DOUBLE_PRECISION),1)
 	FCFLAGS += -DDOUBLE_PRECISION
-endif
-
-ifeq ($(FAST_EXPONENTIAL),1)
-    # Approximation for exp function, significantly faster on non-intel compilers
-	FCFLAGS += -DFAST_EXPONENTIAL
 endif
 
 # Use GPTL timing library? Added this to main makefile to enable

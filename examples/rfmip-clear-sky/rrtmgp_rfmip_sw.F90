@@ -87,7 +87,7 @@ program rrtmgp_rfmip_sw
                                    unblock, read_and_block_sw_bc, determine_gas_names                        
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
-  use mod_network    
+  use mod_network_rrtmgp   
 #ifdef USE_OPENACC  
   use cublas
   use openacc
@@ -120,7 +120,7 @@ program rrtmgp_rfmip_sw
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
   character (len = 80)                :: modelfile_tau, modelfile_ray
 
-  type(network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
+  type(rrtmgp_network_type), dimension(2)    :: neural_nets ! First model for predicting tau, second for tau_rayleigh
 
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
@@ -172,16 +172,26 @@ program rrtmgp_rfmip_sw
   do_gpt_flux = .false.
 
   ! Neural network models
-  modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
-  modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt"
+  ! modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.txt" 
+  ! modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.txt"
   ! modelfile_ray           = "../../neural/data/tau-sw-ray-tmp.txt"
   ! modelfile_tau           = "../../neural/data/tau-sw-abs-tmp.txt" 
 
+  modelfile_tau           = "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.nc" 
+  modelfile_ray           = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.nc"
+
+  ! if (use_rrtmgp_nn) then
+	!   ! print *, 'loading shortwave absorption model from ', modelfile_tau
+  !   call neural_nets(1) % load(modelfile_tau)
+  !   print *, 'loading rayleigh model from ', modelfile_ray
+  !   call neural_nets(2) % load(modelfile_ray)
+  !   ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
+  ! end if  
   if (use_rrtmgp_nn) then
-	  print *, 'loading shortwave absorption model from ', modelfile_tau
-    call neural_nets(1) % load(modelfile_tau)
+	  ! print *, 'loading shortwave absorption model from ', modelfile_tau
+    call neural_nets(1) % load_netcdf(modelfile_tau)
     print *, 'loading rayleigh model from ', modelfile_ray
-    call neural_nets(2) % load(modelfile_ray)
+    call neural_nets(2) % load_netcdf(modelfile_ray)
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
   end if  
   ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90

@@ -61,7 +61,7 @@ contains
     ! layer % b = randn(this_size)
   end function constructor
 
-  pure subroutine set_activation(self, activation)
+  subroutine set_activation(self, activation)
     ! Sets the activation function. Input string must match one of
     ! provided activation functions, otherwise it defaults to sigmoid.
     ! If activation not present, defaults to sigmoid.
@@ -89,8 +89,35 @@ contains
         self % activation             => linear
         self % bias_and_activation    => linear_mat_b
       case default
-        self % activation => sigmoid
+        print *, "failed to read activation function, setting to linear"
+        self % activation             => linear
+        self % bias_and_activation    => linear_mat_b
     end select
+    ! if (activation(1:8)=='gaussian') then
+    !     self % activation => gaussian
+    !     ! self % bias_and_activation => gaussian_b
+    ! else if (activation(1:4)=='relu') then
+    !     self % activation             => relu
+    !     self % bias_and_activation    => relu_mat_b
+    ! else if (activation(1:7)=='sigmoid') then
+    !     self % activation             => sigmoid
+    !     self % bias_and_activation    => sigmoid_mat_b
+    ! else if (activation(1:12)=='hard_sigmoid') then
+    !     self % activation             => hard_sigmoid
+    !     self % bias_and_activation    => hard_sigmoid_mat_b
+    ! else if (activation(1:8)=='softsign') then
+    !     self % activation             => softsign
+    !     self % bias_and_activation    => softsign_mat_b
+    ! else if (activation(1:4)=='tanh') then
+    !     self % activation => tanhf
+    ! else if (activation(1:6)=='linear') then
+    !     self % activation             => linear
+    !     self % bias_and_activation    => linear_mat_b
+    ! else
+    !     print *, "failed to read activation function, setting to linear"
+    !     self % activation             => linear
+    !     self % bias_and_activation    => linear_mat_b
+    ! end if
   end subroutine set_activation
 
 end module mod_layer

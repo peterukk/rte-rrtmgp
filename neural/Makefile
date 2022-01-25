@@ -1,11 +1,8 @@
-#FCFLAGS = -Wall -fbounds-check
-#FCFLAGS +=
-
 #LIBDIR=/usr/lib/x86_64-linux-gnu/
 #LDFLAGS += -L$(LIBDIR)
 #FCINCLUDE = -I$(LIBDIR)
-VPATH = $(LIBDIR)
-
+# VPATH = $(LIBDIR)
+# VPATH = ../examples
 -include ../Makefile.conf
 
 all: libneural.a
@@ -16,7 +13,6 @@ COMPILE = $(FC) $(FCFLAGS) $(FCINCLUDE) -c
 # above means: make all .o files from the corresponding .F90, recompiling any .F90 file that is newer
 # than the .o file ($<) 
 # should FCFLAGS come after -c?
-	
 	
 # include the file listing the library of subprograms (the object files consisting of inter-dependencies) in variable NEURAL_SRC
 include Make.depends

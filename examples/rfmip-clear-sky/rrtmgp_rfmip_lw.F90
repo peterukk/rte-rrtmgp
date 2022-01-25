@@ -87,7 +87,7 @@ program rrtmgp_rfmip_lw
                                    unblock, read_and_block_lw_bc, determine_gas_names
   use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
   use netcdf
-  use mod_network
+  use mod_network_rrtmgp
 #ifdef USE_OPENACC  
   use cublas
   use openacc     
@@ -125,7 +125,7 @@ program rrtmgp_rfmip_lw
   real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
   real(wp) :: bb_flux_up
   character (len = 80)                :: modelfile_tau, modelfile_source
-  type(network_type), dimension(2)    :: neural_nets ! First model for predicting absorption cross section, second for Planck fraction
+  type(rrtmgp_network_type), dimension(2)    :: neural_nets ! First model for predicting absorption cross section, second for Planck fraction
   logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux
   !
   ! Classes used by rte+rrtmgp

@@ -15,14 +15,14 @@
 !   source functions.
 
 module mo_gas_optics_kernels
-  use mo_rte_kind,      only : wp, wl, sp, dp
+  use mo_rte_kind,          only : wp, wl, sp, dp
   use mo_rrtmgp_nn_constants
-  use mod_network,      only: network_type, output_sgemm_tau, output_sgemm_pfrac
+  use mod_network_rrtmgp,   only: rrtmgp_network_type, output_sgemm_tau, output_sgemm_pfrac
+
   use, intrinsic :: ISO_C_BINDING
 #ifdef USE_TIMING
   ! Timing library
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
-                                   gptlpercent, gptloverhead
+  use gptl,                  only: gptlstart, gptlstop
 #endif
 
   implicit none
@@ -700,7 +700,7 @@ contains
     real(sp), dimension(:,:), target, contiguous,  &     
                                         intent(in)    :: col_dry_wk     ! needs to be assumed-shape (and explicit shaped in parent code) for OpenMP                                                             
     ! The neural network models
-    type(network_type), dimension(2),   intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets
 
     ! outputs
     real(sp), dimension(ngpt,nlay,ncol), target, &
@@ -753,7 +753,7 @@ contains
                                           intent(in)    :: nn_inputs 
     real(dp), dimension(nlay,ncol),       intent(in)    :: col_dry_wk
     ! The neural network models
-    type(network_type), dimension(2),     intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(2),     intent(in)    :: neural_nets
 
     real(dp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac, tau
     ! local
@@ -817,7 +817,7 @@ contains
     real(sp), dimension(nlay,ncol), target, &     
                                           intent(in)    :: col_dry_wk                                    
     ! The neural network models
-    type(network_type), dimension(2),   intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets
     ! outputs
     ! real(wp), dimension(ngpt,nlay,ncol), target, &
     !                                     intent(out) :: tau, ssa !
@@ -886,7 +886,7 @@ contains
                                         intent(in)    :: nn_inputs 
     real(dp), dimension(nlay,ncol),     intent(in)    :: col_dry_wk                                    
     ! The neural network models
-    type(network_type), dimension(2),   intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets
 
     ! outputs
     real(wp), dimension(ngpt,nlay,ncol), target, &

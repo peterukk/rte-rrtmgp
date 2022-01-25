@@ -39,7 +39,7 @@ module mo_gas_optics_rrtmgp
   use mo_optical_props,      only: ty_optical_props_arry, ty_optical_props_1scl, ty_optical_props_2str, ty_optical_props_nstr
   use mo_gas_optics,         only: ty_gas_optics
   use mo_rrtmgp_util_reorder
-  use mod_network
+  use mod_network_rrtmgp
   use,intrinsic :: ISO_Fortran_env
 #ifdef USE_TIMING
   !
@@ -258,7 +258,7 @@ contains
                            optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
                                                 tlev        ! level temperatures [K]; (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-    type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Emission and absorption models 
+    type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Emission and absorption models 
     ! Optional output
     ! --- FOR NN MODEL DEVELOPMENT (generating inputs and outputs)
     ! NN longwave output in Ukkonen (2020) are 1) absorption cross section = optical_props%tau / col_dry
@@ -375,6 +375,12 @@ contains
                           ncol, nlay, ninputs,  &
                           play, tlay, gas_desc,       &
                           nn_inputs)
+
+      ! error_msg = compute_nn_inputs(              &
+      !                     ncol, nlay, ninputs,    &
+      !                     play, tlay, gas_desc,   &
+      !                     neural_nets, &
+      !                     nn_inputs)                     
                           
 #ifdef USE_TIMING
     ret =  gptlstart('predict_nn_lw_blas')
@@ -446,7 +452,7 @@ contains
     real(wp), dimension(:,:),     intent(in   ), &
                             optional, target :: col_dry ! Column dry amount; dim(nlay,ncol)
     !  neural network model (uses NN kernel if present)
-    type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Absorption model, Rayleigh model 
+    type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Absorption model, Rayleigh model 
     ! optional outputs    
         ! --- FOR NN MODEL DEVELOPMENT (generating inputs and outputs)
     ! NN shortwave output in Ukkonen (2020) are 1) absorption cross section = optical_props%tau / col_dry
@@ -591,11 +597,16 @@ contains
 
   end function gas_optics_ext
 
-!------------------------------------------------------------------------------------------
-! Routine for preparing neural network inputs from the gas concentrations, temperature and pressure
-! This routine computes NN inputs for a specific model (with a given choice of gases, determined by ninputs)
-! If a gas is missing, a global-mean reference concentration is used which can be either pre-industrial, present, or future
-! For example, the current LW model needs all RRTMGP LW gases as input
+  !------------------------------------------------------------------------------------------
+  ! Routine for preparing RRTMGP-NN inputs from the gas concentrations, temperature and pressure
+  ! This routine computes inputs for a specific NN model (using a given set of gases)
+  ! The input names are loaded from the model, along with the input scaling coefficients
+  ! Currently, it's assumed that min-max scaling of inputs to 0-1 range was done prior to training,
+  ! and furthermore that prior to this min-max scaling, the following power scalings were performed:
+  ! p_input = log(p), h2o_input = h2o**(1/4), o3_input = o3**(1/4). 
+  ! Above transformations/assumptions are hardcoded, but not the min-max coefficients themselves!
+  ! If a gas is missing, a concentration of zero or alternatively a global-mean reference concentration 
+  ! can be used (pre-industrial, present, or future?)
   function compute_nn_inputs(ncol, nlay, ninputs,       &
                               play, tlay, gas_desc,           &
                               nn_inputs) result(error_msg)
@@ -604,6 +615,7 @@ contains
     real(wp), dimension(nlay,ncol),           intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                                 tlay
     type(ty_gas_concs),                       intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
+    ! type(rrtmgp_network_type), dimension(2),         intent(in)    :: neural_nets ! neural nets, needed for information about inputs
     real(sp), dimension(ninputs, nlay, ncol), intent(inout) ::  nn_inputs !
     character(len=128)                                  :: error_msg
     ! ----------------------------------------------------------
@@ -616,8 +628,8 @@ contains
         [character(len=18) :: 'present-day', 'pre-industrial', 'future']   
     real(sp)                                  :: ref_vmr
     character(len=32)                         :: gas_name 
-    character(32),  dimension(ninputs)        :: input_names
-    real(sp),       dimension(ninputs)        :: input_maxvals, input_minvals
+    character(32),  dimension(:), allocatable        :: input_names
+    real(sp),       dimension(:), allocatable        :: input_maxvals, input_minvals
     logical                                   :: print_warnings     = .false.
     ! ----------------------------------------------------------
     error_msg  = ''
@@ -647,6 +659,26 @@ contains
     end if
     if(error_msg  /= '') return
 
+    ! check that the two neural nets use the same inputs and scaling coefficients, otherwise stop
+    ! (alternatively, we could construct different inputs, calling the routine separately for each network)
+
+    !  neural_net(1)%input_names == neural_net(2)%input_names
+    ! neural_net(1)%nn_coeffs_input_max == neural_net(2)%nn_coeffs_input_max
+    ! 
+    ! input_minvals = neural_net(1)%nn_coeffs_input_min
+    ! input_maxvals = neural_net(1)%nn_coeffs_input_max
+    ! input_names   = neural_net(1)%nn_rrtmgp_inputs
+
+    ! if check_concs_within_training_range: 
+    ! do igas = 1, n inputs
+    !   error_msg = gas_desc%get_conc_dims_and_igas(input_names(igas), ndims, idx_gas)  
+    !   minval = neural_net(1)%nn_coeffs_raw_input_training_min
+    !   maxval = neural_net(1)%nn_coeffs_raw_input_training_max
+    !   if(any_vals_outside(gas_desc%concs(idx_gas), minval, maxval)) then
+    !     error_msg = "rrtmgp: gas",input_names(igas), "was outside the range of the NN training data: <=", minval, " or >" maxval
+    !     exit
+    ! end do
+    ! if(error_msg  /= '') return
 #ifdef USE_TIMING
     ret =  gptlstart('compute_nn_inputs')
 #endif
@@ -676,7 +708,8 @@ contains
     do igas = 5, ninputs
 
       ! Get the index and number of dimensions (concentration could be scalar, 1D or 2D)
-      error_msg = gas_desc%get_conc_dims_and_igas(input_names(igas), ndims, idx_gas)
+      error_msg = gas_desc%get_conc_dims_and_igas(input_names(igas), ndims, idx_gas)  
+      ! idx_gas is the location of the gas in gas_desc
 
       ! If successful, the gas was found and we can continue filling array
       if (error_msg == '') then

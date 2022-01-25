@@ -16,7 +16,7 @@ module mo_gas_optics
   use mo_source_functions,   only: ty_source_func_lw
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_optical_props,      only: ty_optical_props, ty_optical_props_arry
-  use mod_network,           only: network_type
+  use mod_network_rrtmgp,    only: rrtmgp_network_type
 
 
   type, abstract, extends(ty_optical_props), public :: ty_gas_optics
@@ -52,7 +52,7 @@ module mo_gas_optics
                                      play, plev, tlay, gas_desc,   & ! mandatory inputs
                                      optical_props, toa_src,       & ! mandatory outputs
                                      col_dry, neural_nets) result(error_msg)      ! optional input
-      import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, network_type
+      import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, rrtmgp_network_type
       class(ty_gas_optics), intent(in) :: this
       real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                  plev, &   ! level pressures [Pa, mb]; (nlay+1,ncol)
@@ -66,7 +66,7 @@ module mo_gas_optics
       real(wp), dimension(:,:), intent(in   ), &
                              optional, target :: col_dry ! Column dry amount; dim(nlay,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-                             type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model 
+                             type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model 
     end function gas_optics_ext_abstract
 
 
@@ -75,7 +75,7 @@ module mo_gas_optics
                                      optical_props, sources,           &
                                      col_dry, tlev, neural_nets       &
                                       ) result(error_msg)
-      import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw, network_type
+      import ty_gas_optics, wp, sp, ty_gas_concs, ty_optical_props_arry, ty_source_func_lw, rrtmgp_network_type
       class(ty_gas_optics),     intent(in   ) :: this
       real(wp), dimension(:,:), intent(in   ) :: play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                  plev, &   ! level pressures [Pa, mb]; (nlay+1,ncol)
@@ -91,7 +91,7 @@ module mo_gas_optics
                             optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
                                                    tlev        ! level temperatures [K]l (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-      type(network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                   
+      type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                   
     end function gas_optics_int_abstract
 
     !--------------------------------------------------------------------------------------------------------------------

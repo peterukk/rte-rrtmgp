@@ -31,7 +31,7 @@ from ml_trainfuncs_keras import create_model_mlp, savemodel
 
 def write_nn_to_netcdf(fpath, model, activation_names, input_names):
     # Model = Keras Sequential Model object describing a Dense NN
-    from netCDF4 import Dataset,num2date
+    from netCDF4 import Dataset,num2date, stringtochar
 
     # Create a netCDF file specifying the NN. in case of two hidden layers it will
     # look like this:
@@ -70,7 +70,12 @@ def write_nn_to_netcdf(fpath, model, activation_names, input_names):
     nc_activ        = dat_new.createVariable("nn_activation","str",("nn_layers"))
     nc_inputnames   = dat_new.createVariable("nn_inputs","str",(str_dim_prev))
 
+    # NetCDF Fortran can't handle strings (ugh)
+    dat_new.createDimension('string_len', 32)
+    nc_activ_char   = dat_new.createVariable("nn_activation_char","S1",("nn_layers","string_len"))
 
+    nc_activ_char[:,:] = ' '
+    
     # loop over hidden layers + output layer, where each of these are associated
     # with weights, biases and activation - create the dimension and variables of
     # each layer
@@ -103,7 +108,13 @@ def write_nn_to_netcdf(fpath, model, activation_names, input_names):
         nc_weight[:]    = weight
         nc_bias[:]      = bias
         # Write the activation function as a string
-        nc_activ[i]     = activation_names[i]
+        activ_str       = activation_names[i]
+        nc_activ[i]     = activ_str
+        
+        charfmt = "S{}".format(len(activ_str))
+        activ_chars = stringtochar(np.array(activ_str, charfmt))
+        
+        nc_activ_char[i,0:len(activ_str)] = activ_chars
         
         str_dim_prev = str_dim_this
 
@@ -199,7 +210,8 @@ else:
     
     
     
-    
+# input_names = ['tlay', 'play', 'h2o',    'o3',      'co2',    'n2o',   'ch4',   
+#  'cfc11', 'cfc12', 'co',  'ccl4',  'cfc22',  'hfc143a', 'hfc125', 'hfc23', 'hfc32', 'hfc134a', 'cf4']  
 
     
 # INPUT SCALING
@@ -332,12 +344,17 @@ model.summary()
 
 # fpath_kera = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.h5"
 fpath_keras = "/home/peter/soft/rte-rrtmgp-nn/neural/data/tau-sw-abs-tmp2.h5"
+
+# model.save(fpath_keras)
+
+from keras.models import load_model
+fpath_keras = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.h5"
+
 fpath_netcdf = fpath_keras[:-3]+".nc"
-model.save(fpath_keras)
+
+model = load_model(fpath_keras,compile=False)
+
  
 write_nn_to_netcdf(fpath_netcdf, model, activ, input_names)
 #savemodel(fpath_keras, model)
 
-# from keras.models import load_model
-# fpath_keras = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.h5"
-# model = load_model(fpath_keras,compile=False)
