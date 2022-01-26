@@ -113,8 +113,8 @@ program rrtmgp_rfmip_lw
                         kdist_file = 'coefficients_lw.nc'
   ! Neural networks for gas optics (optional) - netCDF files which describe the models and pre-processing coefficients
   ! (The two models predict SW absorption and Rayleigh scattering, respectively)
-  character(len=80)   ::  modelfile_tau= = "../../neural/data/BEST_tau-lw-18-58-58.nc", &
-                          modelfile_source        = "../../neural/data/BEST_pfrac-18-16-16.nc"
+  character(len=80)   ::  modelfile_tau = "../../neural/data/BEST_tau-lw-18-58-58.nc", &
+                          modelfile_source  = "../../neural/data/BEST_pfrac-18-16-16.nc"
   character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
   integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
@@ -184,7 +184,7 @@ program rrtmgp_rfmip_lw
   if(nargs >= 7) then
     use_rrtmgp_nn = .true.
     call get_command_argument(6, modelfile_tau)
-    call get_command_argument(7, modelfile_ray)
+    call get_command_argument(7, modelfile_source)
   end if
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
@@ -226,7 +226,7 @@ program rrtmgp_rfmip_lw
   if (use_rrtmgp_nn) then
 	  print *, 'loading longwave absorption model from ', modelfile_tau
     call neural_nets(1) % load_netcdf(modelfile_tau)
-    print *, 'loading Planck fraction model from ', modelfile_ray
+    print *, 'loading Planck fraction model from ', modelfile_source
     call neural_nets(2) % load_netcdf(modelfile_source)
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
     print *, "NN supports gases: ", &
@@ -716,3 +716,4 @@ end if
     mean3 = sum(x) / size(x)
   end function mean_3d
 
+end program rrtmgp_rfmip_lw

@@ -20,8 +20,8 @@ from tensorflow.keras.callbacks import EarlyStopping
 
 from ml_load_save_preproc import save_model_netcdf, \
     load_rrtmgp, preproc_pow_standardization_reverse,scale_gasopt
-from ml_scaling_coefficients import  ymeans_sw_absorption, ysigma_sw_absorption, \
-    ymeans_sw_ray, ysigma_sw_ray
+from ml_scaling_coefficients import * #  ymeans_sw_absorption, ysigma_sw_absorption, \
+   # ymeans_sw_ray, ysigma_sw_ray, ymeans_lw_absorption, ysigma_lw_absorption
 
 from ml_eval_funcs import plot_hist2d, plot_hist2d_T
 from ml_trainfuncs_keras import create_model_mlp, savemodel
@@ -59,8 +59,10 @@ scale_outputs = True
 
 # Choose one of the following predictands (target output)
 # 'lw_absorption', 'lw_planck_frac', 'sw_absorption', 'sw_rayleigh'
-predictand = 'sw_absorption'
+# predictand = 'sw_absorption'
 # predictand = 'sw_rayleigh'
+
+predictand = 'lw_absorption'
 
 # Scaling: currently fixed so that inputs are min-max scaled,
 # (some) outputs are first power-scaled and then standardized...see below
@@ -102,26 +104,39 @@ else: # if we only have one dataset, split manually
 # Input scaling - min-max
 
 # Load input names from netCDF file!
-input_names_sw =  ['tlay','play','h2o','o3','co2','n2o', 'ch4']
-input_names = input_names_sw
+# input_names_sw =  ['tlay','play','h2o','o3','co2','n2o', 'ch4']
 
 if use_existing_scaling_coefficients:
-    xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3, 1.41E-4, 0.00E0, 2.55E-8], dtype=np.float32)
-    xmax = np.array([ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3,
-             5.8135214E-7, 3.6000001E-6], dtype=np.float32) 
-    xcoeffs = (xmin,xmax)
+    # xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3, 1.41E-4, 0.00E0, 2.55E-8], dtype=np.float32)
+    # xmax = np.array([ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3,
+    #          5.8135214E-7, 3.6000001E-6], dtype=np.float32) 
+    # xcoeffs = (xmin,xmax)
     
     # Output scaling 
     nfac = 8 # first, transform y: y=y**(1/nfac); cheaper and weaker version of 
     # log scaling. Useful when the output is a vector which has a wide range 
     # of magnitudes across the vector elements (g-points)
     # After this, use standard-scaling
+    xmin = xmin_all
+    xmax = xmax_all
+    input_names = input_names_all
     if (predictand == 'sw_absorption'):
-        ymean  = ymeans_sw_absorption 
-        ystd   = ysigma_sw_absorption
+        ymean  = ymeans_sw_absorption_224
+        ystd   = ysigma_sw_absorption_224
+        xmin = xmin_all[0:7]; xmax = xmax_all[0:7]
+        input_names = input_names_all[0:7]
     elif (predictand == 'sw_rayleigh'):
-        ymean  = ymeans_sw_ray #
-        ystd   = ysigma_sw_ray
+        ymean  = ymeans_sw_ray_224 #
+        ystd   = ysigma_sw_ray_224
+        xmin = xmin_all[0:7]; xmax = xmax_all[0:7]
+        input_names = input_names_all[0:7]
+    elif (predictand == 'lw_absorption'):
+        ymean = ymeans_lw_absorption_256
+        ystd = ysigma_lw_absorption_256
+    elif (predictand == 'lw_planck_frac'):
+        nfac == 2
+        ymean = None
+        ystd = None
     else: 
         print("SPECIFY Y SCALING COEFFICIENTS")
 else:
@@ -260,6 +275,9 @@ model.summary()
 from keras.models import load_model
 fpath_keras = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.h5"
 fpath_keras = '../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.h5'
+
+fpath_keras = "../../neural/data/BEST_pfrac-18-16-16.h5"
+fpath_keras = '../../neural/data/BEST_tau-lw-18-58-58.h5'
 
 fpath_netcdf = fpath_keras[:-3]+".nc"
 
