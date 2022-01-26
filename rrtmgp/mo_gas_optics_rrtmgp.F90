@@ -371,16 +371,11 @@ contains
       allocate(nn_inputs(ninputs,nlay,ncol))
       !$acc enter data create(nn_inputs)
 
-      error_msg = compute_nn_inputs(                  &
-                          ncol, nlay, ninputs,  &
-                          play, tlay, gas_desc,       &
-                          nn_inputs)
-
-      ! error_msg = compute_nn_inputs(              &
-      !                     ncol, nlay, ninputs,    &
-      !                     play, tlay, gas_desc,   &
-      !                     neural_nets, &
-      !                     nn_inputs)                     
+      error_msg = compute_nn_inputs(              &
+                          ncol, nlay, ninputs,    &
+                          play, tlay, gas_desc,   &
+                          neural_nets, &
+                          nn_inputs)                     
                           
 #ifdef USE_TIMING
     ret =  gptlstart('predict_nn_lw_blas')
@@ -531,11 +526,12 @@ contains
       allocate(nn_inputs(ninputs,nlay,ncol))
       !$acc enter data create(nn_inputs)
 
-      error_msg = compute_nn_inputs(                  &
-                          ncol, nlay, ninputs,  &
-                          play, tlay, gas_desc,       &
-                          nn_inputs)   
-                          
+      error_msg = compute_nn_inputs(              &
+                          ncol, nlay, ninputs,    &
+                          play, tlay, gas_desc,   &
+                          neural_nets, &
+                          nn_inputs)  
+
       select type(optical_props)
         type is (ty_optical_props_1scl)
           ! User is asking for absorption optical depth only
@@ -599,86 +595,93 @@ contains
 
   !------------------------------------------------------------------------------------------
   ! Routine for preparing RRTMGP-NN inputs from the gas concentrations, temperature and pressure
-  ! This routine computes inputs for a specific NN model (using a given set of gases)
-  ! The input names are loaded from the model, along with the input scaling coefficients
-  ! Currently, it's assumed that min-max scaling of inputs to 0-1 range was done prior to training,
-  ! and furthermore that prior to this min-max scaling, the following power scalings were performed:
+  ! The input names are loaded from the model, along with the input scaling coefficients:
+  ! currently, it's assumed that min-max scaling of inputs to 0-1 range was done prior to training,
+  ! and furthermore that prior to this min-max scaling, the following power scalings were performed
   ! p_input = log(p), h2o_input = h2o**(1/4), o3_input = o3**(1/4). 
-  ! Above transformations/assumptions are hardcoded, but not the min-max coefficients themselves!
-  ! If a gas is missing, a concentration of zero or alternatively a global-mean reference concentration 
-  ! can be used (pre-industrial, present, or future?)
+  ! These are hardcoded assumptions, but not the min-max coefficients themselves!
+  ! If a gas used by the NN is missing from the provided concentrations, a concentration of zero
+  ! or alternatively a global-mean reference concentration can be used (pre-industrial, present, or future?)
   function compute_nn_inputs(ncol, nlay, ninputs,       &
-                              play, tlay, gas_desc,           &
+                              play, tlay, gas_desc,     &
+                              neural_nets,              &
                               nn_inputs) result(error_msg)
 
     integer,                                  intent(in   ) ::  ncol, nlay, ninputs
     real(wp), dimension(nlay,ncol),           intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                                 tlay
     type(ty_gas_concs),                       intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
-    ! type(rrtmgp_network_type), dimension(2),         intent(in)    :: neural_nets ! neural nets, needed for information about inputs
-    real(sp), dimension(ninputs, nlay, ncol), intent(inout) ::  nn_inputs !
+    type(rrtmgp_network_type), dimension(2),  intent(in)    :: neural_nets ! needed to match inputs, load coefficients
+    real(sp), dimension(ninputs, nlay, ncol), intent(inout) ::  nn_inputs 
     character(len=128)                                  :: error_msg
     ! ----------------------------------------------------------
     ! Local variables
     integer :: igas, ilay, icol, ndims, idx_h2o, idx_o3, idx_gas
-    ! Reference gas concentrations are stored in rrtmgp_ref_concentrations for each greenhouse gas 
+    ! Reference gas concentrations are stored in rrtmgp_ref_concentrations for each gas 
     ! (except H2O O3 O2 N2) for three different scenarios (present-day, pre-industrial or future)
-    integer                                   :: nn_scenario_index     = 0 ! =  0 (zero concentration), 1 (Present-day), 2 (Pre-industrial) or 3 (Future)
-    character(18), dimension(3)               :: scenario_names = &
-        [character(len=18) :: 'present-day', 'pre-industrial', 'future']   
+    ! Set below value to either 0 (zero concentration), 1 (Present-day), 2 (Pre-industrial) or 3 (Future)
+    integer                                   :: nn_scenario_index  = 0 
     real(sp)                                  :: ref_vmr
+    character(18), dimension(3)               :: scenario_names = &
+                                                [character(len=18) :: 'present-day', 'pre-industrial', 'future']   
     character(len=32)                         :: gas_name 
-    character(32),  dimension(:), allocatable        :: input_names
-    real(sp),       dimension(:), allocatable        :: input_maxvals, input_minvals
+    character(32),  dimension(:), allocatable :: input_names
+    real(sp),       dimension(:), allocatable :: input_maxvals, input_minvals
     logical                                   :: print_warnings     = .false.
     ! ----------------------------------------------------------
     error_msg  = ''
 
-    ! To support arbitrary neural network models, which may have any combination of gases, the gas names
-    ! would need to be loaded from the NN model files.
-    ! For now just support a few different options...
-    if (ninputs == 18) then        
-      if (print_warnings) print *, "using longwave neural network models which take all 16 non-constant RRTMGP LW gases as input"
-      input_names  = nn_gasopt_input_names(1:18)
-      input_minvals = nn_input_minvals(1:18)
-      input_maxvals = nn_input_maxvals(1:18)
-    ! Old code: currently not supported
-    ! else if (ninputs == 9) then
-    !   if (print_warnings) print *, "using less complex LW neural network which only uses h2o, o3, co2, n2o, ch4, cfc11-EQ and cfc12"
-    !   input_names    = nn_gasopt_input_names(1:9)
-    !   input_minvals   = nn_input_minvals(1:9)               
-    !   input_maxvals   = nn_input_maxvals(1:9)
-    else if (ninputs == 7) then
-      if (print_warnings) print *, "using shortwave neural network model which take as input the concentrations of h2o, o3, co2, n2o and ch4"
-      input_names    = nn_gasopt_input_names(1:7)
-      input_minvals   = nn_input_minvals(1:7)               
-      input_maxvals   = nn_input_maxvals(1:7)
-    else 
-     ! error_msg = "ninputs should be either 18 (full longwave model), 9 (reduced longwave model ala CKDMIP using CFC11-eq) or 7 (shortwave)"
-      error_msg = "ninputs should be either 18 (longwave) or 7 (shortwave)"
-    end if
-    if(error_msg  /= '') return
+    ! Old code with hardcoded assumptions about inputs!
+    ! if (ninputs == 18) then        
+    !   if (print_warnings) print *, "using longwave neural network models which take all 16 non-constant RRTMGP LW gases as input"
+    !   input_names  = nn_gasopt_input_names(1:18)
+    !   input_minvals = nn_input_minvals(1:18)
+    !   input_maxvals = nn_input_maxvals(1:18)
+    ! ! else if (ninputs == 9) then
+    ! !   if (print_warnings) print *, "using less complex LW neural network which only uses h2o, o3, co2, n2o, ch4, cfc11-EQ and cfc12"
+    ! !   input_names    = nn_gasopt_input_names(1:9)
+    ! !   input_minvals   = nn_input_minvals(1:9)               
+    ! !   input_maxvals   = nn_input_maxvals(1:9)
+    ! else if (ninputs == 7) then
+    !   if (print_warnings) print *, "using shortwave neural network model which take as input the concentrations of h2o, o3, co2, n2o and ch4"
+    !   input_names    = nn_gasopt_input_names(1:7)
+    !   input_minvals   = nn_input_minvals(1:7)               
+    !   input_maxvals   = nn_input_maxvals(1:7)
+    ! else 
+    !  ! error_msg = "ninputs should be either 18 (full longwave model), 9 (reduced longwave model ala CKDMIP using CFC11-eq) or 7 (shortwave)"
+    !   error_msg = "ninputs should be either 18 (longwave) or 7 (shortwave)"
+    ! end if
+    ! if(error_msg  /= '') return
 
-    ! check that the two neural nets use the same inputs and scaling coefficients, otherwise stop
-    ! (alternatively, we could construct different inputs, calling the routine separately for each network)
+    input_minvals = neural_nets(1)%coeffs_input_min
+    input_maxvals = neural_nets(1)%coeffs_input_max
+    input_names   = neural_nets(1)%input_names
 
-    !  neural_net(1)%input_names == neural_net(2)%input_names
-    ! neural_net(1)%nn_coeffs_input_max == neural_net(2)%nn_coeffs_input_max
-    ! 
-    ! input_minvals = neural_net(1)%nn_coeffs_input_min
-    ! input_maxvals = neural_net(1)%nn_coeffs_input_max
-    ! input_names   = neural_net(1)%nn_rrtmgp_inputs
+    ! Check that the two neural nets use the same inputs and scaling coefficients, otherwise stop
+    ! (alternatively, we could construct different nn_inputs, calling the routine separately for each network)
+     if(check_values) then
+      if (.not. all(neural_nets(1)%input_names == neural_nets(2)%input_names)) &
+        error_msg = "compute_nn_inputs: The two neural networks seem to use different inputs"
+      if(error_msg  /= '') return
+      if (.not. all(abs(neural_nets(1)%coeffs_input_max - neural_nets(2)%coeffs_input_max) < 1e-12)) &
+        error_msg =  "compute_nn_inputs: The two neural networks seem to use different input scaling coeffs"
+      if(error_msg  /= '') return
+      if (.not. (string_in_array('o3', input_names) .and. string_in_array('h2o', input_names))) &
+      error_msg = "compute_nn_inputs: code assumes that H2O and O3 are both inputs, but not found in input_names"
+      if(error_msg  /= '') return
+     end if
 
     ! if check_concs_within_training_range: 
     ! do igas = 1, n inputs
     !   error_msg = gas_desc%get_conc_dims_and_igas(input_names(igas), ndims, idx_gas)  
-    !   minval = neural_net(1)%nn_coeffs_raw_input_training_min
-    !   maxval = neural_net(1)%nn_coeffs_raw_input_training_max
+    !   minval = input_minvals(igas)
+    !   maxval = input_maxvals(igas)
     !   if(any_vals_outside(gas_desc%concs(idx_gas), minval, maxval)) then
     !     error_msg = "rrtmgp: gas",input_names(igas), "was outside the range of the NN training data: <=", minval, " or >" maxval
     !     exit
     ! end do
     ! if(error_msg  /= '') return
+
 #ifdef USE_TIMING
     ret =  gptlstart('compute_nn_inputs')
 #endif

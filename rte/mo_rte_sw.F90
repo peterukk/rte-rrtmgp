@@ -67,7 +67,7 @@ contains
                                                   sfc_alb_dir_gpt, &  ! surface albedo for direct and
                                                   sfc_alb_dif_gpt     ! diffuse radiation (ngpt, ncol)
     class(ty_fluxes_flexible),   intent(inout) :: fluxes                 ! Array of ty_fluxes. Default computes broadband fluxes at all levels
-    real(wp), dimension(:,:), optional, target, &
+    real(wp), dimension(:,:), optional, contiguous, target, &
                                   intent(in   ) :: inc_flux_dif    ! incident diffuse flux at top of domain [W/m2] (ngpt, ncol)
 
     ! logical,                  optional, &

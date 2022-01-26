@@ -71,7 +71,7 @@ contains
     real(wp), dimension(:,:),     intent(in   ) :: sfc_emis    ! emissivity at surface [] (nband, ncol)
     class(ty_fluxes_flexible),   intent(inout) :: fluxes      ! Array of ty_fluxes. Default computes broadband fluxes at all levels
                                                                !   if output arrays are defined. Can be extended per user desires.
-    real(wp), dimension(:,:),   &
+    real(wp), dimension(:,:), contiguous,  &
               target, optional, intent(in   ) :: inc_flux    ! incident flux at domain top [W/m2] (ngpts, ncol)
     integer,          optional, intent(in   ) :: n_gauss_angles ! Number of angles used in Gaussian quadrature
                                                                 ! (no-scattering solution)

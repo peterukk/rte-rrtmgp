@@ -19,19 +19,18 @@ Contributions welcome!
 """
 
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten
+from tensorflow.keras.layers import Dense
 from tensorflow.keras import losses, optimizers
 import tensorflow as tf
+# import tensorflow.keras.backend as K
 # from keras.models import Sequential
 # from keras.layers import Dense, Dropout, Activation, Flatten,Input
 import numpy as np
 import h5py
-import tensorflow.keras.backend as K
 # import optuna
 
 from tensorflow.python.framework import ops
-from tensorflow.python.ops import state_ops
-from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import state_ops, control_flow_ops
 from tensorflow.python.framework import constant_op
 from tensorflow.python.training.optimizer import Optimizer
 
@@ -143,64 +142,6 @@ def create_model_mlp(nx,ny,neurons=[40,40], activ=['softsign','softsign','linear
     model.add(Dense(ny, activation=activ[-1],kernel_initializer=kernel_init))
     
     return model
-
-
-def mse_weights(y_true,y_pred):
-    wg = np.array([2.0, 1.0, 2.0, 2.0], dtype=np.float32)
-    # wg = np.array([2.5, 1.0, 2.0, 2.5], dtype=np.float32)
-
-    y_true = y_true*wg
-    y_pred = y_pred*wg
-    return K.mean(K.square(y_true - y_pred),axis=0)
-
-def mae_weights(y_true,y_pred):
-    wg = np.array([2.0, 1.0, 2.0, 2.0], dtype=np.float32)
-    # wg = np.array([2.5, 1.0, 2.0, 2.5], dtype=np.float32)
-
-    y_true = y_true*wg
-    y_pred = y_pred*wg
-    return K.mean(K.abs(y_true - y_pred),axis=0)
-
-def mae_weights2(y_true,y_pred):
-    wg = np.array([4.0, 1.0, 4.0, 4.0], dtype=np.float32)
-    y_true = y_true*wg
-    y_pred = y_pred*wg
-    return K.mean(K.abs(y_true - y_pred),axis=0)
-
-def mae_sine_and_y_weight(y_true,y_pred):
-    wg = np.array([2.0, 1.0, 2.0, 2.0], dtype=np.float32)
-    # wg = np.array([2.5, 1.0, 2.0, 2.5], dtype=np.float32)
-    weights = 0.5 + (0.5* K.sin(3.14 * y_true))
-    
-    y_true = y_true*wg
-    y_pred = y_pred*wg
-    
-    return K.mean(K.abs(weights*(y_true - y_pred)),axis=0)
-
-def mse_sigweight(y_true, y_pred):
-    weights = K.sigmoid(5.0 * y_true)
-    return K.mean(K.square(weights*(y_true - y_pred),axis=0))
-
-def mse_sineweight(y_true, y_pred):
-    weights = 0.5 + (K.sin(3.14 * y_true))
-    return K.mean(K.square(weights*(y_true - y_pred)),axis=0)
-
-def mse_sineweight_nfac2(y_true, y_pred):
-    weights = 0.5 + 0.8*(K.sin(3.14 * K.square(y_true)))
-    return K.mean(K.square(weights*(y_true - y_pred)),axis=0)
-
-def mse_sineweight_nfac2_2(y_true, y_pred):
-    weights = 2.0 * (K.sin(0.8 * K.square(y_true) )) - 1.0
-    return K.mean(K.square(weights*(y_true - y_pred)),axis=0)
-
-def mse_sineweight_nfac2_3(y_true, y_pred):
-    # weights = 2.0 * (K.sin(0.5 * K.square(y_true) )) - 1.0
-    weights = 2.0 * (K.sin(0.5 * K.square(y_true) )) - 0.4
-    # weights[:,1] = 1.0
-    # weights_n = tf.unstack(weights)
-    # weights_n[:,1] = 1.0
-    # weights = tf.stack(weights_n)
-    return K.mean(K.square(weights*(y_true - y_pred)),axis=-1)
 
 
 
