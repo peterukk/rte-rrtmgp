@@ -175,34 +175,34 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     # and outputs are vectors of optical properties across g-points (e.g. optical depth)
     dat = Dataset(fname)
     
-    if predictand not in ['tau_lw', 'planck_frac', 'tau_sw', 'tau_sw_abs', 
-                          'tau_sw_ray', 'ssa_sw']:
+    if predictand not in ['lw_absorption', 'lw_planck_frac', 'sw_absorption', 
+                          'sw_rayleigh']: 
         sys.exit("Second drgument to load_rrtmgp (predictand) " \
-        "must be either tau_lw, planck_frac, tau_sw, tau_sw_abs, tau_sw_ray, or ssa_sw")
+        "must be either lw_absorption, lw_planck_frac, sw_absorption, or sw_rayleigh")
             
     # inputs
-    if predictand in ["tau_lw", "planck_frac"]: # Longwave
+    if predictand in ["lw_absorption", "lw_planck_frac"]: # Longwave
         x = dat.variables['rrtmgp_lw_input'][:].data
     else: # Shortwave
         x = dat.variables['rrtmgp_sw_input'][:].data
     nx = x.shape[-1]
     
     # outputs
-    if (predictand=='tau_sw_ray'):
+    if (predictand=='sw_rayleigh'):
         ssa = dat.variables['ssa_sw_gas'][:].data
         tau = dat.variables['tau_sw_gas'][:].data
-        y = tau * ssa # tau_sw_ray = tau_tot * single scattering albedo
+        y = tau * ssa # tau_sw_rayleigh = tau_tot * single scattering albedo
         del tau, ssa
-    elif (predictand=='tau_sw_abs'):
+    elif (predictand=='sw_absorption'):
         ssa = dat.variables['ssa_sw_gas'][:].data
         tau = dat.variables['tau_sw_gas'][:].data
-        tau_sw_ray = tau * ssa
-        y = tau - tau_sw_ray # tay_sw_abs = tau_tot - tau_ray
-        del tau, ssa, tau_sw_ray
+        tau_sw_rayleigh = tau * ssa
+        y = tau - tau_sw_rayleigh # tay_sw_abs = tau_tot - tau_ray
+        del tau, ssa, tau_sw_rayleigh
     else:
         y  = dat.variables[predictand][:].data
         
-    # if predictand in ['tau_lw','tau_sw', 'ssa_sw']:
+    # if predictand in ['lw_absorption','tau_sw', 'ssa_sw']:
     col_dry = dat.variables['col_dry'][:].data
     
     if np.size(y.shape) == 4:

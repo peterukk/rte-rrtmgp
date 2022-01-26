@@ -111,17 +111,16 @@ program rrtmgp_rfmip_sw
   !
   character(len=132)  ::  rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
                           kdist_file = 'coefficients_sw.nc'
-  character(len=132)  ::  flx_file, flx_file_ref, flx_file_lbl, timing_file
-  integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
-  logical 	          ::  top_at_1, do_scattering
-  integer             ::  b, icol, ilay,ibnd, igpt, igas, ncid, ngas, ninputs, count_rate, iTime1, iTime2, iTime3, ret, i, istat
-  character(len=4)    ::  block_size_char, forcing_index_char = '1'
-  character(len=32 ), dimension(:),  allocatable   ::  kdist_gas_names, rfmip_gas_names
   ! Neural networks for gas optics (optional) - netCDF files which describe the models and pre-processing coefficients
   ! (The two models predict SW absorption and Rayleigh scattering, respectively)
   character(len=80)   ::  modelfile_tau= "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.nc", &
                           modelfile_ray= "../../neural/data/BEST_tau-sw-ray-7-16-16_2.nc"
-  type(rrtmgp_network_type), dimension(2)    :: neural_nets ! First model is absorption, second is Rayleigh
+  character(len=132)  ::  flx_file, flx_file_ref, flx_file_lbl, timing_file
+  integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
+  logical 	      ::  top_at_1
+  integer             ::  b, icol, ilay,ibnd, igpt, igas, ncid, ninputs, count_rate, iTime1, iTime2, iTime3, ret, i, istat
+  character(len=4)    ::  block_size_char, forcing_index_char = '1'
+  character(len=32 ), dimension(:),  allocatable   ::  kdist_gas_names, rfmip_gas_names
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
   real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir
@@ -130,6 +129,8 @@ program rrtmgp_rfmip_sw
                                                      ! block_size, nblocks
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
   real(wp), dimension(:),             allocatable :: temparray
+  real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
+  real(wp) :: def_tsi_s
 
   logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux
   !
@@ -138,6 +139,7 @@ program rrtmgp_rfmip_sw
   type(ty_gas_optics_rrtmgp)                    :: k_dist
   type(ty_optical_props_2str)                   :: optical_props
   type(ty_fluxes_flexible)                      :: fluxes
+  type(rrtmgp_network_type), dimension(2)        :: neural_nets ! First model is absorption, second is Rayleigh
 
   real(wp), dimension(:,:), allocatable         :: toa_flux ! block_size, ngpt
   real(wp), dimension(:  ), allocatable         :: def_tsi, mu0    ! block_size
@@ -147,14 +149,14 @@ program rrtmgp_rfmip_sw
   !   leverage what we know about the input file
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
-  real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
-  real(wp) :: def_tsi_s
+
   ! Initialize GPU kernel
 #ifdef USE_OPENACC  
   type(cublasHandle) :: h
   istat = cublasCreate(h) 
   ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
 #endif
+
   ! -------------------------------------------------------------------------------------------------
   !
   ! Code starts
@@ -179,8 +181,8 @@ program rrtmgp_rfmip_sw
   read(block_size_char, '(i4)') block_size
   if(nargs >= 2) call get_command_argument(2, rfmip_file)
   if(nargs >= 3) call get_command_argument(3, kdist_file)
-  ! if(nargs >= 4) call get_command_argument(4, physics index_char)
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
+
   if(nargs == 5) stop "provide 1-4 or 6 arguments"
   if(nargs >= 6) then
     use_rrtmgp_nn = .true.
@@ -202,6 +204,7 @@ program rrtmgp_rfmip_sw
   if(forcing_index < 1 .or. forcing_index > 4) &
     stop "Forcing index is invalid (must be 1,2 or 3)"
 
+  ! Save upwelling and downwelling fluxes in the same file
   if (use_rrtmgp_nn) then
     flx_file = 'output_fluxes/rsud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
   else
@@ -301,18 +304,6 @@ program rrtmgp_rfmip_sw
   ! allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
   allocate(mu0(block_size), sfc_alb_spec(ngpt,block_size))
 
-  ! ! Below is to show how we can use abstract types in high-level code, which is
-  ! ! useful for letting the actual type be configured from I/O: in this instance,
-  ! ! if calculations which include scattering are desired, the abstract derived type 
-  ! ! optical_props will be initialized as optical_props_2str which holds ssa and g
-  ! do_scattering = .true.
-
-  ! if(do_scattering) then
-  !   optical_props = make_2str()
-  ! else
-  !   optical_props = make_1scl()
-  ! end if
-
   ! Alloc is generic and calls appropriate allocation routine for the specific type of optical_props
   ! call stop_on_err(optical_props%alloc(block_size, nlay, k_dist))
   call stop_on_err(optical_props%alloc_2str(block_size, nlay, k_dist))
@@ -334,7 +325,7 @@ program rrtmgp_rfmip_sw
   ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
 #endif
 #endif  
-  ret =  gptlinitialize()
+  ret = gptlinitialize()
 #endif
 
   ! --------------------------------------------------
@@ -680,7 +671,6 @@ do i = 1, 32
     print *, "MAE in net flux w.r.t. RRTMGP-224      ", &
     mae(reshape(rsdu_ref(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
 
-
     print *, "Max-diff in d.w. flux w.r.t. RRTMGP-224", &
      maxval(abs(rsd_ref(:,:,:)-rsd_nn(:,:,:)))
  
@@ -698,18 +688,6 @@ do i = 1, 32
   print *, "SUCCESS!"
 
   contains
-  subroutine standardscaler(x,means,stdevs)
-    implicit none
-    real(wp), dimension(:,:,:,:), intent(inout) :: x 
-    real(wp), dimension(:),       intent(in   ) :: means,stdevs
-
-    integer :: i
-
-    do i=1,ngas
-      x(:,:,i,:) = x(:,:,i,:) - means(i) 
-      x(:,:,i,:) = x(:,:,i,:) / stdevs(i)
-    end do
-  end subroutine standardscaler
 
   function rmse(x1,x2) result(res)
     implicit none 

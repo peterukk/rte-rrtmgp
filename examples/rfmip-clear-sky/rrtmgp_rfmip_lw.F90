@@ -99,6 +99,7 @@ program rrtmgp_rfmip_lw
   use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr_file, gptlfinalize, gptlsetoption, &
                                    gptlpercent, gptloverhead, gptlsetutr
 #endif
+
   implicit none
 
 #ifdef USE_PAPI  
@@ -108,9 +109,14 @@ program rrtmgp_rfmip_lw
   !
   ! Local variables
   !
-  character(len=132) :: rfmip_file,kdist_file
-  character(len=132) :: flxdn_file, flxup_file, flx_file, flx_file_ref, flx_file_lbl, timing_file
-  integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
+  character(len=132) :: rfmip_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
+                        kdist_file = 'coefficients_lw.nc'
+  ! Neural networks for gas optics (optional) - netCDF files which describe the models and pre-processing coefficients
+  ! (The two models predict SW absorption and Rayleigh scattering, respectively)
+  character(len=80)   ::  modelfile_tau= = "../../neural/data/BEST_tau-lw-18-58-58.nc", &
+                          modelfile_source        = "../../neural/data/BEST_pfrac-18-16-16.nc"
+  character(len=132) :: flx_file, flx_file_ref, flx_file_lbl, timing_file
+  integer            :: nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
   logical            :: top_at_1
   integer            :: b, icol, ilay, ibnd, igpt, count_rate, iTime1, iTime2, iTime3, ncid, ninputs, istat, igas, ret, i
   character(len=5)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
@@ -122,47 +128,28 @@ program rrtmgp_rfmip_lw
   real(wp), dimension(:,:,:),         allocatable :: rlu_ref, rld_ref, rlu_nn, rld_nn, rlu_lbl, rld_lbl, rldu_ref, rldu_nn, rldu_lbl, col_dry
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis_spec    ! nbands, block_size (spectrally-resolved emissivity)
-  real(wp), dimension(:),             allocatable :: means,stdevs ,temparray
   real(wp) :: bb_flux_up
-  character (len = 80)                :: modelfile_tau, modelfile_source
-  type(rrtmgp_network_type), dimension(2)    :: neural_nets ! First model for predicting absorption cross section, second for Planck fraction
+
   logical 		                        :: use_rrtmgp_nn, do_gpt_flux, compare_flux, save_flux
   !
   ! Classes used by rte+rrtmgp
   !
   type(ty_gas_optics_rrtmgp)  :: k_dist
   type(ty_source_func_lw)     :: source
-
   type(ty_optical_props_1scl) :: optical_props
   type(ty_fluxes_flexible)   :: fluxes
+  type(rrtmgp_network_type), dimension(2)    :: neural_nets ! First model is for absorption, second is for Planck fraction
   !
   ! ty_gas_concentration holds multiple columns; we make an array of these objects to
   !   leverage what we know about the input file
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
+
   ! Initialize GPU kernel
 #ifdef USE_OPENACC  
   type(cublasHandle) :: h
   istat = cublasCreate(h) 
   ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
-#endif
-
-#ifdef USE_TIMING
-  print *, "using GPTL timing library"
-  !
-  ! Initialize timers
-  !
-  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
-  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
-
-#ifdef USE_PAPI  
-#ifdef DOUBLE_PRECISION
-  ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
-#else
-  ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
-#endif
-#endif  
-  ret = gptlinitialize()
 #endif
 
   ! -------------------------------------------------------------------------------------------------
@@ -171,8 +158,8 @@ program rrtmgp_rfmip_lw
   !   all arguments are optional
   !
   !  ------------ I/O and settings -----------------
-  ! Use neural networks for gas optics? 
-  use_rrtmgp_nn      = .true.
+  ! Use neural networks for gas optics?  if NN models provided, set to true, but can also be overriden
+  use_rrtmgp_nn      = .false.
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
@@ -180,28 +167,9 @@ program rrtmgp_rfmip_lw
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
+  print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)]  input_output file]"
+  print *, "OR:  rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index] [physics_index] [NN_lw_abs_file] [NN_lw_planck_file]"
 
-  ! ------------ Neural network model weights -----------------
-  ! Model for predicting longwave absorption cross-section
-  modelfile_tau           = "../../neural/data/BEST_tau-lw-18-58-58.txt" 
-  ! Model for predicting Planck fraction
-  modelfile_source        = "../../neural/data/BEST_pfrac-18-16-16.txt"
-
-  if (use_rrtmgp_nn) then
-	  print *, 'loading longwave absorption model from ', modelfile_tau
-    call neural_nets(1) % load(modelfile_tau)
-    print *, 'loading Planck fraction model from ', modelfile_source
-    call neural_nets(2) % load(modelfile_source)
-    ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
-  end if  
-  ! Note: The coefficients for scaling the inputs and outputs are currently hard-coded in mo_gas_optics_rrtmgp.F90
-
-  ! Save upwelling and downwelling fluxes in the same file
-  flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f1_gn.nc'
-  
-  ! flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f1_gn.nc'
-
-  print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] [forcing_index (1,2,3)] [physics_index (1,2)] [optional gas optics input_output file]"
   nargs = command_argument_count()
 
   call get_command_argument(1, block_size_char)
@@ -212,13 +180,18 @@ program rrtmgp_rfmip_lw
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
   if(nargs >= 5) call get_command_argument(5, physics_index_char)
 
+  if(nargs == 6) stop "provide 1-5 or 7 arguments"
+  if(nargs >= 7) then
+    use_rrtmgp_nn = .true.
+    call get_command_argument(6, modelfile_tau)
+    call get_command_argument(7, modelfile_ray)
+  end if
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
   call read_size(rfmip_file, ncol, nlay, nexp)
+
   print *, "input file:", rfmip_file
-  print *, "ncol:", ncol
-  print *, "nexp:", nexp
-  print *, "nlay:", nlay
+  print *, "nexp:", nexp, "ncol:", ncol, "nlay:", nlay
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
@@ -232,6 +205,13 @@ program rrtmgp_rfmip_lw
   if(physics_index < 1 .or. physics_index > 2) &
     stop "Physics index is invalid (must be 1 or 2)"
   if(physics_index == 2) n_quad_angles = 3
+
+  ! Save upwelling and downwelling fluxes in the same file
+  if (use_rrtmgp_nn) then
+    flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-NN-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
+  else
+    flx_file = 'output_fluxes/rlud_Efx_RTE-RRTMGP-181204_rad-irf_r1i1p1f' // trim(forcing_index_char) // '_gn.nc'
+  end if
                 
   !
   ! Identify the set of gases used in the calculation based on the forcing index
@@ -239,9 +219,19 @@ program rrtmgp_rfmip_lw
   !   provided by RFMIP (e.g. 'co2' and 'carbon_dioxide')
   !
   call determine_gas_names(rfmip_file, kdist_file, forcing_index, kdist_gas_names, rfmip_gas_names)
-  ! print *, "Calculation uses RFMIP gases 1:", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
-  ! print *, "Calculation uses RFMIP gases 2:", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
+  ! print *, "Calculation uses RFMIP gases: ", (trim(rfmip_gas_names(b)) // " ", b = 1, size(rfmip_gas_names))
+  print *, "Calculation uses RFMIP gases: ", (trim(kdist_gas_names(b)) // " ", b = 1, size(kdist_gas_names))
 
+  ! Load Neural Network models
+  if (use_rrtmgp_nn) then
+	  print *, 'loading longwave absorption model from ', modelfile_tau
+    call neural_nets(1) % load_netcdf(modelfile_tau)
+    print *, 'loading Planck fraction model from ', modelfile_ray
+    call neural_nets(2) % load_netcdf(modelfile_source)
+    ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
+    print *, "NN supports gases: ", &
+    (trim(neural_nets(1)%input_names(b)) // " ", b = 3, size(neural_nets(1)%input_names))
+  end if  
   ! --------------------------------------------------
   !
   ! Prepare data for use in rte+rrtmgp
@@ -260,7 +250,9 @@ program rrtmgp_rfmip_lw
   ! Read the gas concentrations and surface properties
   !
   call read_and_block_gases_ty(rfmip_file, block_size, kdist_gas_names, rfmip_gas_names, gas_conc_array)
-  ! print *, "These gases provided: ", (trim(gas_conc_array(1)%gas_name(b)) // " ", b = 1, size(gas_conc_array(1)%gas_name))
+  ! do b = 1, size(gas_conc_array(1)%concs)
+  !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
+  ! end do
 
   call read_and_block_lw_bc(rfmip_file, block_size, sfc_emis, sfc_t)
   
@@ -281,8 +273,7 @@ program rrtmgp_rfmip_lw
 
   nbnd = k_dist%get_nband()
   ngpt = k_dist%get_ngpt()
-  ngas = k_dist%get_ngas()
-  print *, "in total: ", ngas, " input gases"
+
   !
   ! RRTMGP won't run with pressure less than its minimum. The top level in the RFMIP file
   !   is set to 10^-3 Pa. Here we pretend the layer is just a bit less deep.
@@ -318,14 +309,29 @@ program rrtmgp_rfmip_lw
   call stop_on_err(optical_props%alloc_1scl(block_size, nlay, k_dist))
   ! --------------------------------------------------
 
+#ifdef USE_TIMING
+  !
+  ! Initialize timers
+  !
+  ret = gptlsetoption (gptlpercent, 1)        ! Turn on "% of" print
+  ret = gptlsetoption (gptloverhead, 0)       ! Turn off overhead estimate
+#ifdef USE_PAPI  
+#ifdef DOUBLE_PRECISION
+  ret = GPTLsetoption (PAPI_DP_OPS, 1);         ! Turn on FLOPS estimate (DP)
+#else
+  ret = GPTLsetoption (PAPI_SP_OPS, 1);         ! Turn on FLOPS estimate (SP)
+#endif
+#endif  
+  ret = gptlinitialize()
+#endif
 
 #ifdef USE_OPENMP
     print *, "OpenMP processes available:", omp_get_num_procs()
 #endif
   if (use_rrtmgp_nn) then
-    print *, "starting clear-sky longwave computations, using neural networks as RRTMGP kernel"
+    print *, "starting clear-sky LW computations, using neural networks as RRTMGP kernel"
   else
-    print *, "starting clear-sky longwave computations, using lookup-table as RRTMGP kernel"
+    print *, "starting clear-sky LW computations, using lookup-table as RRTMGP kernel"
   end if
   call system_clock(count_rate=count_rate)
   call system_clock(iTime1)
@@ -395,7 +401,6 @@ program rrtmgp_rfmip_lw
     end if
     ! print *, "mean of pfrac is:", mean_3d(planck_frac(:,:,:,b))   
     ! !$acc update host(optical_props%tau)
-    ! print *, "max of tau is:", maxval(optical_props%tau)
     ! print *, "mean of tau is:", mean_3d(optical_props%tau)
     ! print *, "mean of lay_source is:", mean_3d(source%lay_source)
     ! print *, "mean of lev_source is:", mean_3d(source%lev_source)
@@ -419,10 +424,6 @@ program rrtmgp_rfmip_lw
 #ifdef USE_TIMING
     ret =  gptlstop('rte_lw')
 #endif
-  ! allocate(temparray(   block_size*(nlay+1))) 
-  ! temparray = pack(fluxes%flux_dn(:,:),.true.)
-  ! print *, "mean of flux_down is:", sum(temparray, dim=1)/size(temparray, dim=1)  !  mean of flux_down is:   103.2458
-  ! deallocate(temparray)
 
   end do ! blocks
 #ifdef USE_OPENMP
@@ -471,13 +472,9 @@ end if
 
   ! Compare fluxes to benchmark line-by-line results, alongside reference RTE+RRTMGP computations?
   if (compare_flux) then
-      print *, "-----------------------------------------------------------------------------------------------------"
-    if (use_rrtmgp_nn) then
-      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (using NNs) AND ORIGINAL CODE IN DP -------"
-    else
-      print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW FLUXES (not using NNs) AND ORIGINAL CODE IN DP ---"
-    end if
-      print *, "-----------------------------------------------------------------------------------------------------"
+    print *, "-----------------------------------------------------------------------------------------------------"
+    print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) OF NEW RESULTS AND RRTMGP-256  -------"
+    print *, "-----------------------------------------------------------------------------------------------------"
 
     allocate(rld_ref( nlay+1, ncol, nexp))
     allocate(rlu_ref( nlay+1, ncol, nexp))  
@@ -666,18 +663,6 @@ end if
   print *, "SUCCESS!"
 
   contains
-  subroutine standardscaler(x,means,stdevs)
-    implicit none
-    real(wp), dimension(:,:,:,:), intent(inout) :: x 
-    real(wp), dimension(:),       intent(in   ) :: means,stdevs
-
-    integer :: i
-
-    do i=1,ngas
-      x(:,:,i,:) = x(:,:,i,:) - means(i) 
-      x(:,:,i,:) = x(:,:,i,:) / stdevs(i)
-    end do
-  end subroutine standardscaler
 
   function rmse(x1,x2) result(res)
     implicit none 
@@ -710,32 +695,24 @@ end if
 
   end function bias
 
-  function mean(x1) result(mean1)
+  function mean(x) result(mean1)
     implicit none 
-    real(wp), dimension(:), intent(in) :: x1
+    real(wp), dimension(:), intent(in) :: x
     real(wp) :: mean1
-    
-    mean1 = sum(x1, dim=1)/size(x1, dim=1)
-
+    mean1 = sum(x) / size(x)
   end function mean
 
-  function mean_3d(x3) result(mean3)
+  function mean_2d(x) result(mean2)
     implicit none 
-    real(wp), dimension(:,:,:), intent(in) :: x3
-    real(wp) :: mean3
-    
-    mean3 = sum(sum(sum(x3, dim=1),dim=1),dim=1) / (size(x3))
-
-  end function mean_3d
-
-  function mean_2d(x2) result(mean2)
-    implicit none 
-    real(wp), dimension(:,:), intent(in) :: x2
+    real(wp), dimension(:,:), intent(in) :: x
     real(wp) :: mean2
-    
-    mean2 = sum(sum(x2, dim=1),dim=1) / (size(x2))
-
+    mean2 = sum(x) / size(x)
   end function mean_2d
 
-end program rrtmgp_rfmip_lw
+  function mean_3d(x) result(mean3)
+    implicit none 
+    real(wp), dimension(:,:,:), intent(in) :: x
+    real(wp) :: mean3
+    mean3 = sum(x) / size(x)
+  end function mean_3d
 
