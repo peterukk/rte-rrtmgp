@@ -113,10 +113,11 @@ contains
     !$acc enter data create(this%sfc_source, this%sfc_source_Jac, this%lev_source, this%lay_source)
   end function alloc_lw
   ! --------------------------------------------------------------
-  function copy_and_alloc_lw(this, ncol, nlay, spectral_desc) result(err_message)
+  function copy_and_alloc_lw(this, ncol, nlay, spectral_desc, save_pfrac) result(err_message)
     class(ty_source_func_lw),    intent(inout) :: this
     integer,                     intent(in   ) :: ncol, nlay
     class(ty_optical_props ),    intent(in   ) :: spectral_desc
+    logical,     optional,       intent(in   ) :: save_pfrac
     character(len = 128)                       :: err_message
 
     err_message = ""
@@ -127,7 +128,11 @@ contains
     call this%finalize()
     err_message = this%init(spectral_desc)
     if (err_message /= "") return
-    err_message = this%alloc(ncol,nlay)
+    if(present(save_pfrac)) then
+      err_message = this%alloc(ncol,nlay,save_pfrac)
+    else 
+      err_message = this%alloc(ncol,nlay)
+    end if
   end function copy_and_alloc_lw
   ! ------------------------------------------------------------------------------------------
   !

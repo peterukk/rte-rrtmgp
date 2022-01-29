@@ -1,19 +1,15 @@
-! This program is for generating training data for neural network emulators of RRTMGP-SW
-
-! Data is loaded from a RFMIP-style netCDF files containing atmospheric profiles, RTE+RRTMGP is run,
-! and finally RRTMGP input and output is saved to a netCDF file which can be used for ML training
+! This program is for generating training data for neural network emulators of RRTMGP-LW
 !
 ! The RRTMGP inputs, used as NN inputs, are layer-wise RRTMGP input variables (T, p, gas concentrations)
 ! The fina lRRTMGP outputs are optical depth tau and single-scattering albedo ssa. These could be used as NN outputs, 
-! but in order to support the methodology in Ukkonen (2020), where two separate NNs predict absorption or
-! Rayleigh scattering cross-sections, for convenience the layer number of dry air molecules (N) are also saved
+! but in order to support the methodology in Ukkonen (2020), where two separate NNs predict absorption cross-section
+! and Planck fractions, for convenience the layer number of dry air molecules (N) are also saved
 ! 
-! y_abs      = (tau - tau_ray) / N = (tau - tau*ssa) / N
-! y_rayleigh = (tau*ssa) / N 
+! y_abs      = (tau) / N 
 ! Ukkonen et al. (2020): https://doi.org/10.1029/2020MS002226
 !
 ! Fortran program arguments:
-! rrtmgp_sw_gendata_rfmipstyle [block_size] [input file] [k-distribution file] [file to save NN inputs/outputs]"
+! rrtmgp_lw_gendata_rfmipstyle [block_size] [input file] [k-distribution file] [file to save NN inputs/outputs]"
 !
 ! Developed by Peter Ukkonen (built on RFMIP example, and existing RTE+RRTMGP code by Robert Pincus)
 !
@@ -29,7 +25,7 @@ subroutine stop_on_err(error_msg)
 
   if(error_msg /= "") then
     write (error_unit,*) trim(error_msg)
-    write (error_unit,*) "rrtmgp_rfmip_sw stopping"
+    write (error_unit,*) "rrtmgp_rfmip_lw stopping"
     stop
   end if
 end subroutine stop_on_err
@@ -38,7 +34,7 @@ end subroutine stop_on_err
 ! Main program
 !
 ! -------------------------------------------------------------------------------------------------
-program rrtmgp_rfmip_sw
+program rrtmgp_rfmip_lw
   ! --------------------------------------------------
   !
   ! Modules for working with rte and rrtmgp
@@ -48,29 +44,33 @@ program rrtmgp_rfmip_sw
 #endif
   ! Working precision for real variables
   !
-  use mo_rte_kind,           only: wp, sp
+  use mo_rte_kind,           only: wp, sp, wl, i4
   !
   ! Optical properties of the atmosphere as array of values
-  !   Shortwave calculations use optical depth, single-scattering albedo, asymmetry parameter (_2str)
+  !   In the longwave we include only absorption optical depth (_1scl)
   !
-  use mo_optical_props,      only: ty_optical_props_2str 
+  use mo_optical_props,      only: ty_optical_props_1scl
   !
   ! Gas optics: maps physical state of the atmosphere to optical properties
   !
   use mo_gas_optics_rrtmgp,  only: ty_gas_optics_rrtmgp, compute_nn_inputs, get_col_dry
   !
-  ! Gas optics uses a derived type to represent gas concentrations compactly
+  ! Gas optics uses a derived type to represent gas concentrations compactly...
   !
   use mo_gas_concentrations, only: ty_gas_concs
   !
-  ! RTE shortwave driver
+  ! ... and another type to encapsulate the longwave source functions.
   !
-  use mo_rte_sw,             only: rte_sw
+  use mo_source_functions,   only: ty_source_func_lw
+  !
+  ! RTE longwave driver
+  !
+  use mo_rte_lw,             only: rte_lw
   !
   ! RTE driver uses a derived type to reduce spectral fluxes to whatever the user wants
   !   Here we're using a flexible type which saves broadband fluxes and optionally g-point fluxes
   !
-  use mo_fluxes,             only: ty_fluxes_flexible
+  use mo_fluxes,             only: ty_fluxes_broadband, ty_fluxes_flexible
   ! --------------------------------------------------
   !
   ! modules for reading and writing files
@@ -79,9 +79,9 @@ program rrtmgp_rfmip_sw
   !
   use mo_load_coefficients,  only: load_and_init
   use mo_io_rfmipstyle_generic, only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
-                                   read_and_block_sw_bc, determine_gas_names                             
+                                   read_and_block_lw_bc, determine_gas_names                             
   use netcdf
-  use easy_netcdf    
+  use easy_netcdf        
 #ifdef USE_TIMING
   !
   ! Timing library
@@ -99,50 +99,38 @@ program rrtmgp_rfmip_sw
   !
   ! Local variables
   !
-  character(len=132)  ::  input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
-                          kdist_file = '../../rrtmgp/data/rrtmgp-data-sw-g224-2018-12-04.nc'
-  character(len=132)  ::  flx_file, timing_file, nndev_file='', nn_input_str, cmt
-  integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size
-  logical             ::  top_at_1
-  integer             ::  b, icol, ilay, igpt, ngas, ninputs, num_gases, ret, i, istat
-  character(len=4)    ::  block_size_char
-  character(len=6)    ::  emulated_component
+  character(len=132) :: input_file = 'multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc', &
+                        kdist_file = 'coefficients_lw.nc'
+  character(len=132) :: flx_file, timing_file, nndev_file='', nn_input_str, cmt
+  integer            :: nargs, ncol, nlay, nbnd, ngas, ngpt, nexp, nblocks, block_size, forcing_index, physics_index, n_quad_angles = 1
+  logical            :: top_at_1
+  integer            :: b, icol, ilay, ibnd, igpt, ninputs, num_gases, istat, igas, ret, i
+  character(len=5)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
   character(len=32 ), dimension(:),     allocatable :: kdist_gas_names, input_file_gas_names, gasopt_input_names
-  ! Output fluxes
-  real(wp), dimension(:,:,:),   target, allocatable :: flux_up, flux_dn, flux_dn_dir
-  real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir
-  ! Thermodynamic and other variables
-  real(wp), dimension(:,:,:),           allocatable :: p_lay, p_lev, t_lay, t_lev ! nlay, block_size, nblocks
-  real(wp), dimension(:,:  ),           allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
-                                                     ! block_size, nblocks
-  real(wp), dimension(:,:  ),           allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
+  real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
+  real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
+  real(wp), dimension(:,:,:,:), target, allocatable :: gpt_flux_up, gpt_flux_dn
+  real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
+  real(wp), dimension(:,:  ),         allocatable :: sfc_emis_spec    ! nbands, block_size (spectrally-resolved emissivity)
   ! Optical properties and column dry amounts for NN development
-  real(sp), dimension(:,:,:,:),         allocatable :: tau_sw, ssa_sw 
+  real(sp), dimension(:,:,:,:),         allocatable :: tau_lw, planck_frac 
   real(wp), dimension(:,:,:),           allocatable :: col_dry, vmr_h2o
   ! RRTMGP inputs for NN development
   real(sp), dimension(:,:,:,:),         allocatable :: nn_gasopt_input ! (nfeatures,nlay,block_size,nblocks)
-  ! RTE inputs for NN development
-  real(sp),                             allocatable :: toa_flux_save(:,:,:), sfc_alb_spec_save(:,:,:), mu0_save(:,:)
-  !
   ! logicals to control program
-  logical ::  do_gpt_flux, save_input_vectors = .true.
+  logical 	:: do_gpt_flux, save_input_vectors = .true.
   !
   ! Derived types from the RTE and RRTMGP libraries
   !
-  type(ty_gas_optics_rrtmgp)                    :: k_dist
-  type(ty_optical_props_2str)                   :: atmos
-  type(ty_fluxes_flexible)                      :: fluxes
-
-  real(wp), dimension(:,:), allocatable          :: toa_flux ! ngpt, block_size
-  real(wp), dimension(:  ), allocatable          :: def_tsi, mu0    ! block_size
-  logical , dimension(:,:), allocatable          :: usecol ! block_size, nblocks
+  type(ty_gas_optics_rrtmgp)  :: k_dist
+  type(ty_source_func_lw)     :: source
+  type(ty_optical_props_1scl) :: atmos
+  type(ty_fluxes_flexible)   :: fluxes
   !
   ! ty_gas_concentration holds multiple columns; we make an array of these objects to
   !   leverage what we know about the input file
   !
   type(ty_gas_concs), dimension(:), allocatable  :: gas_conc_array
-  real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
-  real(wp) :: def_tsi_s
   ! ecRAD type netCDF IO
   type(netcdf_file)  :: nndev_file_netcdf
 
@@ -155,22 +143,50 @@ program rrtmgp_rfmip_sw
   ! Compute fluxes per g-point?
   do_gpt_flux   = .false.
 
-  !
   ! Identify the set of gases used in the calculation 
-  ! A gas might have a different name in the k-distribution than in the files
-  ! provided (e.g. 'co2' and 'carbon_dioxide'), user needs to provide the correct ones
-  !
-  kdist_gas_names = ["h2o  ","o3   ","co2  ","n2o  ", "ch4  ","o2   ", "n2   "] !,"no2  "]
-  input_file_gas_names =  ['water_vapor   ', &
-                    'ozone         ', &
-                    'carbon_dioxide', &
-                    'nitrous_oxide ', &
-                    'methane       ', &
-                    'oxygen        ', &
-                    'nitrogen      ']!,'no2           ']  
+  ! The data file might have gases we're not interested in, so the gas names should be provided
+  ! by the user somehow, checked that they're in the file, and then mapped to the k-distribution
+  ! since a gas might have a different name in the k-distribution file
+  ! A lot of this could be done within Python
+  
+  ! CKDMIP gases
+  kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12" ] 
+  input_file_gas_names = ['water_vapor   ', &
+                          'ozone         ', &            
+                          'carbon_dioxide', &
+                          'methane       ', &
+                          'nitrous_oxide ', &
+                          'oxygen        ', &
+                          'nitrogen      ', &
+                          'cfc11         ', &
+                          'cfc12         ']
+
+  ! All LW RRTMGP gases
+  ! kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12", "co   ", &
+  !                   "ccl4 ", "cfc22", "hfc143a", "hfc125", "hfc23", "hfc32", "hfc134a", "cf4"] ! no2
+  ! input_file_gas_names =  ['water_vapor        ', &
+  !                         'ozone               ', &            
+  !                         'carbon_dioxide      ', &
+  !                         'methane             ', &
+  !                         'nitrous_oxide       ', &
+  !                         'oxygen              ', &
+  !                         'nitrogen            ', &
+  !                         'cfc11               ', &
+  !                         'cfc12               ', &
+  !                         'carbon_monoxide     ', &
+  !                         'carbon_tetrachloride', &
+  !                         'hcfc22              ', &
+  !                         'hfc143a             ', &
+  !                         'hfc125              ', &
+  !                         'hfc23               ', &
+  !                         'hfc32               ', &
+  !                         'hfc134a             ', &
+  !                         'cf4                 ' ]
+
+
   num_gases = size(kdist_gas_names)
 
-  print *, "Usage   : ./rrtmgp_sw_gendata_rfmipstyle [block_size] [input file] [k-distribution file] [input-output file]"
+  print *, "Usage: rrtmgp_rfmip_lw [block_size] [rfmip_file] [k-distribution_file] input_output file]"
 
   nargs = command_argument_count()
   if (nargs <  4) call stop_on_err("Need to provide four arguments!")
@@ -221,19 +237,23 @@ program rrtmgp_rfmip_sw
   !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
   ! end do
 
-   call read_and_block_sw_bc(input_file, block_size, surface_albedo, total_solar_irradiance, solar_zenith_angle)
-
+  call read_and_block_lw_bc(input_file, block_size, sfc_emis, sfc_t)
+  
   !
   ! Read k-distribution information. load_and_init() reads data from netCDF and calls
   !   k_dist%init(); users might want to use their own reading methods
   !
   call load_and_init(k_dist, trim(kdist_file), gas_conc_array(1))
-  if(.not. k_dist%source_is_external()) stop "rrtmgp_rfmip_sw: k-distribution file isn't SW"
+
+  ! print *, "min of play", minval(p_lay), "p_lay = k_dist%get_press_min()", k_dist%get_press_min() 
+
+  where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
+
+  if(.not. k_dist%source_is_internal()) &
+    stop "rrtmgp_rfmip_lw: k-distribution file isn't LW"
+
   nbnd = k_dist%get_nband()
   ngpt = k_dist%get_ngpt()
-
-  allocate(toa_flux(k_dist%get_ngpt(), block_size), &
-           def_tsi(block_size), usecol(block_size,nblocks))
 
   !
   ! RRTMGP won't run with pressure less than its minimum. The top level in the RFMIP file
@@ -245,15 +265,8 @@ program rrtmgp_rfmip_sw
   else
     p_lev(nlay+1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
-
-  !
-  ! RTE will fail if passed solar zenith angles greater than 90 degree. We replace any with
-  !   nighttime columns with a default solar zenith angle. We'll mask these out later, of
-  !   course, but this gives us more work and so a better measure of timing.
-  !
-  do b = 1, nblocks
-    usecol(1:block_size,b)  = solar_zenith_angle(1:block_size,b) < 90._wp - 2._wp * spacing(90._wp)
-  end do
+  !print *," shape play", shape(p_lay)
+  !print *, "play sfc", maxval(p_lay(nlay,:,:)), "tlay sfc", maxval(t_lay(nlay,:,:))
 
   !
   ! Allocate space for output fluxes (accessed via pointers in ty_fluxes_broadband),
@@ -262,23 +275,18 @@ program rrtmgp_rfmip_sw
   !
   allocate(flux_up(    	nlay+1, block_size, nblocks), &
            flux_dn(    	nlay+1, block_size, nblocks))
-  allocate(flux_dn_dir(    	nlay+1, block_size, nblocks))
-
   !
   ! Allocate g-point fluxes if desired
   !
   if (do_gpt_flux) then
     allocate(gpt_flux_up(ngpt, nlay+1, block_size, nblocks), &
              gpt_flux_dn(ngpt, nlay+1, block_size, nblocks))
-    allocate(gpt_flux_dn_dir(ngpt, nlay+1, block_size, nblocks))
   end if
 
-  ! allocate(mu0(block_size), sfc_alb_spec(nbnd,block_size))
-  allocate(mu0(block_size), sfc_alb_spec(ngpt,block_size))
+  allocate(sfc_emis_spec(nbnd, block_size))
 
-
-  ! Allocate derived types - optical properties of gaseous atmosphere
-  call stop_on_err(atmos%alloc_2str(block_size, nlay, k_dist))
+  call stop_on_err(source%alloc    (block_size, nlay, k_dist, save_pfrac = .true.))   
+  call stop_on_err(atmos%alloc_1scl(block_size, nlay, k_dist))
 
   ! RRTMGP inputs
   allocate(gasopt_input_names(ninputs)) ! temperature + pressure + gases
@@ -290,7 +298,7 @@ program rrtmgp_rfmip_sw
   end if
 
   ! RRTMGP outputs
-  allocate(tau_sw(ngpt, nlay, block_size, nblocks), ssa_sw(ngpt, nlay, block_size, nblocks))
+  allocate(tau_lw(ngpt, nlay, block_size, nblocks), planck_frac(ngpt, nlay, block_size, nblocks))
 
 
 #ifdef USE_TIMING
@@ -303,43 +311,50 @@ program rrtmgp_rfmip_sw
 #endif
 
   print *, "-------------------------------------------------------------------------"
-  print *, "starting clear-sky shortwave computations"
+  print *, "starting clear-sky longwave computations"
 
   !
   ! Loop over blocks
   !
 
 #ifdef USE_OPENMP
-  !$OMP PARALLEL shared(k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,atmos)
+  !$OMP PARALLEL shared(k_dist) firstprivate(sfc_emis_spec,fluxes,atmos,source)
   !$OMP DO 
 #endif
   do b = 1, nblocks
-
+    
     fluxes%flux_up => flux_up(:,:,b)
-    fluxes%flux_dn => flux_dn(:,:,b)
-    fluxes%flux_dn_dir => flux_dn_dir(:,:,b)
+    fluxes%flux_dn => flux_dn(:,:,b)    
     if (do_gpt_flux) then
-      ! If g-point fluxes are allocated, the RTE kernels write to 3D arrays, otherwise broadband
-      ! computation is inlined
       fluxes%gpt_flux_up => gpt_flux_up(:,:,:,b)
       fluxes%gpt_flux_dn => gpt_flux_dn(:,:,:,b)
-      fluxes%gpt_flux_dn_dir => gpt_flux_dn_dir(:,:,:,b)
     end if
+    !
+    ! Expand the spectrally-constant surface emissivity to a per-band emissivity for each column
+    !   (This is partly to show how to keep work on GPUs using OpenACC)
+    !
+    do icol = 1, block_size
+      do ibnd = 1, nbnd
+        sfc_emis_spec(ibnd,icol) = sfc_emis(icol,b)
+      end do
+    end do
 
     !
     ! Compute the optical properties of the atmosphere and the Planck source functions
     !    from pressures, temperatures, and gas concentrations...
     !
-    call stop_on_err(k_dist%gas_optics(p_lay(:,:,b), &
-                                        p_lev(:,:,b),       &
-                                        t_lay(:,:,b),       &
-                                        gas_conc_array(b),  &
-                                        atmos,      &
-                                        toa_flux))
+    call stop_on_err(k_dist%gas_optics(p_lay(:,:,b),      &
+                                      p_lev(:,:,b),       &
+                                      t_lay(:,:,b),       &
+                                      sfc_t(:  ,b),       &
+                                      gas_conc_array(b),  &
+                                      atmos,      &
+                                      source,            &
+                                      tlev = t_lev(:,:,b) ))
 
     ! Save RRTMGP outputs for NN training   
-    tau_sw(:,:,:,b)     = atmos%tau
-    ssa_sw(:,:,:,b)     = atmos%ssa 
+    tau_lw(:,:,:,b)       = atmos%tau
+    planck_frac(:,:,:,b)  = source%planck_frac 
     ! NN inputs: this is just a 3D array (ninputs,nlay,ncol),
     ! where the inner dimension vector consists of (tlay, play, vmr_h2o, vmr_o3, vmr_co2...)
     ! Since these inputs are already provided in the original profiles, they are only saved if
@@ -354,83 +369,46 @@ program rrtmgp_rfmip_sw
       call get_col_dry(vmr_h2o(:,:,b), p_lev(:,:,b), col_dry(:,:,b))
     end if
 
-    ! print *, "mean tau after gas optics", mean_3d(atmos%tau)
-
-    !
-    ! Boundary conditions
-    !
-    ! What's the total solar irradiance assumed by RRTMGP?
-    ! 
-    do icol = 1, block_size
-      def_tsi_s = 0.0_wp
-      do igpt = 1, ngpt
-        def_tsi_s = def_tsi_s + toa_flux(igpt, icol)
-      end do
-      def_tsi(icol) = def_tsi_s
-    end do
-
-    do icol = 1, block_size
-      do igpt = 1, ngpt
-        ! Normalize incoming solar flux to match RFMIP specification
-        toa_flux(igpt,icol) = toa_flux(igpt,icol) * total_solar_irradiance(icol,b)/def_tsi(icol)
-        ! Expand the spectrally-constant surface albedo to a per-g-point albedo for each column
-        sfc_alb_spec(igpt,icol) = surface_albedo(icol,b)
-      end do
-    end do
-    !
-    ! Cosine of the solar zenith angle
-    !
-    do icol = 1, block_size
-      mu0(icol) = merge(cos(solar_zenith_angle(icol,b)*deg_to_rad), 1._wp, usecol(icol,b))
-    end do
+    ! print *, "mean of pfrac is:", mean_3d(planck_frac(:,:,:,b))   
+    ! print *, "mean of tau is:", mean_3d(atmos%tau)
+    ! print *, "mean of lay_source is:", mean_3d(source%lay_source)
+    ! print *, "mean of lev_source is:", mean_3d(source%lev_source)
 
     !
     ! ... and compute the spectrally-resolved fluxes, providing reduced values
     !    via ty_fluxes_broadband
     !
-    call stop_on_err(rte_sw(atmos,   &
-                          top_at_1,        &
-                          mu0,             &
-                          toa_flux,        &
-                          sfc_alb_spec, sfc_alb_spec,  &
-                          fluxes))
-            
-  end do !blocks
+    call stop_on_err(rte_lw(atmos,   &
+                            top_at_1,        &
+                            source,          &
+                            sfc_emis_spec,   &
+                            fluxes,          &
+                            n_gauss_angles = n_quad_angles, use_2stream = .false.) )
+
+  end do ! blocks
+
 #ifdef USE_OPENMP
   !$OMP END DO
   !$OMP END PARALLEL
   !$OMP barrier
 #endif
-  !
-  ! End timers
-  !
+
 #ifdef USE_TIMING
-  timing_file = "timing.sw-" // adjustl(trim(block_size_char))
+  !   End timers
+  timing_file = "timing.lw-" // adjustl(trim(block_size_char))
   ret = gptlpr_file(trim(timing_file))
   ret = gptlfinalize()
 #endif
 
   call atmos%finalize()
+  call source%finalize()
 
   print *, "Finished with computations!"
-!
-  ! Zero out fluxes for which the original solar zenith angle is > 90 degrees.
-  !
-  do b = 1, nblocks
-    do icol = 1, block_size
-      if(.not. usecol(icol,b)) then
-        flux_up(:,icol,b)  = 0._wp
-        flux_dn(:,icol,b)  = 0._wp
-      end if
-    end do
-  end do
 
-  print *, "mean of flux_down is:", mean_3d(flux_dn)  ! mean of flux_down is:   292.71945410963957     
-  print *, "mean of flux_up is:", mean_3d(flux_up)    ! mean of flux_up is:   41.835381782065106 
-  !  if(do_gpt_flux) print *, "mean of gpt_flux_up for gpt=1 is:", mean_3d(gpt_flux_up(1,:,:,:))
+  print *, "mean of flux_down is:", mean_3d(flux_dn)  !  mean of flux_down is:   103.2458
+  print *, "mean of flux_up is:", mean_3d(flux_up)
 
   print *, "-------------------------------------------------------------------------"
-
   print *, "Attempting to save RRTMGP input/output to ", nndev_file
 
   ! Create file
@@ -440,7 +418,7 @@ program rrtmgp_rfmip_sw
 
   cmt = "generated with " // kdist_file 
   call nndev_file_netcdf%put_global_attributes( &
-          &   title_str="Input - output from computations with RRTMGP-SW gas optics scheme", &
+          &   title_str="Input - output from computations with RRTMGP-LW gas optics scheme", &
           &   input_str=input_file, comment_str = trim(cmt))
 
   ! Define dimensions
@@ -455,38 +433,34 @@ program rrtmgp_rfmip_sw
   ! RTE inputs and outputs (broadband fluxes), always saved (may not be needed, but take up little space)
   call nndev_file_netcdf%define_variable("rsu", &
   &   dim3_name="expt", dim2_name="site", dim1_name="level", &
-  &   long_name="upwelling shortwave flux")
+  &   long_name="upwelling longwave flux")
 
   call nndev_file_netcdf%define_variable("rsd", &
   &   dim3_name="expt", dim2_name="site", dim1_name="level", &
-  &   long_name="downwelling shortwave flux")
-
-  call nndev_file_netcdf%define_variable("rsd_dir", &
-  &   dim3_name="expt", dim2_name="site", dim1_name="level", &
-  &   long_name="direct downwelling shortwave flux")
+  &   long_name="downwelling longwave flux")
 
   call nndev_file_netcdf%define_variable("pres_level", &
   &   dim3_name="expt", dim2_name="site", dim1_name="level", &
   &   long_name="pressure at half-level")
 
   ! RRTMGP inputs
-  cmt = "inputs for RRTMGP shortwave gas optics"
+  cmt = "inputs for RRTMGP longwave gas optics"
   nn_input_str = 'Features:'
   do b  = 1, size(gasopt_input_names)
       nn_input_str = trim(nn_input_str) // " " // trim(gasopt_input_names(b)) 
   end do
-  call nndev_file_netcdf%define_variable("rrtmgp_sw_input", &
+  call nndev_file_netcdf%define_variable("rrtmgp_lw_input", &
   &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="feature", &
   &   long_name =cmt, comment_str=nn_input_str, &
   &   data_type_name="float")
 
   if (save_input_vectors) then
-    call nndev_file_netcdf%define_variable("tau_sw_gas", &
+    call nndev_file_netcdf%define_variable("tau_lw_gas", &
     &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
     &   long_name="gas optical depth", data_type_name="float")
-    call nndev_file_netcdf%define_variable("ssa_sw_gas", &
+    call nndev_file_netcdf%define_variable("planck_fraction", &
     &   dim4_name="expt", dim3_name="site", dim2_name="layer", dim1_name="gpt", &
-    &   long_name="gas single scattering albedo", data_type_name="float")
+    &   long_name="Fraction of the Planck function associated with a g-point", data_type_name="float")
   end if
   call nndev_file_netcdf%define_variable("col_dry", &
   &   dim3_name="expt", dim2_name="site", dim1_name="layer", &
@@ -498,9 +472,8 @@ program rrtmgp_rfmip_sw
 
   call unblock_and_write(trim(nndev_file), 'rsu', flux_up)
   call unblock_and_write(trim(nndev_file), 'rsd', flux_dn)
-  call unblock_and_write(trim(nndev_file), 'rsd_dir', flux_dn_dir)
 
-  call unblock_and_write(trim(nndev_file), 'rrtmgp_sw_input',nn_gasopt_input)
+  call unblock_and_write(trim(nndev_file), 'rrtmgp_lw_input',nn_gasopt_input)
   deallocate(nn_gasopt_input)
   print *, "RRTMGP inputs (gas concs + T + p) were successfully saved"
 
@@ -508,20 +481,20 @@ program rrtmgp_rfmip_sw
   call unblock_and_write(trim(nndev_file), 'col_dry', col_dry)
   deallocate(col_dry)
   if (save_input_vectors) then
-    call unblock_and_write(trim(nndev_file), 'tau_sw_gas', tau_sw)
-    call unblock_and_write(trim(nndev_file), 'ssa_sw_gas', ssa_sw)
-    deallocate(tau_sw,ssa_sw)
+    call unblock_and_write(trim(nndev_file), 'tau_lw_gas', tau_lw)
+    call unblock_and_write(trim(nndev_file), 'planck_fraction', planck_frac)
+    deallocate(tau_lw, planck_frac)
   end if
 
   print *, "Optical properties (RRTMGP output) were successfully saved. All done!"
 
   if (do_gpt_flux) then
-      deallocate(gpt_flux_up, gpt_flux_dn, gpt_flux_dn_dir)
+      deallocate(gpt_flux_up, gpt_flux_dn)
   end if 
 
   call nndev_file_netcdf%close()
 
-  deallocate(flux_up, flux_dn, flux_dn_dir)
+  deallocate(flux_up, flux_dn)
 
   print *, "-------------------------------------------------------------------------"
 
@@ -623,4 +596,4 @@ program rrtmgp_rfmip_sw
     mean3 = sum(x) / size(x)
   end function mean_3d
 
-end program rrtmgp_rfmip_sw
+end program rrtmgp_rfmip_lw

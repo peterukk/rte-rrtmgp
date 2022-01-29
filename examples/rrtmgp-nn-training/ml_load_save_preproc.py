@@ -199,6 +199,10 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
         tau_sw_rayleigh = tau * ssa
         y = tau - tau_sw_rayleigh # tay_sw_abs = tau_tot - tau_ray
         del tau, ssa, tau_sw_rayleigh
+    elif (predictand=='lw_absorption'):
+        y = dat.variables['tau_lw_gas'][:].data
+    elif (predictand=='lw_planck_frac'):
+        y = dat.variables['planck_fraction'][:].data
     else:
         y  = dat.variables[predictand][:].data
         
@@ -244,11 +248,12 @@ def get_col_dry(vmr_h2o, plev):
     col_dry = 10.0 * np.float64(delta_plev) * avogad * np.float64(fact) / (1000.0 * m_air * 100.0 * grav)
     return np.float32(col_dry)
 
-
+@njit(parallel=True)
 def preproc_tau_to_crossection(tau, col_dry):
     y = np.zeros(tau.shape,dtype=np.float32)
-    for igpt in range(tau.shape[1]):
-        y[:,igpt]  = tau[:,igpt] / col_dry
+    for iobs in range(tau.shape[0]):
+        for igpt in range(tau.shape[1]):
+            y[iobs,igpt]  = tau[iobs,igpt] / col_dry[iobs]
     return y
 
 @njit(parallel=True)
@@ -385,7 +390,7 @@ def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
                 x_scaled[:,i] =  (x_scaled[:,i] - xmin[i]) / (xmax[i] - xmin[i] )
             return x_scaled
 
-# A wrapping function to automate things further for RRTMGP preprocessing        
+# A wrapping function to scale inputs and/or outputs   
 def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False, 
                  nfac=1, y_mean=None, y_sigma=None, xcoeffs=None):
 
@@ -398,12 +403,10 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         x = x_raw
         
     if scale_outputs:
-        
         # Standardization coefficients loaded from file
-#        y_mean = ymeans_sw_abs; y_sigma = ysigma_sw_abs
+        #  y_mean = ymeans_sw_abs; y_sigma = ysigma_sw_abs
         # Set power scaling coefficient (y == y**(1/nfac))
         # nfac = 8 
-        
         if np.any(y_sigma)==None:
             y_sigma = np.repeat(np.float32(1),y_raw.shape[1])
 
@@ -421,3 +424,18 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         return x, y, xmin, xmax
     else: return x,y
     
+# A wrapping function for scaling outputs
+def scale_outputs(y_raw, col_dry, nfac=1, 
+                 y_mean=None, y_sigma=None):
+    # Y_mean and y_sigma are optional outputs: if missing, skip standard-scaling
+    if np.any(y_sigma)==None:
+        y_sigma = np.repeat(np.float32(1), y_raw.shape[1])
+
+    if np.any(y_mean)==None:
+        y_mean = np.repeat(np.float32(0), y_raw.shape[1])
+    
+    # Scale by layer number of molecules to obtain absorption cross section
+    y   = preproc_tau_to_crossection(y_raw, col_dry)
+    # Scale using power-scaling followed by standard-scaling
+    y   = preproc_pow_standardization(y, nfac, y_mean, y_sigma)
+    return y

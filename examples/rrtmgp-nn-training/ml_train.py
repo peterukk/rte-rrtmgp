@@ -11,6 +11,7 @@ Contributions welcome!
 @author: Peter Ukkonen
 """
 import os
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -19,7 +20,8 @@ from tensorflow.keras import losses, optimizers
 from tensorflow.keras.callbacks import EarlyStopping
 
 from ml_load_save_preproc import save_model_netcdf, \
-    load_rrtmgp, preproc_pow_standardization_reverse,scale_gasopt
+    load_rrtmgp, preproc_pow_standardization_reverse,scale_gasopt, \
+    preproc_tau_to_crossection, preproc_minmax_inputs_rrtmgp
 from ml_scaling_coefficients import * #  ymeans_sw_absorption, ysigma_sw_absorption, \
    # ymeans_sw_ray, ysigma_sw_ray, ymeans_lw_absorption, ysigma_lw_absorption
 
@@ -51,22 +53,47 @@ fpath_test  = datadir+"RRTMGP_data_g224_CAMS_2015_RND.nc"
 # --- Configure predictand, choice of scaling etc. -----
 # ------------------------------------------------------
 
-# Do the inputs need pre-processing? Might have already been scaled (within the Fortran code)
-scale_inputs = True
+# Scale the inputs? Assumed yes!
+# scale_inputs = True
 
-# Do the outputs need pre-processing?
+# Scale the outputs?
 scale_outputs = True
 
 # Choose one of the following predictands (target output)
 # 'lw_absorption', 'lw_planck_frac', 'sw_absorption', 'sw_rayleigh'
-# predictand = 'sw_absorption'
-# predictand = 'sw_rayleigh'
+predictand = 'sw_absorption'
+predictand = 'sw_rayleigh'
 
-predictand = 'lw_absorption'
+# predictand = 'lw_absorption'
+# predictand = 'lw_planck_frac'
 
-# Scaling: currently fixed so that inputs are min-max scaled,
-# (some) outputs are first power-scaled and then standardized...see below
-use_existing_scaling_coefficients = True
+# Scaling method: currently fixed so that inputs are min-max scaled to (0..1) and 
+# outputs are standardized to ~zero mean, ~unit variance
+# However, the devil is in the details, and power transformations
+# are first used to reduce dynamical range and make distributions more Gaussian 
+# (this can speed up training and improve results)
+#
+# Input preprocessing:
+#   x(i) = log(x(i)) for input feature i = pressure
+#   x(i) = x(i)**(1/4) for i = H2O and O3
+#   x(i) = x(i) - max(i) / (max(x(i) - min(x(i))))
+# 
+# Output preprocessing:_
+#   1. Normalize optical depths (g-point vectors) by layer number of molecules
+#      y(ig,isample) = y_raw(ig,isample) / N (isample) 
+#   2. y = y**(1/8)
+#   3. ynorm = (y - ymean) / ystd, where ymeans are means for individual
+#   g-points, but ystd is the standard deviation across all g-points 
+#   (preserves relationships between outputs)
+scaling_method = 'Ukkonen2020'
+
+use_existing_input_scaling_coefficients = True 
+# ^True is generally a safe choice, min max coefficients have been computed
+# using a large dataset spanning both LGM (Last Glacial Maximum) and high 
+# future emissions scenarios. However, check that your scaled inputs 
+# fall somewhere in the 0-1 range
+
+use_existing_output_scaling_coefficients = False
 
 # Model training: use CPU or GPU?
 use_gpu = False
@@ -97,67 +124,96 @@ else: # if we only have one dataset, split manually
     x_val_raw, x_test_raw, y_val_raw, y_test_raw = \
         train_test_split(x_test_raw, y_test_raw, test_size=testval_ratio) 
 
+nx = x_tr_raw.shape[1] #  temperature + pressure + gases
+ny = y_tr_raw.shape[1] #  number of g-points
+
 
 # -----------------------------------------------------
 # -------- Input and output scaling ------------------
 # -----------------------------------------------------
-# Input scaling - min-max
-
-# Load input names from netCDF file!
-# input_names_sw =  ['tlay','play','h2o','o3','co2','n2o', 'ch4']
-
-if use_existing_scaling_coefficients:
-    # xmin = np.array([1.60E2, 5.15E-3, 1.01E-2, 4.36E-3, 1.41E-4, 0.00E0, 2.55E-8], dtype=np.float32)
-    # xmax = np.array([ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3,
-    #          5.8135214E-7, 3.6000001E-6], dtype=np.float32) 
-    # xcoeffs = (xmin,xmax)
-    
-    # Output scaling 
-    nfac = 8 # first, transform y: y=y**(1/nfac); cheaper and weaker version of 
-    # log scaling. Useful when the output is a vector which has a wide range 
-    # of magnitudes across the vector elements (g-points)
-    # After this, use standard-scaling
-    xmin = xmin_all
-    xmax = xmax_all
-    input_names = input_names_all
-    if (predictand == 'sw_absorption'):
-        ymean  = ymeans_sw_absorption_224
-        ystd   = ysigma_sw_absorption_224
-        xmin = xmin_all[0:7]; xmax = xmax_all[0:7]
-        input_names = input_names_all[0:7]
-    elif (predictand == 'sw_rayleigh'):
-        ymean  = ymeans_sw_ray_224 #
-        ystd   = ysigma_sw_ray_224
-        xmin = xmin_all[0:7]; xmax = xmax_all[0:7]
-        input_names = input_names_all[0:7]
-    elif (predictand == 'lw_absorption'):
-        ymean = ymeans_lw_absorption_256
-        ystd = ysigma_lw_absorption_256
-    elif (predictand == 'lw_planck_frac'):
-        nfac == 2
-        ymean = None
-        ystd = None
-    else: 
-        print("SPECIFY Y SCALING COEFFICIENTS")
+if scaling_method != 'Ukkonen2020':
+    print ("Only one type of pre-processing currently supported!")
 else:
-    print("code missing")
+    # Input scaling - min-max
+    if use_existing_input_scaling_coefficients:
+        if xcoeffs_all == None:
+            sys.exit("Input scaling coefficients (xcoeffs) missing!")
+        (xmin_all,xmax_all) = xcoeffs_all
+        # load input_names from file, describes the inputs in their order
+        # in the data (x_tr_raw)
+        # input_names_all corresponds to xmin_all and xmax_all
+        # input_names = ['tlay','play','n2o','co2']
+        # a = np.array(input_names_all)
+        # b = np.array(input_names)
+        # indices = np.where(b[:, None] == a[None, :])[1]
+        # xmin = xmin_all[indices]
+        # xmax = xmax_all[indices]
+        input_names = input_names_all[0:nx]
+        xmin = xmin_all[0:nx]
+        xmax = xmax_all[0:nx]
+        x_tr,xmin,xmax  = preproc_minmax_inputs_rrtmgp(x_tr_raw, (xmin,xmax))
+    else:
+        x_tr,xmin,xmax  = preproc_minmax_inputs_rrtmgp(x_tr_raw)
+        
+    x_val           = preproc_minmax_inputs_rrtmgp(x_val_raw, (xmin,xmax))
+    x_test          = preproc_minmax_inputs_rrtmgp(x_test_raw, (xmin,xmax))
+    
+    x_tr[x_tr<0.0] = 0.0
+    x_val[x_val<0.0] = 0.0
+    x_test[x_test<0.0] = 0.0
+    
+    # Output scaling
+    # first, transform y: y=y**(1/nfac); cheaper and weaker version of 
+    # log scaling. nfac = 8 for cross-sections, 2 for Planck fraction
+    # After this, use standard-scaling
+    if (predictand == 'lw_planck_frac'):
+        nfac = 2
+        ymean = None; ystd = None
+    else: 
+        nfac = 8
+        if use_existing_output_scaling_coefficients:
+            if (predictand == 'sw_absorption'):
+                ymean  = ymeans_sw_absorption_224
+                ystd   = ysigma_sw_absorption_224
+            elif (predictand == 'sw_rayleigh'):
+                ymean  = ymeans_sw_ray_224 #
+                ystd   = ysigma_sw_ray_224
+            elif (predictand == 'lw_absorption'):
+                ymean = ymeans_lw_absorption_256
+                ystd = ysigma_lw_absorption_256
+            else: 
+                print("invalid predictand")
+        else:
+            ymean = np.zeros(ny); ystd = np.zeros(ny)
+            y_tr   = preproc_tau_to_crossection(y_tr_raw, col_dry_tr)
+    
+            for i in range(ny):
+                ymean[i] = np.mean(y_tr[:,i]**(1/nfac))
+                # ystd[i]  = np.std(y_tr[:,i]**(1/nfac))
+            ystd = np.repeat(np.std(y_tr**(1/nfac)),ny)
+                
+    # Scale data
+    y_tr    = scale_outputs(y_tr_raw, col_dry_tr, nfac, ymean, ystd)
+    y_val   = scale_outputs(y_val_raw, col_dry_val, nfac,  ymean, ystd)
+    y_test  = scale_outputs(y_test_raw, col_dry_test, nfac,  ymean, ystd)
+    
 
-# Scale data, depending on choices 
-x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
-        scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
-# val
-x_val,y_val     = scale_gasopt(x_val_raw, y_val_raw, col_dry_val, scale_inputs, 
-        scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
-# test
-x_test,y_test   = scale_gasopt(x_test_raw, y_test_raw, col_dry_test, scale_inputs, 
-        scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
+        
+# # Scale data, depending on choices 
+# x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
+#         scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
+# # val
+# x_val,y_val     = scale_gasopt(x_val_raw, y_val_raw, col_dry_val, scale_inputs, 
+#         scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
+# # test
+# x_test,y_test   = scale_gasopt(x_test_raw, y_test_raw, col_dry_test, scale_inputs, 
+#         scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
 
-x_tr[x_tr<0.0] = 0.0
-x_val[x_val<0.0] = 0.0
-x_test[x_test<0.0] = 0.0
+# x_tr[x_tr<0.0] = 0.0
+# x_val[x_val<0.0] = 0.0
+# x_test[x_test<0.0] = 0.0
 
-nx = x_tr.shape[1]
-ny = y_tr.shape[1] #  number of g-points
+
 # ---------------------------------------------------------------------------
 
 
@@ -283,12 +339,6 @@ fpath_netcdf = fpath_keras[:-3]+".nc"
 
 model = load_model(fpath_keras,compile=False)
 
-if (predictand == 'sw_absorption'):
-    ymean  = ymeans_sw_absorption; ystd   = ysigma_sw_absorption
-elif (predictand == 'sw_rayleigh'):
-    ymean  = ymeans_sw_ray; ystd   = ysigma_sw_ray
-else: 
-    print("SPECIFY Y SCALING COEFFICIENTS")
 
 x_scaling_str = "To get the required NN inputs, do the following: "\
         "x(i) = log(x(i)) for i=pressure; "\
@@ -307,10 +357,16 @@ if (predictand == 'sw_absorption'):
     model_str = "Shortwave model predicting ABSORPTION CROSS-SECTION"
 elif (predictand == 'sw_rayleigh'):
     model_str = "Shortwave model predicting RAYLEIGH CROSS-SECTION"
+elif (predictand == 'lw_absorption'):
+    model_str = "Longwave model predicting ABSORPTION CROSS-SECTION"
+elif (predictand == 'lw_planck_frac'):
+    model_str = "Longwave model predicting PLANCK FRACTION"
+    y_scaling_str = "y_pfrac = y_nn * y_nn"
 else: 
     model_str = ""
 
 emulating = 'rrtmgp-data-sw-g224-2018-12-04.nc'
+emulating = 'rrtmgp-data-lw-g256-2018-12-04.nc'
 
 save_model_netcdf(fpath_netcdf, model, activ, input_names, emulating,
                        xmin, xmax, ymean, ystd, y_scaling_comment=y_scaling_str, 

@@ -342,10 +342,10 @@ program rrtmgp_rfmip_sw
   !
 #ifdef USE_TIMING
   ret =  gptlstart('clear_sky_total (SW)')
-do i = 1, 32
+! do i = 1, 32
 #endif
 #ifdef USE_OPENMP
-  !$OMP PARALLEL shared(neural_nets, k_dist) firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,optical_props)
+  !$OMP PARALLEL firstprivate(def_tsi,toa_flux,sfc_alb_spec,mu0,fluxes,optical_props) default(shared)
   !$OMP DO 
 #endif
   do b = 1, nblocks
@@ -452,18 +452,17 @@ do i = 1, 32
         flux_dn(:,icol,b)  = 0._wp
       end if
     end do
-
+    
   end do !blocks
 #ifdef USE_OPENMP
   !$OMP END DO
   !$OMP END PARALLEL
-  !$OMP barrier
 #endif
   !
   ! End timers
   !
 #ifdef USE_TIMING
- end do
+!  end do
   ret =  gptlstop('clear_sky_total (SW)')
   timing_file = "timing.sw-" // adjustl(trim(block_size_char))
   ret = gptlpr_file(trim(timing_file))

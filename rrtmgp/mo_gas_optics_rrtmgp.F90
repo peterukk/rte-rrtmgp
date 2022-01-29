@@ -259,15 +259,6 @@ contains
                                                 tlev        ! level temperatures [K]; (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
     type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Emission and absorption models 
-    ! Optional output
-    ! --- FOR NN MODEL DEVELOPMENT (generating inputs and outputs)
-    ! NN longwave output in Ukkonen (2020) are 1) absorption cross section = optical_props%tau / col_dry
-    !                                          2) planck fraction
-    ! NN longwave inputs are pressure, temperature, and gas concentrations, but they need to be 
-    ! at same grid as output, and are also preprocessed. For convenience, both inputs and outputs are given here.
-    ! real(sp), dimension(:,:,:), optional, intent(inout),target  :: nn_inputs_inout
-    ! real(wp), dimension(:,:),   optional, intent(inout),target  :: col_dry_inout ! Column dry amount; dim(nlay,ncol)
-    ! real(wp), dimension(:,:,:), optional, intent(inout)         :: planck_frac
 
     ! ----------------------------------------------------------                              
     ! Local variables
@@ -448,15 +439,6 @@ contains
                             optional, target :: col_dry ! Column dry amount; dim(nlay,ncol)
     !  neural network model (uses NN kernel if present)
     type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Absorption model, Rayleigh model 
-    ! optional outputs    
-        ! --- FOR NN MODEL DEVELOPMENT (generating inputs and outputs)
-    ! NN shortwave output in Ukkonen (2020) are 1) absorption cross section = optical_props%tau / col_dry
-    !                                           2) rayleigh cross section    = (optical_props%ssa * optical_props%tau) / col_dry
-    ! NN shortwave inputs are pressure, temperature, and gas concentrations, but they need to be 
-    ! at same grid as output, and are also preprocessed. For convenience, both inputs and outputs are given here.
-    ! real(sp), dimension(:,:,:), optional, intent(inout),target  :: nn_inputs_inout
-    ! real(wp), dimension(:,:),   optional, intent(inout),target  :: col_dry_inout ! Column dry amount; dim(nlay,ncol)
-
     ! ----------------------------------------------------------
     ! Local variables
     real(sp), dimension(:,:,:), allocatable           :: nn_inputs
