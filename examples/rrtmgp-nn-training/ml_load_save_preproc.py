@@ -169,7 +169,7 @@ def save_model_netcdf(fpath_netcdf, model, activation_names, input_names,
 
 
 
-def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
+def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=False):
     # Load data for training a GAS OPTICS (RRTMGP) emulator,
     # where inputs are layer-wise atmospheric conditions (T,p, gas concentrations)
     # and outputs are vectors of optical properties across g-points (e.g. optical depth)
@@ -180,11 +180,34 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
         sys.exit("Second drgument to load_rrtmgp (predictand) " \
         "must be either lw_absorption, lw_planck_frac, sw_absorption, or sw_rayleigh")
             
+    # k-distribution info
+    try: 
+        kdist_str = dat.comment
+        kdist_str = kdist_str.split(' ')
+        kdist_str = kdist_str[2]
+        kdist_str = kdist_str.split('/')
+        kdist_str = kdist_str[4]
+    except:
+        kdist_str = None
+        
     # inputs
     if predictand in ["lw_absorption", "lw_planck_frac"]: # Longwave
-        x = dat.variables['rrtmgp_lw_input'][:].data
+        xname = 'rrtmgp_lw_input'
     else: # Shortwave
-        x = dat.variables['rrtmgp_sw_input'][:].data
+        xname = 'rrtmgp_sw_input'
+        
+    x = dat.variables[xname][:].data
+        
+    try:
+        input_names = dat.variables[xname].comment
+        print('input_names found in file')
+        input_names = input_names.split(' ')
+        if (input_names[0]=='Features:'):
+            input_names = input_names[1:]
+    except:
+        print("input_names not found in file") 
+        input_names = None
+        
     nx = x.shape[-1]
     
     # outputs
@@ -209,6 +232,9 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     # if predictand in ['lw_absorption','tau_sw', 'ssa_sw']:
     col_dry = dat.variables['col_dry'][:].data
     
+    if col_dry[0,0,0] == 0.0:
+        skip_firstlev = True
+    
     if np.size(y.shape) == 4:
         (nexp,ncol,nlay,ngpt) = y.shape
     elif np.size(y.shape) == 3:
@@ -220,9 +246,16 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     else:
         sys.exit("Invalid array shapes, RRTMGP output should have at least 3 dimensions")
         
-    if skip_lastlev: 
+    if skip_lastlev:
         x = x[:,:,0:-1,:]; y = y[:,:,0:-1,:]
-        col_dry = col_dry[:,0:-1,:]
+        col_dry = col_dry[:,:,0:-1]
+        nlay = nlay -1
+        
+    if skip_firstlev:
+        x = x[:,:,1:,:]; y = y[:,:,1:,:]
+        col_dry = col_dry[:,:,1:]
+        nlay = nlay - 1 
+        
     if dcol>1:
         y  = y[:,::dcol,:,:]; x  = x[:,::dcol,:,:]
         col_dry = col_dry[:,::dcol,:]
@@ -233,7 +266,7 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False):
     y = np.reshape(y, (nobs,ngpt)); x = np.reshape(x, (nobs,nx))
     col_dry = np.reshape(col_dry,(nobs))
     
-    return x,y,col_dry
+    return x,y,col_dry,input_names,kdist_str
 
 
 def get_col_dry(vmr_h2o, plev):

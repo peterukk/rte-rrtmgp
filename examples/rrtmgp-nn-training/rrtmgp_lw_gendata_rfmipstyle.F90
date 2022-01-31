@@ -234,9 +234,9 @@ program rrtmgp_rfmip_lw
   ! Read the gas concentrations and surface properties
   !
   call read_and_block_gases_ty(input_file, block_size, kdist_gas_names, input_file_gas_names, gas_conc_array)
-  ! do b = 1, size(gas_conc_array(1)%concs)
-  !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
-  ! end do
+  do b = 1, size(gas_conc_array(1)%concs)
+    print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
+  end do
 
   call read_and_block_lw_bc(input_file, block_size, sfc_emis, sfc_t)
   
@@ -246,9 +246,11 @@ program rrtmgp_rfmip_lw
   !
   call load_and_init(k_dist, trim(kdist_file), gas_conc_array(1))
 
-  ! print *, "min of play", minval(p_lay), "p_lay = k_dist%get_press_min()", k_dist%get_press_min() 
+  print *, "min of play", minval(p_lay), "k_dist%get_press_min()", k_dist%get_press_min() 
+  ! print *, "max of play", maxval(p_lay), "k_dist%get_press_max()", k_dist%get_press_max() 
 
   where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
+  where(p_lev < k_dist%get_press_min()) p_lev = k_dist%get_press_min() + spacing (k_dist%get_press_min())
 
   if(.not. k_dist%source_is_internal()) &
     stop "rrtmgp_rfmip_lw: k-distribution file isn't LW"
@@ -266,6 +268,7 @@ program rrtmgp_rfmip_lw
   else
     p_lev(nlay+1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
+
   !print *," shape play", shape(p_lay)
   !print *, "play sfc", maxval(p_lay(nlay,:,:)), "tlay sfc", maxval(t_lay(nlay,:,:))
 

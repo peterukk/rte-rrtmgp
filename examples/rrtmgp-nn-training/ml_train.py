@@ -20,7 +20,8 @@ from tensorflow.keras import losses, optimizers
 from tensorflow.keras.callbacks import EarlyStopping
 
 from ml_load_save_preproc import save_model_netcdf, \
-    load_rrtmgp, preproc_pow_standardization_reverse,scale_gasopt, \
+    load_rrtmgp, scale_outputs, \
+    preproc_pow_standardization_reverse,\
     preproc_tau_to_crossection, preproc_minmax_inputs_rrtmgp
 from ml_scaling_coefficients import * #  ymeans_sw_absorption, ysigma_sw_absorption, \
    # ymeans_sw_ray, ysigma_sw_ray, ymeans_lw_absorption, ysigma_lw_absorption
@@ -46,25 +47,22 @@ fpath_test  = datadir+"RRTMGP_data_g224_CAMS_2015_RND.nc"
 
 
 # Just one dataset
-# fpath_val = None
-# fpath_test = None
+datadir = "/media/peter/samlinux/gdrive/data/ml_training/reduced-k/"
+fpath   = datadir+"ml_training_lw_g128_CKDMIP_MMM_big.nc"
+fpath_val = None
+fpath_test = None
 
 # ------------------------------------------------------
 # --- Configure predictand, choice of scaling etc. -----
 # ------------------------------------------------------
 
-# Scale the inputs? Assumed yes!
-# scale_inputs = True
-
-# Scale the outputs?
-scale_outputs = True
 
 # Choose one of the following predictands (target output)
 # 'lw_absorption', 'lw_planck_frac', 'sw_absorption', 'sw_rayleigh'
-predictand = 'sw_absorption'
-predictand = 'sw_rayleigh'
+# predictand = 'sw_absorption'
+# predictand = 'sw_rayleigh'
 
-# predictand = 'lw_absorption'
+predictand = 'lw_absorption'
 # predictand = 'lw_planck_frac'
 
 # Scaling method: currently fixed so that inputs are min-max scaled to (0..1) and 
@@ -87,6 +85,9 @@ predictand = 'sw_rayleigh'
 #   (preserves relationships between outputs)
 scaling_method = 'Ukkonen2020'
 
+# scale_input = True
+# scale_output = True
+
 use_existing_input_scaling_coefficients = True 
 # ^True is generally a safe choice, min max coefficients have been computed
 # using a large dataset spanning both LGM (Last Glacial Maximum) and high 
@@ -105,28 +106,32 @@ retrain_mae = False
 # -----------------------------------------------------
 # Load data given three separate datasets for training - validation - testing
 # Training data
-x_tr_raw,y_tr_raw,col_dry_tr        = load_rrtmgp(fpath, predictand) 
+x_raw, y_raw, col_dry, input_names, kdist     = load_rrtmgp(fpath, predictand) 
 
 # Validation and testing: separate datasets may already exist
 if (fpath_val != None and fpath_test != None): 
+    x_tr_raw = x_raw; y_tr_raw = y_raw; col_dry_tr = col_dry
     x_val_raw, y_val_raw, col_dry_val   = load_rrtmgp(fpath_val, predictand)
     x_test_raw,y_test_raw,col_dry_test  = load_rrtmgp(fpath_test, predictand)
 else: # if we only have one dataset, split manually
-    from sklearn.model_selection import train_test_split
     train_ratio = 0.70
     validation_ratio = 0.15
-    test_ratio = 0.15
-    testval_ratio = test_ratio/(test_ratio + validation_ratio)
-    # first split into two, training and test+val
-    x_tr_raw, x_test_raw, y_tr_raw, y_test_raw = \
-        train_test_split(x_tr_raw, y_tr_raw, test_size=1-train_ratio)
-    # then split the latter into to testing and val
-    x_val_raw, x_test_raw, y_val_raw, y_test_raw = \
-        train_test_split(x_test_raw, y_test_raw, test_size=testval_ratio) 
 
+    ntot = x_raw.shape[0]
+    indices = np.random.permutation(ntot)
+    train_val_ratio = train_ratio + validation_ratio
+    
+    train_idx, val_idx, test_idx = indices[:int(ntot*train_ratio)],\
+    indices[int(ntot*train_ratio):int(ntot*train_val_ratio)],\
+    indices[int(ntot*train_val_ratio):]
+    
+    x_tr_raw, y_tr_raw, col_dry_tr    = x_raw[train_idx,:], y_raw[train_idx,:], col_dry[train_idx]
+    x_val_raw, y_val_raw, col_dry_val = x_raw[val_idx,:], y_raw[val_idx,:], col_dry[val_idx]
+    x_test_raw, y_test_raw, col_dry_test = x_raw[test_idx,:], y_raw[test_idx,:], col_dry[test_idx]
+    
+    
 nx = x_tr_raw.shape[1] #  temperature + pressure + gases
 ny = y_tr_raw.shape[1] #  number of g-points
-
 
 # -----------------------------------------------------
 # -------- Input and output scaling ------------------
@@ -139,28 +144,27 @@ else:
         if xcoeffs_all == None:
             sys.exit("Input scaling coefficients (xcoeffs) missing!")
         (xmin_all,xmax_all) = xcoeffs_all
-        # load input_names from file, describes the inputs in their order
+        
+        # input_names loaded from file, describes the inputs in their order
         # in the data (x_tr_raw)
         # input_names_all corresponds to xmin_all and xmax_all
         # input_names = ['tlay','play','n2o','co2']
-        # a = np.array(input_names_all)
-        # b = np.array(input_names)
-        # indices = np.where(b[:, None] == a[None, :])[1]
-        # xmin = xmin_all[indices]
-        # xmax = xmax_all[indices]
-        input_names = input_names_all[0:nx]
-        xmin = xmin_all[0:nx]
-        xmax = xmax_all[0:nx]
-        x_tr,xmin,xmax  = preproc_minmax_inputs_rrtmgp(x_tr_raw, (xmin,xmax))
+        # Order of inputs may be different than in the existing coefficients:
+        a = np.array(input_names_all)
+        b = np.array(input_names)
+        indices = np.where(b[:, None] == a[None, :])[1]
+        xmin = xmin_all[indices]
+        xmax = xmax_all[indices]
+        
+        # input_names = input_names_all[0:nx]
+        # xmin = xmin_all[0:nx]
+        # xmax = xmax_all[0:nx]
+        x_tr = preproc_minmax_inputs_rrtmgp(x_tr_raw, (xmin,xmax))
     else:
         x_tr,xmin,xmax  = preproc_minmax_inputs_rrtmgp(x_tr_raw)
         
     x_val           = preproc_minmax_inputs_rrtmgp(x_val_raw, (xmin,xmax))
     x_test          = preproc_minmax_inputs_rrtmgp(x_test_raw, (xmin,xmax))
-    
-    x_tr[x_tr<0.0] = 0.0
-    x_val[x_val<0.0] = 0.0
-    x_test[x_test<0.0] = 0.0
     
     # Output scaling
     # first, transform y: y=y**(1/nfac); cheaper and weaker version of 
@@ -198,8 +202,6 @@ else:
     y_test  = scale_outputs(y_test_raw, col_dry_test, nfac,  ymean, ystd)
     
 
-        
-# # Scale data, depending on choices 
 # x_tr,y_tr       = scale_gasopt(x_tr_raw, y_tr_raw, col_dry_tr, scale_inputs, 
 #         scale_outputs, nfac=nfac, y_mean=ymean, y_sigma=ystd, xcoeffs=xcoeffs)
 # # val
@@ -212,7 +214,6 @@ else:
 # x_tr[x_tr<0.0] = 0.0
 # x_val[x_val<0.0] = 0.0
 # x_test[x_test<0.0] = 0.0
-
 
 # ---------------------------------------------------------------------------
 
@@ -325,20 +326,22 @@ model.summary()
 
 # fpath_keras = "/media/peter/samlinux/gdrive/phd/soft/rte-rrtmgp-nn/neural/data/tau-sw-ray-7-16-16-CAMS-NEW-mae.h5"
 # fpath_keras = "/home/peter/soft/rte-rrtmgp-nn/neural/data/tau-sw-abs-tmp2.h5"
+fpath_keras = "../../neural/data/tmp.h5"
+model.save(fpath_keras)
 
-# model.save(fpath_keras)
-
-from keras.models import load_model
-fpath_keras = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.h5"
-fpath_keras = '../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.h5'
-
-fpath_keras = "../../neural/data/BEST_pfrac-18-16-16.h5"
-fpath_keras = '../../neural/data/BEST_tau-lw-18-58-58.h5'
+# from keras.models import load_model
+# fpath_keras = "../../neural/data/BEST_tau-sw-ray-7-16-16_2.h5"
+# fpath_keras = '../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.h5'
+# fpath_keras = "../../neural/data/BEST_pfrac-18-16-16.h5"
+# fpath_keras = '../../neural/data/BEST_tau-lw-18-58-58.h5'
 
 fpath_netcdf = fpath_keras[:-3]+".nc"
 
-model = load_model(fpath_keras,compile=False)
+# model = load_model(fpath_keras,compile=False)
 
+# kdist = 'rrtmgp-data-sw-g224-2018-12-04.nc'
+# kdist = 'rrtmgp-data-lw-g256-2018-12-04.nc'
+# kdist = 'rrtmgp-data-lw-g128-210809.nc'
 
 x_scaling_str = "To get the required NN inputs, do the following: "\
         "x(i) = log(x(i)) for i=pressure; "\
@@ -365,13 +368,9 @@ elif (predictand == 'lw_planck_frac'):
 else: 
     model_str = ""
 
-emulating = 'rrtmgp-data-sw-g224-2018-12-04.nc'
-emulating = 'rrtmgp-data-lw-g256-2018-12-04.nc'
-
-save_model_netcdf(fpath_netcdf, model, activ, input_names, emulating,
+save_model_netcdf(fpath_netcdf, model, activ, input_names, kdist,
                        xmin, xmax, ymean, ystd, y_scaling_comment=y_scaling_str, 
                        x_scaling_comment=x_scaling_str,
                        data_comment=data_str, model_comment=model_str)
     
-#savemodel(fpath_keras, model)
 
