@@ -25,6 +25,8 @@ examples/rfmip-clear-sky/*.pgprof
 examples/rfmip-clear-sky/*.qdrep
 examples/rfmip-clear-sky/stop_on_err__genmod.f90
 examples/rrtmgp-nn-training/__pycache__/
+examples/rrtmgp-nn-training/rrtmgp_lw_gendata_rfmipstyle
+examples/rrtmgp-nn-training/rrtmgp_sw_gendata_rfmipstyle
 examples/all-sky/ref
 examples/all-sky/rrtmgp-allsky.nc
 

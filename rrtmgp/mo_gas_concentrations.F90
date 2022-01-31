@@ -431,6 +431,8 @@ contains
       error_msg = 'ty_gas_concs%get_vmr; gas ' // trim(gas) // " concentration hasn't been set"
     end if
 
+    if(error_msg /= "") return
+
     if(size(this%concs(igas)%conc, 2) > 1) then      ! Concentration stored as 2D
       dims = 2
     else if(size(this%concs(igas)%conc, 1) > 1) then ! Concentration stored as 1D

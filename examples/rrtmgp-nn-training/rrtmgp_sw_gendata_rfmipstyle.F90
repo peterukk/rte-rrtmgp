@@ -184,7 +184,8 @@ program rrtmgp_rfmip_sw
   ! How big is the problem? Does it fit into blocks of the size we've specifed?
   !
   call read_size(input_file, ncol, nlay, nexp)
-  print *, "input file", input_file, "ncol:", ncol, "nexp:", nexp, "nlay:", nlay
+  print *, "input file", input_file
+  print *, "ncol:", ncol, "nexp:", nexp, "nlay:", nlay
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("Stopping: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size
@@ -471,8 +472,12 @@ program rrtmgp_rfmip_sw
 
   ! RRTMGP inputs
   cmt = "inputs for RRTMGP shortwave gas optics"
-  nn_input_str = 'Features:'
-  do b  = 1, size(gasopt_input_names)
+  ! nn_input_str = 'Features:'
+  ! do b  = 1, size(gasopt_input_names)
+  !     nn_input_str = trim(nn_input_str) // " " // trim(gasopt_input_names(b)) 
+  ! end do
+  nn_input_str = trim(gasopt_input_names(1)) 
+  do b  = 2, size(gasopt_input_names)
       nn_input_str = trim(nn_input_str) // " " // trim(gasopt_input_names(b)) 
   end do
   call nndev_file_netcdf%define_variable("rrtmgp_sw_input", &
