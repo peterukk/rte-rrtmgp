@@ -16,7 +16,6 @@
 
 module mo_gas_optics_kernels
   use mo_rte_kind,          only : wp, wl, sp, dp
-  use mo_rrtmgp_nn_constants
   use mod_network_rrtmgp,   only: rrtmgp_network_type, output_sgemm_tau, output_sgemm_pfrac
 
   use, intrinsic :: ISO_C_BINDING
@@ -720,8 +719,6 @@ contains
 #endif
     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
 
-    ! call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-    !                       input_coldry, ymeans_lw_tau, ysigma_lw_tau, output)
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, output)
 #ifdef USE_TIMING
@@ -780,8 +777,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau')
 #endif
-    ! call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-    !                     input_coldry, ymeans_lw_tau, ysigma_lw_tau, tmp_output)
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                         input_coldry, tmp_output)
     tau = reshape(tmp_output,(/ngpt,nlay,ncol/))
@@ -822,8 +817,6 @@ contains
     ! The neural network models
     type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets
     ! outputs
-    ! real(wp), dimension(ngpt,nlay,ncol), target, &
-    !                                     intent(out) :: tau, ssa !
     real(wp), dimension(ngpt,nlay,ncol), target, &
                                         intent(out) :: tau 
     real(wp), dimension(ngpt,nlay,ncol), target, &
@@ -845,8 +838,6 @@ contains
 #endif
     call C_F_POINTER (C_LOC(tau), output, [ngpt,nobs])
 
-    ! call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-    !                       input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, output)
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, output)
 #ifdef USE_TIMING
@@ -859,8 +850,6 @@ contains
 #endif
       call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
 
-      ! call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-      !                       input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, output)
       call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, input_coldry, output)
 #ifdef USE_TIMING
     ret =  gptlstop('compute_tau_ray')
@@ -916,8 +905,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_abs')
 #endif
-    ! call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-    !                     input_coldry, ymeans_sw_tau_abs, ysigma_sw_tau_abs, tmp_output)
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, input_coldry, tmp_output)
     
     tau = reshape(tmp_output,(/ngpt,nlay,ncol/))
@@ -929,8 +916,6 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_ray')
 #endif
-      ! call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-      !                       input_coldry, ymeans_sw_tau_ray, ysigma_sw_tau_ray, tmp_output)
       call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, input_coldry, tmp_output)
 
       ssa = reshape(tmp_output,(/ngpt,nlay,ncol/))

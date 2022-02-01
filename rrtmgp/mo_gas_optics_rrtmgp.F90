@@ -32,7 +32,6 @@ module mo_gas_optics_rrtmgp
                                    compute_Planck_source, compute_Planck_source_nn, &
                                    predict_nn_lw_blas, predict_nn_sw_blas
   use mo_rrtmgp_constants,   only: avogad, m_dry, m_h2o, grav
-  use mo_rrtmgp_nn_constants,only: nn_gasopt_input_names, nn_input_maxvals, nn_input_minvals
   use mo_rrtmgp_util_string, only: lower_case, string_in_array, string_loc_in_array
   use mo_gas_concentrations, only: ty_gas_concs
   use mo_gas_ref_concentrations, only: get_ref_vmr
