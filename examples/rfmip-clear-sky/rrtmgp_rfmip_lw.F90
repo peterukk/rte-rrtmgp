@@ -340,7 +340,7 @@ program rrtmgp_rfmip_lw
   !
 #ifdef USE_TIMING
   ret =  gptlstart('clear_sky_total (LW)')
- do i = 1, 32
+!  do i = 1, 32
 #endif
 
 #ifdef USE_OPENMP
@@ -433,7 +433,7 @@ program rrtmgp_rfmip_lw
 #endif
 
 #ifdef USE_TIMING
-  end do
+  ! end do
 !   End timers
   ret =  gptlstop('clear_sky_total (LW)')
   timing_file = "timing.lw-" // adjustl(trim(block_size_char))

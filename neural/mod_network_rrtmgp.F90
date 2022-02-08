@@ -9,7 +9,6 @@ module mod_network_rrtmgp
   use mod_network
   use mo_simple_netcdf,      only: get_dim_size, read_field, read_char_vec
   use netcdf
-
 #ifdef USE_TIMING
   ! Timing library
   use gptl,                  only: gptlstart, gptlstop
@@ -29,49 +28,26 @@ module mod_network_rrtmgp
 
   private
 
-  public :: rrtmgp_network_type, output_sgemm_pfrac, output_sgemm_tau
-  
-  ! ! ---------------------------------------------------------------------------------------
-  ! ! -------------------  Coefficients for scaling inputs and outputs ----------------------
-  ! ! ---------------------------------------------------------------------------------------
-  ! ! integer, parameter :: numinputs_all = 19
-  ! ! ! Strings specifying all the RRTMGP gases which can be used by neural networks, these are matched to available gases
-  ! character(32), dimension(19) :: nn_rrtmgp_inputs_all = [character(len=32)  :: 'tlay', 'play', 'h2o',   'o3', 'co2',  &
-  ! 'n2o', 'ch4', 'cfc11', 'cfc12', 'co', 'ccl4', 'cfc22', 'hfc143a', 'hfc125', 'hfc23', 'hfc32', 'hfc134a', 'cf4', 'no2'] 
+  public :: rrtmgp_network_type, output_sgemm_pfrac, output_sgemm_tau, output_sgemm_lw
+
 
   type, extends(network_type) :: rrtmgp_network_type
 
-  ! ---------------------------------------------------------------------------------------
-  ! -------------------  Coefficients for scaling inputs and outputs ----------------------
-  ! ---------------------------------------------------------------------------------------
-  ! integer, parameter :: numinputs_all = 19
-  ! ! Strings specifying all the RRTMGP gases which can be used by neural networks, these are matched to available gases
-  ! character(32), dimension(19) :: nn_rrtmgp_inputs_all = [character(len=32)  :: 'tlay', 'play', 'h2o',   'o3', 'co2',  &
-  ! 'n2o', 'ch4', 'cfc11', 'cfc12', 'co', 'ccl4', 'cfc22', 'hfc143a', 'hfc125', 'hfc23', 'hfc32', 'hfc134a', 'cf4', 'no2'] 
-
-  ! ! Scaling coefficients for neural network inputs, used to scale values to between 0 and 1 (min-max-scaling)
-  ! ! Furthermore, some inputs are power or log-scaled. The f irst two inputs are pressure and temperature, followed by gases.
-  ! ! The inputs are:                                             tlay,   log(play), h2o**(1/4),o3**(1/4),co2, ... 
-  ! real(sp), dimension(ninputs_all)   :: nn_input_minvals =  (/ 1.60E2, 5.15E-3,   1.01E-2,   4.36E-3,  1.41E-4, 0.00E0, 2.55E-8, 0.00E0, 0.00E0, &
-  ! 0.00E0, 0.00E0, 0.00E0, 0.00E0, 0.00E0, 0.00E0, 0.00E0, 0.00E0, 0.00E0, 0.00E0 /)
-  ! real(sp), dimension(ninputs_all)   :: nn_input_maxvals =  (/ 3.2047600E2, 1.1550600E1, 5.0775300E-1, 6.3168340E-2, 2.3000003E-3, 5.8135214E-7, & 
-  ! 3.6000001E-6, 2.0000002E-9, 5.3385213E-10, 1.3127458E-6, 1.0316801E-10, 2.3845328E-10, &
-  !  7.7914392E-10, 9.8880004E-10, 3.1067642E-11, 1.3642075E-11, 4.2330001E-10, 1.6702625E-10, 3.0E-10 /)
+  ! ! ---------------------------------------------------------------------------------------
+  ! ! -------------------  Coefficients for scaling inputs and outputs ----------------------
+  ! ! ---------------------------------------------------------------------------------------
 
   real(sp),       dimension(:), allocatable :: coeffs_input_min, coeffs_input_max
   real(sp),       dimension(:), allocatable :: coeffs_output_mean, coeffs_output_std
-
   character(32),  dimension(:), allocatable :: input_names 
   ! ---------------------------------------------------------------------------------------
-
-  real(sp), dimension(3) :: testnum = (/ 1.60E2, 5.15E-3,   1.01E-2   /)
 
 
   contains
 
 
     procedure, public, pass(self) :: load_netcdf
-    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau  ! Inference kernels using BLAS and custom post-processing
+    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau, output_sgemm_lw  ! Inference kernels using BLAS and custom post-processing
 
   end type rrtmgp_network_type
 
@@ -156,8 +132,6 @@ contains
     integer, intent(in)                           :: nx, ngpt, nbatch
     real(sp), dimension(nx, nbatch),  intent(in)  :: x      ! (features, nbatch)
     real(sp), dimension(nbatch),      intent(in)  :: coldry ! number of dry air molecules
-    ! real(sp), dimension(ngpt),        intent(in)  :: ymeans ! standard-scaling coefficient 
-    ! real(sp),                         intent(in)  :: ysigma ! standard-scaling coefficient
     real(sp), dimension(ngpt, nbatch),intent(out) :: output ! absorption cross-section g-point vectors
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
                                           target  :: a1, a2  
@@ -183,12 +157,16 @@ contains
       a       => a1
       a_next  => a2
       b       => layers(1) % b
-      
+#ifdef USE_TIMING
+    ret =  gptlstart('first_sgemm')
+#endif  
       ! 1. Multiply inputs with the weights of the first layer
       !$acc host_data use_device(wt, x, a)
       call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
       !$acc end host_data
-
+#ifdef USE_TIMING
+    ret =  gptlstop('first_sgemm')
+#endif  
       ! 2. Add biases and activation
      call layers(1) % bias_and_activation(a, b)
       
@@ -217,11 +195,15 @@ contains
 
       wt => layers(n) % w_transposed
       b  => layers(n) % b
-
+#ifdef USE_TIMING
+    ret =  gptlstart('last_sgemm')
+#endif  
       !$acc host_data use_device(wt, a, output)
       call sgemm("N","N", ngpt, nbatch, neurons, 1.0, wt, ngpt, a, neurons, 0.0, output, ngpt)
       !$acc end host_data
-
+#ifdef USE_TIMING
+    ret =  gptlstop('last_sgemm')
+#endif  
       !$acc parallel loop gang default(present)
       do j = 1, nbatch
         !$OMP SIMD
@@ -309,21 +291,118 @@ contains
       !$acc end host_data
 
       !$acc parallel loop gang default(present)
-      do j = 1, nbatch
-        !$acc loop vector
-        do i = 1, ny
-          output(i, j) = output(i, j ) + b(i)
-          output(i, j) = max(0.0_sp, output(i, j)) !RELU activation
-          output(i, j) = output(i, j)*output(i, j)
-        end do
-      end do
-      ! call layers(n) % bias_and_activation(output, b)
-      ! output = output*output
+      ! do j = 1, nbatch
+      !   !$acc loop vector
+      !   do i = 1, ny
+      !     output(i, j) = output(i, j ) + b(i)
+      !     output(i, j) = max(0.0_sp, output(i, j)) !RELU activation
+      !     output(i, j) = output(i, j)*output(i, j)
+      !   end do
+      ! end do
+      call layers(n) % bias_and_activation(output, b)
+      output = output*output
 
       end associate
 
     !$acc exit data detach(a,a_next) delete(a1, a2)
 
+  end subroutine
+
+  subroutine output_sgemm_lw(self, nx, ngpt, nbatch, x, output)
+    ! Like output_sgemm_flat but for computing OPTICAL DEPTH, inlining the post-processing
+    ! Additional inputs: number of dry air molecules (coldry) and the mean and standard deviation
+    ! used for normalization (ymeans, ysigma)
+    use, intrinsic :: iso_c_binding
+    class(rrtmgp_network_type),              intent(in), target  :: self
+    integer, intent(in)                           :: nx, ngpt, nbatch
+    real(sp), dimension(nx, nbatch),  intent(in)  :: x      ! (features, nbatch)
+    real(sp), dimension(ngpt, nbatch),intent(out) :: output !
+    real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
+                                          target  :: a1, a2  
+    real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
+    real(sp), dimension(:,:), contiguous, pointer :: wt
+    real(sp), dimension(:),   contiguous, pointer :: b
+    integer                       :: n, j, neurons, nlayers, i
+    real(sp), dimension(ngpt)                     :: ymeans,ystd ! standard-scaling coefficients
+
+    if (.not. allocated(self%coeffs_output_mean)) &
+      stop "output_sgemm_tau: NN output scaling coefficients missing"
+    ymeans = self%coeffs_output_mean
+    ystd   = self%coeffs_output_std
+    neurons = size(self % layers(1) % w_transposed, 1)
+    nlayers = size(self % layers)
+
+    !!$acc enter data create(a1, a2) copyin(ymeans)
+    !$acc enter data create(a1, a2) copyin(ymeans,ystd)
+    associate(layers=>self%layers)
+      
+      ! Assign pointers to layer weights, biases and input-output arrays
+      wt      => layers(1) % w_transposed
+      a       => a1
+      a_next  => a2
+      b       => layers(1) % b
+#ifdef USE_TIMING
+    ret =  gptlstart('first_sgemm')
+#endif  
+      ! 1. Multiply inputs with the weights of the first layer
+      !$acc host_data use_device(wt, x, a)
+      call sgemm('N','N', neurons, nbatch, nx, 1.0, wt, neurons, x, nx, 0.0, a, neurons)
+      !$acc end host_data
+#ifdef USE_TIMING
+    ret =  gptlstop('first_sgemm')
+#endif  
+      ! 2. Add biases and activation
+     call layers(1) % bias_and_activation(a, b)
+      
+      ! 3. Repeat steps 1-2 until final layer reached
+      do n = 2, nlayers-1
+
+        wt => layers(n) % w_transposed
+        b  => layers(n) % b
+
+        !$acc host_data use_device(wt, a, a_next)
+        call sgemm("N","N", neurons, nbatch, neurons, 1.0, wt, neurons, a, neurons, 0.0, a_next, neurons)
+        !$acc end host_data
+
+        call layers(n) % bias_and_activation(a_next, b)
+
+        ! Swap pointers, the previous output is the next input
+        if(mod(n,2) .EQ. 0) then
+          a       => a2
+          a_next  => a1  
+        else
+          a       => a1
+          a_next  => a2
+        end if
+
+      end do
+
+      wt => layers(n) % w_transposed
+      b  => layers(n) % b
+#ifdef USE_TIMING
+    ret =  gptlstart('last_sgemm')
+#endif   
+      !$acc host_data use_device(wt, a, output)
+      call sgemm("N","N", ngpt, nbatch, neurons, 1.0, wt, ngpt, a, neurons, 0.0, output, ngpt)
+      !$acc end host_data
+#ifdef USE_TIMING
+    ret =  gptlstop('last_sgemm')
+#endif 
+      !$acc parallel loop gang default(present)
+      do j = 1, nbatch
+        !$acc loop vector
+        do i = 1, ngpt
+          ! Add bias to obtain model output (linear layer, no activation) 
+          output(i, j) = output(i, j) + b(i)
+
+          ! Postprocess 1: reverse standard scaling and square root scaling
+          output(i, j) = (ystd(i)*output(i, j) + ymeans(i))**4
+        end do
+      end do
+
+    end associate
+    !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
+                                              
   end subroutine
 
   ! subroutine output_sgemm_tau_sgemmbatched(self, nx, ny, nbatch, x, coldry, ymeans, ysigma, output)

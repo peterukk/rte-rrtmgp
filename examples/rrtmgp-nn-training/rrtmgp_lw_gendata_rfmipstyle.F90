@@ -150,38 +150,39 @@ program rrtmgp_rfmip_lw
   ! A lot of this could be done within Python
   
   ! CKDMIP gases
-  kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12" ] 
-  input_file_gas_names = ['water_vapor   ', &
-                          'ozone         ', &            
-                          'carbon_dioxide', &
-                          'methane       ', &
-                          'nitrous_oxide ', &
-                          'oxygen        ', &
-                          'nitrogen      ', &
-                          'cfc11         ', &
-                          'cfc12         ']
+  ! kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12", "ccl4 " ] 
+  ! input_file_gas_names = ['water_vapor          ', &
+  !                         'ozone                ', &            
+  !                         'carbon_dioxide       ', &
+  !                         'methane              ', &
+  !                         'nitrous_oxide        ', &
+  !                         'oxygen               ', &
+  !                         'nitrogen             ', &
+  !                         'cfc11                ', &
+  !                         'cfc12                ', &
+  !                         'carbon_tetrachloride ']
 
   ! All LW RRTMGP gases
-  ! kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12", "co   ", &
-  !                   "ccl4 ", "cfc22", "hfc143a", "hfc125", "hfc23", "hfc32", "hfc134a", "cf4"] ! no2
-  ! input_file_gas_names =  ['water_vapor        ', &
-  !                         'ozone               ', &            
-  !                         'carbon_dioxide      ', &
-  !                         'methane             ', &
-  !                         'nitrous_oxide       ', &
-  !                         'oxygen              ', &
-  !                         'nitrogen            ', &
-  !                         'cfc11               ', &
-  !                         'cfc12               ', &
-  !                         'carbon_monoxide     ', &
-  !                         'carbon_tetrachloride', &
-  !                         'hcfc22              ', &
-  !                         'hfc143a             ', &
-  !                         'hfc125              ', &
-  !                         'hfc23               ', &
-  !                         'hfc32               ', &
-  !                         'hfc134a             ', &
-  !                         'cf4                 ' ]
+  kdist_gas_names = ["h2o    ","o3     ","co2    ", "ch4    ", "n2o    ", "o2     ", "n2     ", "cfc11  ", "cfc12  ", & 
+                     "co     ","ccl4   ","cfc22  ", "hfc143a", "hfc125 ", "hfc23  ", "hfc32  ", "hfc134a", "cf4    "]! no2
+  input_file_gas_names =  [ 'water_vapor         ', &
+                            'ozone               ', &            
+                            'carbon_dioxide      ', &
+                            'methane             ', &
+                            'nitrous_oxide       ', &
+                            'oxygen              ', &
+                            'nitrogen            ', &
+                            'cfc11               ', &
+                            'cfc12               ', &
+                            'carbon_monoxide     ', &
+                            'carbon_tetrachloride', &
+                            'hcfc22              ', &
+                            'hfc143a             ', &
+                            'hfc125              ', &
+                            'hfc23               ', &
+                            'hfc32               ', &
+                            'hfc134a             ', &
+                            'cf4                 ' ]
 
 
   num_gases = size(kdist_gas_names)
@@ -246,12 +247,6 @@ program rrtmgp_rfmip_lw
   !
   call load_and_init(k_dist, trim(kdist_file), gas_conc_array(1))
 
-  print *, "min of play", minval(p_lay), "k_dist%get_press_min()", k_dist%get_press_min() 
-  ! print *, "max of play", maxval(p_lay), "k_dist%get_press_max()", k_dist%get_press_max() 
-
-  where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
-  where(p_lev < k_dist%get_press_min()) p_lev = k_dist%get_press_min() + spacing (k_dist%get_press_min())
-
   if(.not. k_dist%source_is_internal()) &
     stop "rrtmgp_rfmip_lw: k-distribution file isn't LW"
 
@@ -263,14 +258,16 @@ program rrtmgp_rfmip_lw
   !   is set to 10^-3 Pa. Here we pretend the layer is just a bit less deep.
   !   This introduces an error but shows input sanitizing.
   !
-  if(top_at_1) then
-    p_lev(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
-  else
-    p_lev(nlay+1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
-  end if
+  print *, "min of play", minval(p_lay), "k_dist%get_press_min()", k_dist%get_press_min() 
 
-  !print *," shape play", shape(p_lay)
-  !print *, "play sfc", maxval(p_lay(nlay,:,:)), "tlay sfc", maxval(t_lay(nlay,:,:))
+  ! where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
+  ! where(p_lev < k_dist%get_press_min()) p_lev = k_dist%get_press_min() + spacing (k_dist%get_press_min())
+
+  if(top_at_1) then
+    p_lay(1,:,:)    = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+  else
+    p_lay(nlay,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+  end if
 
   !
   ! Allocate space for output fluxes (accessed via pointers in ty_fluxes_broadband),

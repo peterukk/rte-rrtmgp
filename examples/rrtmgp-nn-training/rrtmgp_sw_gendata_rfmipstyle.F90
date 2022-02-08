@@ -241,10 +241,15 @@ program rrtmgp_rfmip_sw
   !   is set to 10^-3 Pa. Here we pretend the layer is just a bit less deep.
   !   This introduces an error but shows input sanitizing.
   !
+  print *, "min of play", minval(p_lay), "k_dist%get_press_min()", k_dist%get_press_min() 
+
+  ! where(p_lay < k_dist%get_press_min()) p_lay = k_dist%get_press_min() + spacing (k_dist%get_press_min())
+  ! where(p_lev < k_dist%get_press_min()) p_lev = k_dist%get_press_min() + spacing (k_dist%get_press_min())
+
   if(top_at_1) then
-    p_lev(1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+    p_lay(1,:,:)    = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   else
-    p_lev(nlay+1,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
+    p_lay(nlay,:,:) = k_dist%get_press_min() + epsilon(k_dist%get_press_min())
   end if
 
   !
@@ -395,7 +400,6 @@ program rrtmgp_rfmip_sw
                           toa_flux,        &
                           sfc_alb_spec, sfc_alb_spec,  &
                           fluxes))
-            
   end do !blocks
 #ifdef USE_OPENMP
   !$OMP END DO

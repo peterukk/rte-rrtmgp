@@ -234,18 +234,23 @@ contains
       call stop_on_err("read_and_block_sw_bc: can't find file " // trim(fileName))
 
     ! surface albedo and solar irradiance can be either 1D or 2D , check for dimensions
-    if(nf90_inq_varid(ncid, "surface_albedo", varid) /= NF90_NOERR) &
-      call stop_on_err("get_var_size: can't find variable " // "surface_albedo")
-    if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
-      call stop_on_err("get_var_size: can't get information for variable " // "surface_albedo")
-    if (ndims == 2) then ! (ncol, nexp)
-      temp2D = read_field(ncid, "surface_albedo", ncol_l, nexp_l)
-    else if (ndims == 1) then
-      temp2D  = spread(read_field(ncid, "surface_albedo",  ncol_l), dim=2, ncopies=nexp_l)
+    ! if(nf90_inq_varid(ncid, "surface_albedo", varid) /= NF90_NOERR) &     
+    !  call stop_on_err("get_var_size: can't find surface_albedo")
+    if(nf90_inq_varid(ncid, "surface_albedo", varid) /= NF90_NOERR) then   
+      print *, "can't find surface_albedo, setting to 0.3 everywhere"
+      allocate(surface_albedo(blocksize, nblocks))
+      surface_albedo = 0.3_wp
+    else
+      if(nf90_inquire_variable(ncid, varid, ndims = ndims) /= NF90_NOERR) &
+        call stop_on_err("get_var_size: can't get information for variable " // "surface_albedo")
+      if (ndims == 2) then ! (ncol, nexp)
+        temp2D = read_field(ncid, "surface_albedo", ncol_l, nexp_l)
+      else if (ndims == 1) then
+        temp2D  = spread(read_field(ncid, "surface_albedo",  ncol_l), dim=2, ncopies=nexp_l)
+      end if
+      surface_albedo  = reshape(temp2D, shape = [blocksize, nblocks])
+      deallocate(temp2D)
     end if
-    surface_albedo  = reshape(temp2D, shape = [blocksize, nblocks])
-    deallocate(temp2D)
-
 
     if(nf90_inq_varid(ncid, "total_solar_irradiance", varid) /= NF90_NOERR) then 
       tsi_constant = 1412.0_wp 
@@ -369,8 +374,10 @@ contains
     character(len=32), dimension(:), allocatable, intent(inout) :: names_in_kdist, names_in_file
     ! ----------------
     integer :: num_gases, i
-    character(len=32), dimension(11) :: &
-      chem_name = ['co   ', &
+    character(len=32), dimension(13) :: &
+      chem_name = ['h2o  ', &
+                   'o3   ', &
+                   'co   ', &
                    'ch4  ', &
         				   'o2   ', &
         				   'n2o  ', &
@@ -381,7 +388,9 @@ contains
         				   'CH3Br', &
    			           'CH3Cl', &
                    'cfc22'], &
-      conc_name = ['carbon_monoxide     ', &
+      conc_name = ['water_vapor         ', &
+                   'ozone               ', &   
+                   'carbon_monoxide     ', &
                    'methane             ', &
                    'oxygen              ', &
           			   'nitrous_oxide       ', &
@@ -397,14 +406,20 @@ contains
     case (1)
       call read_kdist_gas_names(kdistFile, names_in_kdist)
 
+      ! A better way would be to check which gases are actually in the file,
+      ! and add only those gases to names_in_file and names_in_kdist (using mapping)
+      
       allocate(names_in_file(size(names_in_kdist)))
       do i = 1, size(names_in_kdist)
         names_in_file(i) = trim(lower_case(names_in_kdist(i)))
         !
         ! Use a mapping between chemical formula and name if it exists
         !
+        ! print *, "name in file ", names_in_file(i)
         if(string_in_array(names_in_file(i), chem_name)) &
           names_in_file(i) = conc_name(string_loc_in_array(names_in_file(i), chem_name))
+          ! print *, "setting new name in file ", names_in_file(i)
+
       end do
     case (2)
       num_gases = 9
@@ -562,8 +577,9 @@ contains
     !
     do g = 1, size(gas_names)
 
+      if(gas_names(g) == 'no2') cycle
+
       varName = trim(names_in_file(g))
-      
       if(nf90_inq_varid(ncid, varName, varid) /= NF90_NOERR) then
           ! Try with _GM suffix
           varName = trim(names_in_file(g)) // "_GM"
@@ -656,6 +672,13 @@ contains
       end if 
  
     end do
+
+    if(string_in_array('no2', gas_conc_array(1)%gas_name)) then 
+      ! print *, "no2 was in k-dist names but not in file, setting it to zero" 
+      do b = 1, nblocks
+        call stop_on_err(gas_conc_array(b)%set_vmr('no2', 0._wp))
+      end do
+    end if
 
     if (allocated(gas_conc_temp_3d)) deallocate(gas_conc_temp_3d)
     if (allocated(gas_conc_temp_2d)) deallocate(gas_conc_temp_2d)

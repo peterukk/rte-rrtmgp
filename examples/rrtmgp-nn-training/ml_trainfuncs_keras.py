@@ -35,6 +35,107 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.training.optimizer import Optimizer
 
 
+import shlex
+from subprocess import Popen, PIPE
+
+def get_stdout(cmd):
+    """
+    Execute the external command and get its exitcode, stdout and stderr.
+    """
+    args = shlex.split(cmd)
+
+    proc = Popen(args, stdout=PIPE, stderr=PIPE)
+    out, err = proc.communicate()
+    # exitcode = proc.returncode
+    #
+    out = out.decode("utf-8")
+
+    return out, err
+
+from tensorflow.keras.callbacks import Callback
+
+class RunRadiationScheme(Callback):
+    
+    def __init__(self, cmd, modelpath, modelsaver, patience=5, interval=1):
+        super(Callback, self).__init__()
+
+        self.interval = interval
+        self.cmd = cmd
+        self.modelpath = modelpath
+        self.modelsaver = modelsaver
+        self.patience = patience
+        # best_weights to store the weights at which the minimum loss occurs.
+        self.best_weights = None
+        
+    def on_train_begin(self, logs=None):
+        # The number of epoch it has waited when loss is no longer minimum.
+        self.wait = 0
+        # The epoch the training stops at.
+        self.stopped_epoch = 0
+        # Initialize the best as infinity.
+        self.best = np.Inf
+        
+        print("Using RunRadiationScheme earlystopper, fluxes are validated " \
+        "against Line-By-Line benchmark (RFMIP),\nand training stopped when a "\
+        "weighted mean of the metrics printed by the radiation program have\n"\
+        "not improved for {} epochs".format(self.patience ))
+                
+        print("The temporary model is saved to {}".format(self.modelpath))
+
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            # y_pred = self.model.predict_proba(self.X_val, verbose=0)
+            # score = roc_auc_score(self.y_val, y_pred)
+            
+            # SAVE MODEL
+            # print("saving to {}".format(self.modelpath))
+            self.modelsaver(self.modelpath, self.model)
+            
+            # RUN RADIATION CODE WITH MODEL
+            # print("running: {}".format(self.cmd))
+            # cmd = './rrtmgp_lw_eval_nn_rfmip 8 ../../rrtmgp/data/rrtmgp-data-lw-g128-210809.nc 1 1 ' + modelinput
+            out,err = get_stdout(self.cmd)
+            outstr = out.split('--------')
+            metric_names = outstr[1].strip('\n')
+            metric_names = metric_names.split(',')
+            err_metrics_str = outstr[2].strip('\n')
+            err_metrics_str = err_metrics_str.split(',')
+            err_metrics = np.float32(err_metrics_str)
+            # score = err_metrics.mean()
+            logs["heating_rate_error"] = err_metrics[0]
+            # Construct "overall" accuracy score for radiation
+            forcing_err = np.abs(err_metrics[2:]).mean()
+            hr_err = np.abs(err_metrics[0:2]).mean()
+            weight_hr = 0.7
+            weight_forcing = 1 - weight_hr
+            score = weight_hr * hr_err + weight_forcing * forcing_err
+            logs["custom_radiation_score"] = score
+            # score = err_metrics[0]
+            hr_ref = 0.0711
+            forcing_ref = 0.2
+            print("LBL errors - heating rate {:.3f} (RRTMGP {:.3f}), "\
+                  "TOA/sfc forcings {:.2f} ({:.2f}): weighted metric: {:.6f}".format(hr_err, hr_ref, forcing_err, forcing_ref, score))
+
+            current = logs.get("custom_radiation_score")
+            if np.less(current, self.best):
+                self.best = current
+                self.wait = 0
+                # Record the best weights if current results is better (less).
+                self.best_weights = self.model.get_weights()
+            else:
+                self.wait += 1
+                if self.wait >= self.patience:
+                    self.stopped_epoch = epoch
+                    self.model.stop_training = True
+                    print("Restoring model weights from the end of the best epoch.")
+                    self.model.set_weights(self.best_weights)
+                        
+    def on_train_end(self, logs=None):
+        if self.stopped_epoch > 0:
+            print("Epoch %05d: early stopping" % (self.stopped_epoch + 1))
+     
+        
 class COCOB(Optimizer):
     def __init__(self, alpha=100, use_locking=False, name='COCOB'):
         '''

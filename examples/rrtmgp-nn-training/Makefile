@@ -54,10 +54,6 @@ endif
 
 
 # -------- Use OpenMP? May be needed for BLAS -------
-# ifeq ($(BLASLIB),blis-amd)
-#    USE_OPENMP=1
-# endif
-#USE_OPENMP=1
 
 ifeq ($(USE_OPENMP),1)
 	# OMPFLAG = -fopenmp
@@ -101,6 +97,8 @@ VPATH = ../
 
 PROGRAM1 = rrtmgp_sw_gendata_rfmipstyle
 PROGRAM2 = rrtmgp_lw_gendata_rfmipstyle
+PROGRAM3 = rrtmgp_sw_eval_nn_rfmip
+PROGRAM4 = rrtmgp_lw_eval_nn_rfmip
 
 # Compilation rules
 %.o: %.F90
@@ -114,15 +112,23 @@ PROGRAM2 = rrtmgp_lw_gendata_rfmipstyle
 #
 ADDITIONS = mo_simple_netcdf.o easy_netcdf.o mo_io_rfmipstyle_generic.o mo_load_coefficients.o
 
-all: $(PROGRAM1) $(PROGRAM2)
+all: $(PROGRAM1) $(PROGRAM2) $(PROGRAM3) $(PROGRAM4)
 
-$(PROGRAM1):   $(PROGRAM1).o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+
+$(PROGRAM1) $(PROGRAM2) $(PROGRAM3) $(PROGRAM4): % : %.o  $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+
+# $(PROGRAM1).o $(PROGRAM2).o: % : %.F90 $(ADDITIONS)
+
+# $(PROGRAM1):   $(PROGRAM1).o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
 
 $(PROGRAM1).o: $(PROGRAM1).F90 $(ADDITIONS)
 
-$(PROGRAM2):   $(PROGRAM2).o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
+# $(PROGRAM2):   $(PROGRAM2).o   $(ADDITIONS) $(RRTMGP_BUILD)/librte.a $(RRTMGP_BUILD)/librrtmgp.a $(RRTMGP_BUILD)/libneural.a
 
 $(PROGRAM2).o: $(PROGRAM2).F90 $(ADDITIONS)
+$(PROGRAM3).o: $(PROGRAM3).F90 $(ADDITIONS)
+$(PROGRAM4).o: $(PROGRAM4).F90 $(ADDITIONS)
+
 
 easy_netcdf.o: easy_netcdf.F90
 

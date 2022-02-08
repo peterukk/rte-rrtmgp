@@ -16,8 +16,8 @@
 
 module mo_gas_optics_kernels
   use mo_rte_kind,          only : wp, wl, sp, dp
-  use mod_network_rrtmgp,   only: rrtmgp_network_type, output_sgemm_tau, output_sgemm_pfrac
-
+  use mod_network_rrtmgp,   only: rrtmgp_network_type, output_sgemm_tau, output_sgemm_pfrac, output_sgemm_lw
+  use omp_lib
   use, intrinsic :: ISO_C_BINDING
 #ifdef USE_TIMING
   ! Timing library
@@ -696,17 +696,18 @@ contains
     integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                         intent(in)    :: nn_inputs     
-    real(sp), dimension(:,:), target, contiguous,  &     
+    real(sp), dimension(nlay,ncol), target,  &     
                                         intent(in)    :: col_dry_wk     ! needs to be assumed-shape (and explicit shaped in parent code) for OpenMP                                                             
     ! The neural network models
-    type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(:),   intent(in)    :: neural_nets
 
     ! outputs
     real(sp), dimension(ngpt,nlay,ncol), target, &
                                         intent(out)   :: pfrac, tau
     ! local
-    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output, outp
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
+    real(sp), dimension(2*ngpt,nlay,ncol), target :: outp_both
     integer                                           :: ilay, icol, nobs
 
     !  PREDICT PLANCK FRACTIONS
@@ -714,6 +715,9 @@ contains
     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
     
     call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
+
+    if (size(neural_nets)==2) then
+
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau')
 #endif
@@ -733,6 +737,28 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('compute_pfrac')
 #endif
+  
+    else 
+      call C_F_POINTER (C_LOC(outp_both), outp, [2*ngpt,nobs])
+
+      call neural_nets(1) % output_sgemm_lw(ninputs, 2*ngpt, nobs, input, outp)
+
+#ifdef USE_TIMING
+    ret =  gptlstart('write')
+#endif   
+      do icol = 1, ncol
+        do ilay = 1, nlay
+
+          tau(1:ngpt,ilay,icol) = outp_both(1:ngpt,ilay,icol)*col_dry_wk(ilay,icol)
+
+          pfrac(1:ngpt,ilay,icol) = outp_both(ngpt+1:2*ngpt,ilay,icol)
+        end do
+      end do
+
+#ifdef USE_TIMING
+    ret =  gptlstop('write')
+#endif   
+    end if
 
   end subroutine predict_nn_lw_blas_sp  
 
@@ -812,7 +838,7 @@ contains
     integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                         intent(in)    :: nn_inputs 
-    real(sp), dimension(nlay,ncol), target, &     
+    real(wp), dimension(nlay,ncol), target, &     
                                           intent(in)    :: col_dry_wk                                    
     ! The neural network models
     type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets
@@ -831,8 +857,9 @@ contains
     ! PREDICT PLANCK FRACTIONS
     nobs = nlay*ncol
     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
-    
+
     call C_F_POINTER (C_LOC(col_dry_wk), input_coldry, [nobs])
+
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_abs')
 #endif

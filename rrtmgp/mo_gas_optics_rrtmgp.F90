@@ -39,6 +39,8 @@ module mo_gas_optics_rrtmgp
   use mo_gas_optics,         only: ty_gas_optics
   use mo_rrtmgp_util_reorder
   use mod_network_rrtmgp
+  use omp_lib
+
   use,intrinsic :: ISO_Fortran_env
 #ifdef USE_TIMING
   !
@@ -257,13 +259,12 @@ contains
                            optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
                                                 tlev        ! level temperatures [K]; (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-    type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Emission and absorption models 
+    type(rrtmgp_network_type), dimension(:), intent(in), optional      :: neural_nets ! Emission and absorption models 
 
     ! ----------------------------------------------------------                              
     ! Local variables
     real(sp), dimension(:,:,:), allocatable           :: nn_inputs
-    real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
-                                              target  :: col_dry_arr, vmr_h2o
+    real(wp), dimension(:,:), allocatable,  target    :: col_dry_arr, vmr_h2o
     real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
     ! ----------------------------------------------------------
     real(wp), dimension(size(play,dim=1)+1, size(play,dim=2)), &
@@ -301,7 +302,7 @@ contains
 
     if(check_values) then
       if(any_vals_outside(play, this%press_ref_min,this%press_ref_max)) error_msg = "gas_optics(): array play has values outside range"
-      if(any_vals_outside(plev, this%press_ref_min,this%press_ref_max)) error_msg = "gas_optics(): array plev has values outside range"
+      if(any_vals_less_than(plev, 0._wp)) error_msg = "gas_optics(): array plev has values outside range"
       if(any_vals_outside(tlay, this%temp_ref_min,  this%temp_ref_max)) error_msg = "gas_optics(): array tlay has values outside range"
       if(any_vals_outside(tsfc, this%temp_ref_min,  this%temp_ref_max)) error_msg = "gas_optics(): array tsfc has values outside range"
       if(present(tlev)) then
@@ -343,6 +344,7 @@ contains
       !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
+      allocate(col_dry_arr(nlay,ncol), vmr_h2o(nlay,ncol))
       !$acc enter data create(col_dry_arr, vmr_h2o)
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_arr)
@@ -350,7 +352,10 @@ contains
       !$acc exit data delete(vmr_h2o)
     end if
     !$acc enter data attach(col_dry_wk) 
-
+    ! !! FOUND STRANGE OPENMP BUG ON GCC 9.3: with many threads, the content of col_dry_wk 
+    ! can be different from col_dry_arr!
+    ! PRINT *, "proc ", OMP_GET_THREAD_NUM(), " mean col_dry_wk, arr ", mean_2d(col_dry_wk), mean_2d(col_dry_arr)
+    
     !
     ! Gas optics
     !
@@ -370,28 +375,31 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstart('predict_nn_lw_blas')
 #endif
-      call predict_nn_lw_blas(              &
-              ncol, nlay, ngpt, ninputs,    &  ! dimensions
-              nn_inputs, col_dry_wk,        &  ! data inputs
-              neural_nets,                  &  ! NN models (input)
-              optical_props%tau, sources%lay_source)    ! outputs : the second variable is actually Planck fraction, 
-                                                        ! but for this temporary variable we can utilize an already allocated variable
-      !$acc exit data delete(nn_inputs) 
-      deallocate(nn_inputs)
+      ! trick to reduce memory use: use already allocated variable
+      associate (planck_fraction =>sources%lay_source)
+
+        call predict_nn_lw_blas(              &
+                ncol, nlay, ngpt, ninputs,    &  ! dimensions
+                nn_inputs,  col_dry_arr, & ! col_dry_wk, !! OPENMP BUG, SEE ABOVE
+                neural_nets,                  &  ! NN models (input)
+                optical_props%tau, planck_fraction) 
+        !$acc exit data delete(nn_inputs) 
+        deallocate(nn_inputs)
 #ifdef USE_TIMING
     ret =  gptlstop('predict_nn_lw_blas')
     ret =  gptlstart('compute_source')
 #endif
-      ! Compute Planck source function
-      ! In this case the Planck fraction has already been computed, so we call a custom function
-      call compute_Planck_source_nn(ncol, nlay, nband, ngpt,      &
-        this%get_nPlanckTemp(),                                   &
-        tlay, tlev, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
-        this%get_gpoint_bands(), this%get_band_lims_gpoint(),     &
-        this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
-        sources%sfc_source, sources%sfc_source_Jac,               &
-        sources%lay_source, sources%lev_source) ! trick to reduce memory allocations: 
-                                                ! lay_source (inout) is pfrac on input, lay_source on output
+        ! Compute Planck source function
+        ! In this case the Planck fraction has already been computed, so we call a custom function
+        call compute_Planck_source_nn(ncol, nlay, nband, ngpt,      &
+          this%get_nPlanckTemp(),                                   &
+          tlay, tlev, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
+          this%get_gpoint_bands(), this%get_band_lims_gpoint(),     &
+          this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
+          sources%sfc_source, sources%sfc_source_Jac,               &
+          sources%lay_source, sources%lev_source) ! argument lay_source (inout) is pfrac on input,
+                                                  ! lay_source on output
+        end associate
 #ifdef USE_TIMING
     ret =  gptlstop('compute_source')
 #endif
@@ -402,7 +410,7 @@ contains
       ! Use interpolation routine for gas optics, NOT neural network
       error_msg = compute_gas_optics(this,                         &
                                    ncol, nlay, ngpt, nband,                 &
-                                   play, plev, tlay, gas_desc, col_dry_wk,  &
+                                   play, plev, tlay, gas_desc, col_dry_arr, & ! col_dry_wk, !! OPENMP BUG, SEE ABOVE
                                    optical_props,                           &
                                    sources, tlev_wk, tsfc)             
       if(error_msg  /= '') return
@@ -441,8 +449,7 @@ contains
     ! ----------------------------------------------------------
     ! Local variables
     real(sp), dimension(:,:,:), allocatable           :: nn_inputs
-    real(wp), dimension(size(play,dim=1), size(play,dim=2)), &
-                                              target  :: col_dry_arr, vmr_h2o
+    real(wp), dimension(:,:), allocatable,  target  :: col_dry_arr, vmr_h2o
     real(wp), dimension(:,:),   contiguous, pointer   :: col_dry_wk => NULL()
 
     integer :: ncol, nlay, ngpt, nband, ngas, idx_h2o, ninputs
@@ -472,7 +479,7 @@ contains
 
     if(check_values) then
       if(any_vals_outside(play, this%press_ref_min,this%press_ref_max))  error_msg = "gas_optics(): array play has values outside range"
-      if(any_vals_outside(plev, this%press_ref_min,this%press_ref_max))  error_msg = "gas_optics(): array plev has values outside range"
+      if(any_vals_less_than(plev, 0._wp)) error_msg = "gas_optics(): array plev has values outside range"
       if(any_vals_outside(tlay, this%temp_ref_min,  this%temp_ref_max))  error_msg = "gas_optics(): array tlay has values outside range"
       if(present(col_dry)) then
         if(any_vals_less_than(col_dry, 0._wp)) error_msg = "gas_optics(): array col_dry has values outside range"
@@ -487,8 +494,8 @@ contains
       !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
+      allocate(col_dry_arr(nlay,ncol), vmr_h2o(nlay,ncol))
       !$acc enter data create(col_dry_arr, vmr_h2o)
-
       error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
       call get_col_dry(vmr_h2o, plev, col_dry_arr)
       
@@ -496,6 +503,10 @@ contains
       !$acc exit data delete(vmr_h2o)
     end if
     !$acc enter data attach(col_dry_wk)
+    ! !! FOUND STRANGE OPENMP BUG ON GCC 9.3: with many threads, the content of col_dry_wk 
+    ! can be different from col_dry_arr!
+    ! PRINT *, "proc ", OMP_GET_THREAD_NUM(), " mean col_dry_wk, arr ", mean_2d(col_dry_wk), mean_2d(col_dry_arr)
+
 
     !
     ! Gas optics
@@ -518,15 +529,16 @@ contains
           ! User is asking for absorption optical depth only
           call predict_nn_sw_blas(              &
                     ncol, nlay, ngpt, ninputs,    &  ! dimensions
-                    nn_inputs, col_dry_wk,        &  ! data inputs
+                    nn_inputs, col_dry_arr, & ! col_dry_wk, !! OPENMP BUG, SEE ABOVE
                     neural_nets,                  &  ! NN models (input)
                     optical_props%tau)             ! outputs    
 
         type is (ty_optical_props_2str)
           ! User is also asking for single scattering albedo
+
           call predict_nn_sw_blas(              &
                   ncol, nlay, ngpt, ninputs,    &  ! dimensions
-                  nn_inputs, col_dry_wk,        &  ! data inputs
+                  nn_inputs,  col_dry_arr, & ! col_dry_wk, !! OPENMP BUG, SEE ABOVE
                   neural_nets,                  &  ! NN models (input)
                   optical_props%tau, optical_props%ssa)    ! outputs    
 
@@ -549,8 +561,8 @@ contains
     ! Use interpolation routine for gas optics, NOT neural networks
 
       error_msg = compute_gas_optics(this,                     &
-                                  ncol, nlay, ngpt, nband,             &
-                                  play, plev, tlay, gas_desc, col_dry_wk, &
+                                  ncol, nlay, ngpt, nband,     &
+                                  play, plev, tlay, gas_desc,  col_dry_arr, & ! col_dry_wk, 
                                   optical_props) 
     end if
 
@@ -573,7 +585,12 @@ contains
     !$acc exit data delete(col_dry, col_dry_arr, tlay, play, plev) detach(col_dry_wk)
 
   end function gas_optics_ext
-
+  function mean_2d(x) result(mean2)
+    implicit none 
+    real(wp), dimension(:,:), intent(in) :: x
+    real(wp) :: mean2
+    mean2 = sum(x) / size(x)
+  end function mean_2d
   !------------------------------------------------------------------------------------------
   ! Routine for preparing RRTMGP-NN inputs from the gas concentrations, temperature and pressure
   ! The input names are loaded from the model, along with the input scaling coefficients:
@@ -640,17 +657,17 @@ contains
 
     ! Check that the two neural nets use the same inputs and scaling coefficients, otherwise stop
     ! (alternatively, we could construct different nn_inputs, calling the routine separately for each network)
-     if(check_values) then
-      if (.not. all(neural_nets(1)%input_names == neural_nets(2)%input_names)) &
-        error_msg = "compute_nn_inputs: The two neural networks seem to use different inputs"
-      if(error_msg  /= '') return
-      if (.not. all(abs(neural_nets(1)%coeffs_input_max - neural_nets(2)%coeffs_input_max) < 1e-12)) &
-        error_msg =  "compute_nn_inputs: The two neural networks seem to use different input scaling coeffs"
-      if(error_msg  /= '') return
-      if (.not. (string_in_array('o3', input_names) .and. string_in_array('h2o', input_names))) &
-      error_msg = "compute_nn_inputs: code assumes that H2O and O3 are both inputs, but not found in input_names"
-      if(error_msg  /= '') return
-     end if
+    !  if(check_values) then
+    !   if (.not. all(neural_nets(1)%input_names == neural_nets(2)%input_names)) &
+    !     error_msg = "compute_nn_inputs: The two neural networks seem to use different inputs"
+    !   if(error_msg  /= '') return
+    !   if (.not. all(abs(neural_nets(1)%coeffs_input_max - neural_nets(2)%coeffs_input_max) < 1e-12)) &
+    !     error_msg =  "compute_nn_inputs: The two neural networks seem to use different input scaling coeffs"
+    !   if(error_msg  /= '') return
+    !   if (.not. (string_in_array('o3', input_names) .and. string_in_array('h2o', input_names))) &
+    !   error_msg = "compute_nn_inputs: code assumes that H2O and O3 are both inputs, but not found in input_names"
+    !   if(error_msg  /= '') return
+    !  end if
 
     ! if check_concs_within_training_range: 
     ! do igas = 1, n inputs
@@ -2145,5 +2162,12 @@ end subroutine combine
     mean = sum(sum(x, dim=1),dim=1) / size(x)
 
   end function mean2
+
+  function mean_3d(x) result(mean3)
+    implicit none 
+    real(wp), dimension(:,:,:), intent(in) :: x
+    real(wp) :: mean3
+    mean3 = sum(x) / size(x)
+  end function mean_3d
 end module mo_gas_optics_rrtmgp
 

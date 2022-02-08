@@ -91,7 +91,7 @@ module mo_gas_optics
                             optional, target :: col_dry, &  ! Column dry amount; dim(nlay,ncol)
                                                    tlev        ! level temperatures [K]l (nlay+1,ncol)
     ! Optional input: neural network model (uses NN kernel if present)
-      type(rrtmgp_network_type), dimension(2), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                   
+      type(rrtmgp_network_type), dimension(:), intent(in), optional      :: neural_nets ! Planck fraction model, optical depth model                   
     end function gas_optics_int_abstract
 
     !--------------------------------------------------------------------------------------------------------------------

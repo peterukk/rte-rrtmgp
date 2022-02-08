@@ -36,7 +36,7 @@ def save_model_netcdf(fpath_netcdf, model, activation_names, input_names,
     #   outputs, required for post-processing
     
     from netCDF4 import Dataset, stringtochar
-
+    
     # Create a netCDF file specifying the NN. in case of two hidden layers it will
     # look like this:
     # dimensions
@@ -176,7 +176,7 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=Fals
     dat = Dataset(fname)
     
     if predictand not in ['lw_absorption', 'lw_planck_frac', 'sw_absorption', 
-                          'sw_rayleigh']: 
+                          'sw_rayleigh', 'lw_both']: 
         sys.exit("Second drgument to load_rrtmgp (predictand) " \
         "must be either lw_absorption, lw_planck_frac, sw_absorption, or sw_rayleigh")
             
@@ -191,7 +191,7 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=Fals
         kdist_str = None
         
     # inputs
-    if predictand in ["lw_absorption", "lw_planck_frac"]: # Longwave
+    if predictand in ["lw_absorption", "lw_planck_frac",'lw_both']: # Longwave
         xname = 'rrtmgp_lw_input'
     else: # Shortwave
         xname = 'rrtmgp_sw_input'
@@ -226,6 +226,10 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=Fals
         y = dat.variables['tau_lw_gas'][:].data
     elif (predictand=='lw_planck_frac'):
         y = dat.variables['planck_fraction'][:].data
+    elif (predictand=='lw_both'):
+        y = dat.variables['tau_lw_gas'][:].data
+        y2 = dat.variables['planck_fraction'][:].data   
+        y = np.concatenate((y,y2),axis=-1)
     else:
         y  = dat.variables[predictand][:].data
         
@@ -458,7 +462,7 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
     else: return x,y
     
 # A wrapping function for scaling outputs
-def scale_outputs(y_raw, col_dry, nfac=1, 
+def scale_outputs(y_raw, col_dry=None, nfac=1, 
                  y_mean=None, y_sigma=None):
     # Y_mean and y_sigma are optional outputs: if missing, skip standard-scaling
     if np.any(y_sigma)==None:
@@ -468,7 +472,11 @@ def scale_outputs(y_raw, col_dry, nfac=1,
         y_mean = np.repeat(np.float32(0), y_raw.shape[1])
     
     # Scale by layer number of molecules to obtain absorption cross section
-    y   = preproc_tau_to_crossection(y_raw, col_dry)
+    if np.any(col_dry)==None:
+        y = np.copy(y_raw)
+    else:
+        y = preproc_tau_to_crossection(y_raw, col_dry)
+
     # Scale using power-scaling followed by standard-scaling
     y   = preproc_pow_standardization(y, nfac, y_mean, y_sigma)
     return y
