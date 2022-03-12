@@ -113,18 +113,20 @@ program rrtmgp_rfmip_sw
   character(len=80)   ::  modelfile_tau= "../../neural/data/BEST_tau-sw-abs-7-16-16-mae_2.nc", &
                           modelfile_ray= "../../neural/data/BEST_tau-sw-ray-7-16-16_2.nc"
   character(len=132)  ::  flx_file, flx_file_lbl, timing_file
-  integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index
-  integer             ::  b, icol, ilay,ibnd, igpt, igas, ncid, ninputs, ret, i, istat
+  integer             ::  nargs, ncol, nlay, nbnd, ngpt, nexp, nblocks, block_size, forcing_index, iref
+  integer             ::  b, icol, ilay,ibnd, igpt, igas, ncid, ninputs, ret, i, istat, num_metrics, iexp
   character(len=4)    ::  block_size_char, forcing_index_char = '1'
   character(len=32 ), dimension(:),  allocatable   ::  kdist_gas_names, rfmip_gas_names
   real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
-  real(wp), dimension(:,:,:),         allocatable :: rsu_nn, rsd_nn, rsu_lbl, rsd_lbl, rsdu_nn, rsdu_lbl
+  real(wp), dimension(:,:,:),         allocatable :: rsu_new, rsd_new, rsu_lbl, rsd_lbl, rsdu_new, rsdu_lbl
   real(wp), dimension(:,:  ),         allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
   real(wp), dimension(:,:  ),         allocatable :: sfc_alb_spec ! nbnd, block_size; spectrally-resolved surface albedo
   real(wp), dimension(:),             allocatable :: temparray
+  real(wp), allocatable :: errors(:), hr_nn(:,:,:),  hr_lbl(:,:,:)
+  character(len=80), allocatable :: metric_names(:)
   real(wp), parameter :: deg_to_rad = acos(-1._wp)/180._wp
-  real(wp) :: def_tsi_s
+  real(wp) :: def_tsi_s, val
 
   logical 		        :: use_rrtmgp_nn = .false., save_flux = .false., top_at_1
   !
@@ -447,19 +449,19 @@ program rrtmgp_rfmip_sw
   ! Compare fluxes to benchmark line-by-line results, alongside reference RTE+RRTMGP computations?
   print *, "-----COMPARING ERRORS (W.R.T. LINE-BY-LINE) -------"
 
-  allocate(rsd_nn( nlay+1, ncol, nexp))
-  allocate(rsu_nn( nlay+1, ncol, nexp))
-  allocate(rsdu_nn( nlay+1, ncol, nexp))
+  allocate(rsd_new( nlay+1, ncol, nexp))
+  allocate(rsu_new( nlay+1, ncol, nexp))
+  allocate(rsdu_new( nlay+1, ncol, nexp))
   allocate(rsd_lbl( nlay+1, ncol, nexp))
   allocate(rsu_lbl( nlay+1, ncol, nexp))
   allocate(rsdu_lbl( nlay+1, ncol, nexp))
 
   flx_file_lbl = 'output_fluxes/rsud_Efx_LBLRTM-12-8_rad-irf_r1i1p1f1_gn.nc'
 
-  call unblock(flux_up, rsu_nn)
-  call unblock(flux_dn, rsd_nn)
+  call unblock(flux_up, rsu_new)
+  call unblock(flux_dn, rsd_new)
 
-  rsdu_nn = rsd_nn - rsu_nn
+  rsdu_new = rsd_new - rsu_new
 
   if(nf90_open(trim(flx_file_lbl), NF90_NOWRITE, ncid) /= NF90_NOERR) &
   call stop_on_err("read_and_block_gases_ty: can't find file " // trim(flx_file_lbl))
@@ -468,31 +470,216 @@ program rrtmgp_rfmip_sw
   rsd_lbl = read_field(ncid, "rsd", nlay+1, ncol, nexp)
   rsdu_lbl = rsd_lbl - rsu_lbl
 
+  ! Error metrics - we can choose some managable number of metrics that are printed at the end
+  ! and read by our training program from the command line standard output
+  num_metrics = 8
+  allocate(errors(num_metrics), metric_names(num_metrics))
+  
+  ! metric_names(1) = 'HR (all) '
+  ! metric_names(2) = 'HR (PD)'
+  ! metric_names(3) = 'HR (future-all)'
+  ! metric_names(4) = 'HR (preindustrial)'
+  ! metric_names(5) = 'Bias surface downwelling'
+  ! metric_names(6) = 'RF-SFC (PI->future)'
+  ! metric_names(7) = 'RF-TOA (PI->future)'
+  ! metric_names(8) = 'RF-SFC CH4 (PI->PD)'
+  metric_names(1) = 'HR (all) '
+  metric_names(2) = 'HR (PD)'
+  metric_names(3) = 'HR (future-all)'
+  metric_names(4) = 'HR (preindustrial)'
+  metric_names(5) = 'Bias surface downwelling'
+  metric_names(6) = 'RF-TOA (PI->future)'
+  metric_names(7) = 'RF-SFC (PI->future)'
+  metric_names(8) = 'RF-SFC CH4 (PI->PD)'
+  ! Heating rates
+  allocate(hr_nn(nlay,ncol,nexp), hr_lbl(nlay,ncol,nexp))
+
+  do iexp = 1, nexp
+    hr_nn(:,:,iexp)   = calc_heating_rate(ncol, nlay, rsu_new(:,:,iexp), rsd_new(:,:,iexp), p_lev)
+    hr_lbl(:,:,iexp)  = calc_heating_rate(ncol, nlay, rsu_lbl(:,:,iexp), rsd_lbl(:,:,iexp), p_lev)
+  end do
+
+  print *, 'Heating rate error, all experiments  ', mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
+  print *, 'Heating rate error, present-day      ', mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
+  print *, 'Heating rate error, future-all       ', mae_flat(ncol*nlay, hr_nn(:,:,17), hr_lbl(:,:,17))
+  print *, 'Heating rate error, preindustrial    ', mae_flat(ncol*nlay, hr_nn(:,:,2), hr_lbl(:,:,2))
+
+  ! print *, 'RMSE heating rate error, present-day ', rmse_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1)
+
+  errors(1) = mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
+  errors(2) = mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
+  errors(3) = mae_flat(ncol*nlay, hr_nn(:,:,17), hr_lbl(:,:,17))
+  errors(4) = mae_flat(ncol*nlay, hr_nn(:,:,2), hr_lbl(:,:,2))
+
+
+  print *, "bias in downwelling flux (sfc):       ", bias_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
+  print *, "RMSE in downwelling flux (sfc):       ", rmse_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
+  print *, "RMSE in downwelling flux, P.D. (sfc): ", rmse_flat(ncol, rsd_new(nlay+1,:,1), rsd_lbl(nlay+1,:,1))
+  print *, "mae in downwelling flux (sfc):       ", mae_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
+
+  errors(5) = bias_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
+
+  ! print *, "------------- FLUX ERRORS ------------ "
   ! print *, "------------- UPWELLING -------------- "
   ! print *, "MAE in upwelling flux, present-day:              ", &
-  !  mae(reshape(rsu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+  !  mae(reshape(rsu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsu_new(:,:,1), shape = [1*ncol*(nlay+1)]))
   ! print *, "bias in upwelling flux, ALL EXPS, top-of-atm.:   ", &
-  !   bias(reshape(rsu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rsu_nn(1,:,:), shape = [nexp*ncol]))
+  !   bias(reshape(rsu_lbl(1,:,:), shape = [nexp*ncol]),    reshape(rsu_new(1,:,:), shape = [nexp*ncol]))
 
   ! print *, "-------------- DOWNWELLING --------------"
   ! print *, "MAE in downwelling flux, present-day:            ", &
-  !  mae(reshape(rsd_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
+  !  mae(reshape(rsd_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsd_new(:,:,1), shape = [1*ncol*(nlay+1)]))
 
-  print *, "-------------- NET FLUX --------------"
-  print *, "MAE in net flux, present-day:               ", &
-    mae(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_nn(:,:,1), shape = [1*ncol*(nlay+1)]))
 
-  print *, "MAE in net flux, ALL EXPS:                  ", &
-    mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_nn(:,:,:), shape = [nexp*ncol*(nlay+1)]))
+  ! print *, "-------------- NET FLUX --------------"
+  ! val  =  mae(reshape(rsdu_lbl(:,:,1), shape = [1*ncol*(nlay+1)]), reshape(rsdu_new(:,:,1), shape = [1*ncol*(nlay+1)]))
+  ! print *, "MAE in net flux, present-day:               ", val
+  ! errors(2) = val
 
-  print *, "RMSE in net flux, present-day, SURFACE:      ", &
-    rmse(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_nn(nlay+1,:,1), shape = [1*ncol]))
+  ! val = mae(reshape(rsdu_lbl(:,:,:), shape = [nexp*ncol*(nlay+1)]),    reshape(rsdu_new(:,:,:), shape = [nexp*ncol*(nlay+1)]))
+  ! print *, "MAE in net flux, ALL EXPS:                  ", val
+  ! errors(3) = val
 
-  deallocate(rsd_nn,rsu_nn,rsd_lbl,rsu_lbl,rsdu_nn,rsdu_lbl)
+  ! val = rmse(reshape(rsdu_lbl(nlay+1,:,1), shape = [1*ncol]),    reshape(rsdu_new(nlay+1,:,1), shape = [1*ncol]))
+  ! print *, "RMSE in net flux, present-day, SURFACE:      ", val
+
+  
+  iref = 1
+  iexp = 2
+  val = mean(diff(rsd_lbl,nlay+1,iref,iexp))  -  mean(diff(rsd_new,nlay+1,iref,iexp))
+  ! val = mean(rsd_lbl(nlay+1,:,iref) - rsd_lbl(nlay+1,:,iexp)) -   mean(rsd_new(nlay+1,:,iref) - rsd_new(nlay+1,:,iexp))
+  print *, "radiative forcing error at surface, present-day - preindustrial:      ", val
+
+  ! val = -mean(diff(rsu_lbl,1,iref,iexp)) -   -mean(diff(rsu_new,1,iref,iexp))
+  ! print *, "radiative forcing error at TOA, present-day - preindustrial:          ", val
+  
+  iref = 4
+  iexp = 2
+  val = -mean(diff(rsu_lbl,1,iref,iexp)) -   -mean(diff(rsu_new,1,iref,iexp))
+  print *, "radiative forcing error at TOA, future - preindustrial:               ", val
+  errors(6) = val
+
+  iref = 17
+  iexp = 1
+  val = -mean(diff(rsu_lbl,1,iref,iexp)) -   -mean(diff(rsu_new,1,iref,iexp))
+  print *, "radiative forcing error at TOA, future-ALL - present-day:             ", val
+
+  iref = 4
+  iexp = 2
+  val = mean(diff(rsd_lbl,nlay+1,iref,iexp)) -   mean(diff(rsd_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, future - preindustrial:           ", val
+  errors(7) = val
+
+  iref = 4
+  iexp = 1
+  val = mean(diff(rsd_lbl,nlay+1,iref,iexp)) -   mean(diff(rsd_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, future - present-day:             ", val
+
+  iref = 17
+  iexp = 1
+  val = mean(diff(rsd_lbl,nlay+1,iref,iexp)) -   mean(diff(rsd_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, future-ALL - present-day:         ", val
+
+
+
+  iexp = 9
+  iref = 8
+  val = mean(diff(rsd_lbl,nlay+1,iref,iexp)) -   mean(diff(rsd_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, 8x CO2 - preindustrial CO2:       ", val
+
+  val =   -mean(diff(rsu_lbl,1,iref,iexp)) -   -mean(diff(rsu_new,1,iref,iexp))
+  print *, "radiative forcing error at TOA, 8x CO2 - preindustrial CO2            ", val
+
+  iref = 1
+  iexp = 11
+  val =   mean(diff(rsd_lbl,nlay+1,iref,iexp)) -   mean(diff(rsd_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, present-day - preindustrial N2O:  ", val
+  
+  val =   -mean(diff(rsu_lbl,1,iref,iexp)) -   -mean(diff(rsu_new,1,iref,iexp))
+  print *, "radiative forcing error at TOA, present-day - preindustrial N2O:      ", val
+
+  iref = 1
+  iexp = 10
+  val = mean(diff(rsd_lbl,nlay+1,iref,iexp)) -   mean(diff(rsd_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, present-day - preindustrial CH4:  ", val 
+  errors(8) = val
+
+  val = -mean(diff(rsu_lbl,1,iref,iexp)) -   -mean(diff(rsu_new,1,iref,iexp))
+  print *, "radiative forcing error at TOA, present-day - preindustrial CH4:      ", val
+
+
+  write(stdout, '(a)')   '--------'
+
+  do i = 1,num_metrics
+    if (i==num_metrics) then
+      write(stdout, fmt="(a)", advance="no") trim(metric_names(i))
+    else 
+      write(stdout, fmt="(1x, a, a)", advance="no") trim(metric_names(i)), ","
+    end if
+  end do
+
+  write(stdout, '(a)')   ' '
+  write(stdout, '(a)')   '--------'
+
+  do i = 1,num_metrics
+    if (i==num_metrics) then
+      write(stdout, fmt="(1x, F8.4)", advance="no") errors(i)
+    else 
+      write(stdout, fmt="(1x, F8.4, a)", advance="no") errors(i), ","
+    end if
+  end do
+  print *, ' '
+  ! print *, "vals ", (errors(iexp) // " ", iexp = 1, size(errors))
+
+  ! write(stdout, '(a1, F6.4, a2, F6.4, a2, F6.4)') ' ', errors(1), '  ', errors(2), '  ', errors(3)
+
+
+  deallocate(rsd_new,rsu_new,rsd_lbl,rsu_lbl,rsdu_new,rsdu_lbl)
 
   deallocate(flux_up, flux_dn)
 
   contains
+
+  function diff(flux,ilay,i1,i2) result(difference)
+    real(wp), dimension(:,:,:), intent(in) :: flux
+    integer, intent(in) :: ilay,i1,i2
+    real(wp), dimension(size(flux,2)) :: difference
+
+    difference = flux(ilay,:,i1) - flux(ilay,:,i2)
+
+  end function
+
+      ! calculate heating rates
+  function calc_heating_rate(ncol, nlay, flux_up, flux_dn, pressure_hl) result(hr_K_day)
+    !  calc_heatingrate(Fdown - Fup, pres)
+    ! dF = F[:,1:] - F[:,0:-1] 
+    ! dp = p[:,1:] - p[:,0:-1] 
+    ! dFdp = dF/dp
+    ! g = 9.81 # m s-2
+    ! cp = 1004 # J K-1  kg-1
+    ! dTdt = -(g/cp)*(dFdp) # K / s
+    ! dTdt_day = (24*3600)*dTdt
+
+    use mo_rrtmgp_constants, only : grav
+    integer, intent(in) :: ncol, nlay
+    real(wp), dimension(nlay+1, ncol), intent(in) :: flux_up, flux_dn, pressure_hl
+    real(wp), dimension(nlay,   ncol) :: hr_K_day
+    ! Local variables
+     real(wp), dimension(nlay+1,   ncol) :: flux_net
+    real(wp), dimension(nlay,   ncol) :: dF, dP
+    ! "Cp" (J kg-1 K-1)
+    real(wp), parameter :: SpecificHeatDryAir = 1004.0
+    real(wp) :: scaling
+    integer :: jlay
+    scaling = -(24.0_wp * 3600.0_wp * grav / SpecificHeatDryAir)
+
+    flux_net = flux_dn - flux_up
+    dF = flux_net(2:nlay+1,:) - flux_net(1:nlay,:)
+    dP = pressure_hl(2:nlay+1,:) - pressure_hl(1:nlay,:)
+    hr_K_day = scaling * dF / dP
+    ! hr_K_day = scaling * (flux_net(2:nlay+1,:) - flux_net(1:nlay,:)) / (pressure_hl(2:nlay+1,:) - pressure_hl(1:nlay,:))
+
+  end function calc_heating_rate
 
   function rmse(x1,x2) result(res)
     implicit none 
@@ -504,6 +691,18 @@ program rrtmgp_rfmip_sw
     res = sqrt( sum(diff**2)/size(diff) )
   end function rmse
 
+  function rmse_flat(ndim, x1,x2) result(res)
+    implicit none 
+    integer, intent(in) :: ndim
+    real(wp), dimension(ndim), intent(in) :: x1,x2
+    real(wp) :: res
+    real(wp), dimension(ndim) :: diff 
+    
+    diff = x1 - x2
+    res = sqrt( (sum(diff**2)/ndim) )
+  end function rmse_flat
+
+
   function mae(x1,x2) result(res)
     implicit none 
     real(wp), dimension(:), intent(in) :: x1,x2
@@ -514,6 +713,28 @@ program rrtmgp_rfmip_sw
     res = sum(diff, dim=1)/size(diff, dim=1)
   end function mae
 
+  function mae_flat(ndim, x1,x2) result(res)
+    implicit none 
+    integer, intent(in) :: ndim
+    real(wp), dimension(ndim), intent(in) :: x1,x2
+    real(wp) :: res
+    real(wp), dimension(ndim) :: diff 
+    
+    diff = abs(x1 - x2)
+    res = sum(diff, dim=1)/size(diff, dim=1)
+  end function mae_flat
+
+  function bias_flat(ndim, x1,x2) result(res)
+    implicit none 
+    integer, intent(in) :: ndim
+    real(wp), dimension(ndim), intent(in) :: x1,x2
+    real(wp) :: mean1,mean2, res
+    
+    mean1 = sum(x1)/ndim
+    mean2 = sum(x2)/ndim
+    res = mean1 - mean2
+
+  end function bias_flat 
   function bias(x1,x2) result(res)
     implicit none 
     real(wp), dimension(:), intent(in) :: x1,x2

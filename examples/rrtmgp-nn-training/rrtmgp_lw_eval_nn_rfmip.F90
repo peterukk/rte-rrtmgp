@@ -446,17 +446,20 @@ program rrtmgp_rfmip_lw
 
   ! Error metrics - we can choose some managable number of metrics that are printed at the end
   ! and read by our training program from the command line standard output
-  num_metrics = 7
+  num_metrics = 8
   allocate(errors(num_metrics), metric_names(num_metrics))
   
-  metric_names(1) = 'Heating rate (all exps)   '
-  metric_names(2) = 'Heating rate (present)'
-  metric_names(3) = 'SFC forcing (pre-industrial to present)'
-  metric_names(4) = 'SFC forcing (present to future)'
-
-  metric_names(5) = 'TOA forcing (present to future)'
-  metric_names(6) = 'TOA forcing CO2 (pre-industrial to 8x)'
-  metric_names(7) = 'SFC forcing N2O (pre-industrial to present)'
+  metric_names(1) = 'HR (all) '
+  metric_names(2) = 'HR (PD)'
+  metric_names(3) = 'Bias TOA upwelling'
+  ! metric_names(3) = 'RF-SFC (PI->PD)'
+  metric_names(4) = 'RF-TOA (PI->PD)'
+  metric_names(5) = 'RF-TOA (PD->future)'
+  metric_names(6) = 'RF-SFC (PI->future)'
+  ! metric_names(6) = 'RF-SFC (PD->future)'
+  ! metric_names(6) = 'RF-TOA CO2 (PI->8x)'
+  metric_names(7) = 'RF-SFC N2O (PI->PD)'
+  metric_names(8) = 'RF-SFC CH4 (PI->PD)'
 
   ! Heating rates
   allocate(hr_nn(nlay,ncol,nexp), hr_lbl(nlay,ncol,nexp))
@@ -472,6 +475,13 @@ program rrtmgp_rfmip_lw
 
   errors(1) = mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
   errors(2) = mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
+
+  print *, "MAE in upwelling flux:                ", mae_flat(ncol*nexp*(nlay+1), rlu_new, rlu_lbl)
+  print *, "MAE in downwelling flux:              ", mae_flat(ncol*nexp*(nlay+1), rld_new, rld_lbl)
+  print *, "bias in upwelling flux (TOA):         ", bias_flat(ncol*nexp, rlu_new(1,:,:), rlu_lbl(1,:,:))
+  print *, "bias in downwelling flux (sfc):       ", bias_flat(ncol*nexp, rld_new(nlay+1,:,:), rld_lbl(nlay+1,:,:))
+
+  errors(3) =  bias_flat(ncol*nexp, rlu_new(1,:,:), rlu_lbl(1,:,:))
 
   ! print *, "------------- FLUX ERRORS ------------ "
   ! print *, "------------- UPWELLING -------------- "
@@ -504,22 +514,34 @@ program rrtmgp_rfmip_lw
   ! val = mean(rld_lbl(nlay+1,:,iref) - rld_lbl(nlay+1,:,iexp)) -   mean(rld_new(nlay+1,:,iref) - rld_new(nlay+1,:,iexp))
   print *, "radiative forcing error at surface, present-day - preindustrial:      ", val
 
-  errors(3) = val
+  ! errors(3) = val
 
   val = -mean(diff(rlu_lbl,1,iref,iexp)) -   -mean(diff(rlu_new,1,iref,iexp))
   print *, "radiative forcing error at TOA, present-day - preindustrial:          ", val
 
-  iref = 4
-  iexp = 1
-  val = mean(diff(rld_lbl,nlay+1,iref,iexp)) -   mean(diff(rld_new,nlay+1,iref,iexp))
-  print *, "radiative forcing error at surface, future - present-day:             ", val
-
   errors(4) = val
 
+
+  iref = 4
+  iexp = 1
   val = -mean(diff(rlu_lbl,1,iref,iexp)) -   -mean(diff(rlu_new,1,iref,iexp))
   print *, "radiative forcing error at TOA, future - present-day:                 ", val
-
   errors(5) = val
+  
+  iref = 4
+  iexp = 2
+  val = mean(diff(rld_lbl,nlay+1,iref,iexp)) -   mean(diff(rld_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, future - preindustrial:           ", val
+  errors(6) = val
+
+
+  iref = 17
+  iexp = 1
+  val = mean(diff(rld_lbl,nlay+1,iref,iexp)) -   mean(diff(rld_new,nlay+1,iref,iexp))
+  print *, "radiative forcing error at surface, future-ALL - present-day:         ", val
+
+  val = -mean(diff(rlu_lbl,1,iref,iexp)) -   -mean(diff(rlu_new,1,iref,iexp))
+  print *, "radiative forcing error at TOA, future-ALL - present-day:             ", val
 
   iexp = 9
   iref = 8
@@ -528,7 +550,7 @@ program rrtmgp_rfmip_lw
 
   val =   -mean(diff(rlu_lbl,1,iref,iexp)) -   -mean(diff(rlu_new,1,iref,iexp))
   print *, "radiative forcing error at TOA, 8x CO2 - preindustrial CO2            ", val
-  errors(6) = val
+  ! errors(6) = val
 
   iref = 1
   iexp = 11
@@ -543,6 +565,7 @@ program rrtmgp_rfmip_lw
   iexp = 10
   val = mean(diff(rld_lbl,nlay+1,iref,iexp)) -   mean(diff(rld_new,nlay+1,iref,iexp))
   print *, "radiative forcing error at surface, present-day - preindustrial CH4:  ", val 
+  errors(8) = val
 
   val = -mean(diff(rlu_lbl,1,iref,iexp)) -   -mean(diff(rlu_new,1,iref,iexp))
   print *, "radiative forcing error at TOA, present-day - preindustrial CH4:      ", val
@@ -552,7 +575,7 @@ program rrtmgp_rfmip_lw
 
   do i = 1,num_metrics
     if (i==num_metrics) then
-      write(stdout, fmt="(1x, a)", advance="no") trim(metric_names(i))
+      write(stdout, fmt="(a)", advance="no") trim(metric_names(i))
     else 
       write(stdout, fmt="(1x, a, a)", advance="no") trim(metric_names(i)), ","
     end if
@@ -663,6 +686,18 @@ program rrtmgp_rfmip_lw
     diff = abs(x1 - x2)
     res = sum(diff, dim=1)/size(diff, dim=1)
   end function mae_flat
+
+  function bias_flat(ndim, x1,x2) result(res)
+    implicit none 
+    integer, intent(in) :: ndim
+    real(wp), dimension(ndim), intent(in) :: x1,x2
+    real(wp) :: mean1,mean2, res
+    
+    mean1 = sum(x1, dim=1)/size(x1, dim=1)
+    mean2 = sum(x2, dim=1)/size(x2, dim=1)
+    res = mean1 - mean2
+
+  end function bias_flat
 
   function bias(x1,x2) result(res)
     implicit none 

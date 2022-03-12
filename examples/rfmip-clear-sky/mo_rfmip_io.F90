@@ -738,7 +738,7 @@ contains
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks
-    real(wp), dimension(:), allocatable :: temp1d
+    real(sp), dimension(:), allocatable :: temp1d
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write 2D: Haven't read problem size yet.")
     blocksize = size(values,1)
@@ -773,7 +773,7 @@ contains
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks
-    real(wp), dimension(:,:), allocatable :: temp2d
+    real(sp), dimension(:,:), allocatable :: temp2d
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write 3D: Haven't read problem size yet.")
     nlev      = size(values,1)
@@ -806,7 +806,7 @@ contains
     ! ---------------------------
     integer :: ncid
     integer :: b, blocksize, nlev, nblocks, nfirst, ibnd
-    real(wp), dimension(:,:,:), allocatable :: temp3D
+    real(sp), dimension(:,:,:), allocatable :: temp3D
     ! ---------------------------
     if(any([ncol_l, nlay_l, nexp_l]  == 0)) call stop_on_err("unblock_and_write 4D dp: Haven't read problem size yet.")
     nfirst      = size(values,1)

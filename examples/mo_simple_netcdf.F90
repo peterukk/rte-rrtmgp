@@ -1,5 +1,5 @@
 module mo_simple_netcdf
-  use mo_rte_kind, only: wp, wl
+  use mo_rte_kind, only: wp, wl, sp
   use netcdf
   implicit none
   private
@@ -167,7 +167,7 @@ contains
   function write_1d_field(ncid, varName, var) result(err_msg)
     integer,                intent(in) :: ncid
     character(len=*),       intent(in) :: varName
-    real(wp), dimension(:), intent(in) :: var
+    real(sp), dimension(:), intent(in) :: var
     character(len=128)                 :: err_msg
 
     integer :: varid
@@ -185,7 +185,7 @@ contains
   function write_2d_field(ncid, varName, var) result(err_msg)
     integer,                  intent(in) :: ncid
     character(len=*),         intent(in) :: varName
-    real(wp), dimension(:,:), intent(in) :: var
+    real(sp), dimension(:,:), intent(in) :: var
     character(len=128)                   :: err_msg
 
     integer :: varid
@@ -203,7 +203,7 @@ contains
   function write_3d_field(ncid, varName, var) result(err_msg)
     integer,                    intent(in) :: ncid
     character(len=*),           intent(in) :: varName
-    real(wp), dimension(:,:,:), intent(in) :: var
+    real(sp), dimension(:,:,:), intent(in) :: var
     character(len=128)                     :: err_msg
 
     integer :: varid
@@ -221,7 +221,7 @@ contains
   function write_4d_field(ncid, varName, var) result(err_msg)
     integer,                    intent(in) :: ncid
     character(len=*),           intent(in) :: varName
-    real(wp), dimension(:,:,:,:), intent(in) :: var
+    real(sp), dimension(:,:,:,:), intent(in) :: var
     character(len=128)                     :: err_msg
 
     integer :: varid

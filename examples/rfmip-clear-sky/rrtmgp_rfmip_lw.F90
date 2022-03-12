@@ -85,7 +85,7 @@ program rrtmgp_rfmip_lw
   use mo_load_coefficients,  only: load_and_init
   use mo_rfmip_io,           only: read_size, read_and_block_pt, read_and_block_gases_ty, unblock_and_write, &
                                    unblock, read_and_block_lw_bc, determine_gas_names
-  use mo_simple_netcdf,      only: read_field, write_field, get_dim_size
+  use mo_simple_netcdf,      only: read_field, get_dim_size
   use netcdf
   use mod_network_rrtmgp
 #ifdef USE_OPENACC  
@@ -138,7 +138,7 @@ program rrtmgp_rfmip_lw
   type(ty_source_func_lw)     :: source
   type(ty_optical_props_1scl) :: optical_props
   type(ty_fluxes_flexible)   :: fluxes
-  type(rrtmgp_network_type), dimension(2)    :: neural_nets ! First model is for absorption, second is for Planck fraction
+  type(rrtmgp_network_type), dimension(:), allocatable    :: neural_nets ! First model is for absorption, second is for Planck fraction
   !
   ! ty_gas_concentration holds multiple columns; we make an array of these objects to
   !   leverage what we know about the input file
@@ -180,12 +180,23 @@ program rrtmgp_rfmip_lw
   if(nargs >= 4) call get_command_argument(4, forcing_index_char)
   if(nargs >= 5) call get_command_argument(5, physics_index_char)
 
-  if(nargs == 6) stop "provide 1-5 or 7 arguments"
-  if(nargs >= 7) then
+  if(nargs >= 6) then
     use_rrtmgp_nn = .true.
     call get_command_argument(6, modelfile_tau)
-    call get_command_argument(7, modelfile_source)
+    if (nargs >= 7) then
+      allocate(neural_nets(2))
+      call get_command_argument(7, modelfile_source)
+    else 
+      allocate(neural_nets(1))
+    end if
   end if
+
+  ! if(nargs == 6) stop "provide 1-5 or 7 arguments"
+  ! if(nargs >= 7) then
+  !   use_rrtmgp_nn = .true.
+  !   call get_command_argument(6, modelfile_tau)
+  !   call get_command_argument(7, modelfile_source)
+  ! end if
   ! How big is the problem? Does it fit into blocks of the size we've specified?
   !
   call read_size(rfmip_file, ncol, nlay, nexp)
@@ -224,13 +235,14 @@ program rrtmgp_rfmip_lw
 
   ! Load Neural Network models
   if (use_rrtmgp_nn) then
-	  print *, 'loading longwave absorption model from ', modelfile_tau
+    print *, 'loading longwave absorption model from ', modelfile_tau
     call neural_nets(1) % load_netcdf(modelfile_tau)
-    print *, 'loading Planck fraction model from ', modelfile_source
-    call neural_nets(2) % load_netcdf(modelfile_source)
+    if (nargs >= 7) then 
+      print *, 'loading Planck fraction model from ', modelfile_source
+      call neural_nets(2) % load_netcdf(modelfile_source)
+    end if
     ninputs = size(neural_nets(1) % layers(1) % w_transposed, 2)
-    print *, "NN supports gases: ", &
-    (trim(neural_nets(1)%input_names(b)) // " ", b = 3, size(neural_nets(1)%input_names))
+    print *, "NN supports gases: ", (trim(neural_nets(1)%input_names(b)) // " ", b = 3, size(neural_nets(1)%input_names))
   end if  
   ! --------------------------------------------------
   !

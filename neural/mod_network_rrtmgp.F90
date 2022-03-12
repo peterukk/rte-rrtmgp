@@ -122,8 +122,7 @@ contains
   end subroutine load_netcdf
 
 
-  ! subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, ymeans, ysigma, output)
-    subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, output)
+  subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, output)
     ! Like output_sgemm_flat but for computing OPTICAL DEPTH, inlining the post-processing
     ! Additional inputs: number of dry air molecules (coldry) and the mean and standard deviation
     ! used for normalization (ymeans, ysigma)
@@ -148,7 +147,6 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !!$acc enter data create(a1, a2) copyin(ymeans)
     !$acc enter data create(a1, a2) copyin(ymeans,ystd)
     associate(layers=>self%layers)
       
@@ -290,7 +288,7 @@ contains
       call sgemm("N","N", ny, nbatch, neurons, 1.0, wt, ny, a, neurons, 0.0, output, ny)
       !$acc end host_data
 
-      !$acc parallel loop gang default(present)
+      !!$acc parallel loop gang default(present)
       ! do j = 1, nbatch
       !   !$acc loop vector
       !   do i = 1, ny
@@ -300,8 +298,9 @@ contains
       !   end do
       ! end do
       call layers(n) % bias_and_activation(output, b)
+      !$acc kernels
       output = output*output
-
+      !$acc end kernels
       end associate
 
     !$acc exit data detach(a,a_next) delete(a1, a2)
@@ -332,7 +331,6 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !!$acc enter data create(a1, a2) copyin(ymeans)
     !$acc enter data create(a1, a2) copyin(ymeans,ystd)
     associate(layers=>self%layers)
       
@@ -388,15 +386,11 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('last_sgemm')
 #endif 
-      !$acc parallel loop gang default(present)
+      !$acc parallel loop collapse(2) default(present)
       do j = 1, nbatch
-        !$acc loop vector
         do i = 1, ngpt
           ! Add bias to obtain model output (linear layer, no activation) 
           output(i, j) = output(i, j) + b(i)
-
-          ! Postprocess 1: reverse standard scaling and square root scaling
-          output(i, j) = (ystd(i)*output(i, j) + ymeans(i))**4
         end do
       end do
 

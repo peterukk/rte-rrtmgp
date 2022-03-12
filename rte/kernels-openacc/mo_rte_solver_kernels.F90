@@ -141,51 +141,7 @@ contains
 
     fac  = 2._wp * pi * weight
 
-    ! !$acc enter data create (source_sfc, source_sfcJac, sfc_albedo, source_dn, source_up, tau_loc, trans) 
-    ! !$acc parallel default(present)
-    ! !$acc loop collapse(2)
-    ! do icol = 1, ncol
-    !   do igpt = 1, ngpt
-    !     !
-    !     ! Transport is for intensity
-    !     !   convert flux at top of domain to intensity assuming azimuthal isotropy
-    !     !
-    !     radn_dn(igpt,top_level,icol) = inc_flux(igpt,icol) / fac
-    !     !
-    !     ! Surface albedo, surface source function
-    !     !
-    !     sfc_albedo(igpt,icol)     = 1._wp - sfc_emis(igpt,icol)
-    !     source_sfc(igpt,icol)     = sfc_emis(igpt,icol) * sfc_source(igpt,icol)
-    !     source_sfcJac(igpt,icol)  = sfc_emis(igpt,icol) * sfc_source_Jac(igpt,icol)
-    !   end do
-    ! end do
-    ! !$acc loop collapse(3)
-    ! do icol = 1, ncol
-    !   do ilay = 1, nlay
-    !     do igpt = 1, ngpt
-    !       !
-    !       ! Optical path and transmission, used in source function and transport calculations
-    !       !
-    !       tau_loc(igpt,ilay,icol) = tau(igpt,ilay,icol)*D(igpt,icol)
-    !       trans  (igpt,ilay,icol) = exp(-tau_loc(igpt,ilay,icol))
-
-    !       call lw_source_noscat_stencil(ngpt, nlay, ncol, igpt, ilay, icol,     &
-    !                                     lay_source, lev_source,                 &
-    !                                     tau_loc, trans,                         &
-    !                                     source_dn, source_up)
-    !     end do
-    !   end do
-    ! end do
-    ! !$acc end parallel
-    ! !
-    ! ! Transport
-    ! !
-    ! call lw_transport_noscat(ngpt, nlay, ncol, top_at_1,  &
-    !                          tau_loc, trans, sfc_albedo, source_dn, source_up, source_sfc, &
-    !                          radn_up, radn_dn, source_sfcJac, radn_up_Jac)
-    ! !$acc exit data delete(source_sfc, source_sfcJac, sfc_albedo, source_dn, source_up, tau_loc, trans) 
-
-    ! Alternative: combined source and transport 
+    ! Combined source and transport 
     
     !$acc enter data create (tau_loc, trans) 
     !$acc parallel default(present)
@@ -699,7 +655,7 @@ contains
                                  tau, ssa, g, mu0,           &
                                  sfc_alb_dir, sfc_alb_dif,   &
                                  flux_up, flux_dn, flux_dir, &
-                                 save_gpt_flux, radn_up, radn_dn, radn_dir ) 
+                                 radn_up, radn_dn, radn_dir  ) 
     integer,                                intent(in   ) :: ngpt_in, nlay_in, ncol ! Number of columns, layers, g-points
     logical(wl),                            intent(in   ) :: top_at_1
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: inc_flux, inc_flux_dif     ! incident flux at top of domain [W/m2] (ngpt, ncol)
@@ -710,9 +666,8 @@ contains
     real(wp), dimension(ngpt,       ncol),  intent(in   ) :: sfc_alb_dir, sfc_alb_dif
                                                          ! Spectral albedo of surface to direct and diffuse radiation
     real(wp), dimension(nlay+1,ncol),       intent(out) :: flux_up, flux_dn, flux_dir ! Broadband fluxes  [W/m2]
-    logical(wl),                            intent(in ) :: save_gpt_flux
-    real(wp), dimension(ngpt, nlay+1, ncol),intent(out) :: radn_up, radn_dn, radn_dir   ! G-point fluxes
-
+    real(wp), dimension(ngpt, nlay+1, ncol), optional,    &  ! G-point fluxes 
+                                            intent(out) :: radn_up, radn_dn, radn_dir  ! 
     ! -------------------------------------------
     ! Local variables
     real(wp), dimension(ngpt, nlay  ) :: Rdif, Tdif
@@ -727,6 +682,7 @@ contains
                                                   ! intermediately holds source_up after calling sw_two_stream_source
     real(wp), dimension(ngpt,nlay )     :: source_dn
     real(wp), dimension(ngpt)           :: source_srf
+    logical(wl) :: save_gpt_flux = .true.
 
     ! ------------------------------------
 
@@ -736,6 +692,9 @@ contains
     else
       top_level = nlay+1
     end if
+
+    if (.not. present(radn_dir)) stop 'spectral fluxes need to be provided when using openACC'
+
     
     !$acc enter data create(flux_up, flux_dn, flux_dir)
 

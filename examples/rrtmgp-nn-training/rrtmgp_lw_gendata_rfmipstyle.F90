@@ -150,7 +150,7 @@ program rrtmgp_rfmip_lw
   ! A lot of this could be done within Python
   
   ! CKDMIP gases
-  ! kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12", "ccl4 " ] 
+  ! kdist_gas_names = ["h2o  ","o3   ","co2  ", "ch4  ", "n2o  ", "o2   ", "n2   ", "cfc11", "cfc12"]!, "ccl4 " ] 
   ! input_file_gas_names = ['water_vapor          ', &
   !                         'ozone                ', &            
   !                         'carbon_dioxide       ', &
@@ -159,8 +159,8 @@ program rrtmgp_rfmip_lw
   !                         'oxygen               ', &
   !                         'nitrogen             ', &
   !                         'cfc11                ', &
-  !                         'cfc12                ', &
-  !                         'carbon_tetrachloride ']
+  !                         'cfc12                ']!, &
+  !                         !'carbon_tetrachloride ']
 
   ! All LW RRTMGP gases
   kdist_gas_names = ["h2o    ","o3     ","co2    ", "ch4    ", "n2o    ", "o2     ", "n2     ", "cfc11  ", "cfc12  ", & 
@@ -235,9 +235,9 @@ program rrtmgp_rfmip_lw
   ! Read the gas concentrations and surface properties
   !
   call read_and_block_gases_ty(input_file, block_size, kdist_gas_names, input_file_gas_names, gas_conc_array)
-  do b = 1, size(gas_conc_array(1)%concs)
-    print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
-  end do
+  ! do b = 1, size(gas_conc_array(1)%concs)
+  !   print *, "max of gas ", gas_conc_array(1)%gas_name(b), ":", maxval(gas_conc_array(1)%concs(b)%conc)
+  ! end do
 
   call read_and_block_lw_bc(input_file, block_size, sfc_emis, sfc_t)
   

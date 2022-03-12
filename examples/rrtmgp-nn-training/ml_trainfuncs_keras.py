@@ -22,7 +22,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras import losses, optimizers
 import tensorflow as tf
-# import tensorflow.keras.backend as K
+import tensorflow.keras.backend as K
 # from keras.models import Sequential
 # from keras.layers import Dense, Dropout, Activation, Flatten,Input
 import numpy as np
@@ -34,9 +34,37 @@ from tensorflow.python.ops import state_ops, control_flow_ops
 from tensorflow.python.framework import constant_op
 from tensorflow.python.training.optimizer import Optimizer
 
-
 import shlex
 from subprocess import Popen, PIPE
+
+# err_metrics_rrtmgp_lw = np.array([0.0792,   0.0630,   0.0499,  -0.1624,  -0.3475,  -0.4379,   0.0025])
+# Heating rate (all exps), Heating rate (present), SFC forcing (pre-industrial to present), 
+# SFC forcing (present to future), TOA forcing (present to future), 
+# TOA forcing CO2 (pre-industrial to 8x), SFC forcing N2O (pre-industrial to present) 
+
+
+
+def hybrid_loss_wrapper(alpha):
+    def loss_expdiff(y_true, y_pred):
+
+        err_tot =  K.mean(K.square(y_pred - y_true))
+
+        err_diff =  expdiff(y_true, y_pred)
+
+        err = (alpha) * err_diff + (1 - alpha)*err_tot
+            
+        return err
+    return loss_expdiff
+
+def expdiff(y_true, y_pred):
+
+    diff_pred = y_pred[1::2,:] - y_pred[0::2,:] 
+    diff_true = y_true[1::2,:] - y_true[0::2,:] 
+    
+    # err_diff =  K.mean(K.square(diff_pred - diff_true))
+    err_diff =  K.mean(K.abs(diff_pred - diff_true))
+
+    return err_diff
 
 def get_stdout(cmd):
     """
@@ -66,6 +94,7 @@ class RunRadiationScheme(Callback):
         self.patience = patience
         # best_weights to store the weights at which the minimum loss occurs.
         self.best_weights = None
+        self.err_metrics_rrtmgp = None
         
     def on_train_begin(self, logs=None):
         # The number of epoch it has waited when loss is no longer minimum.
@@ -75,16 +104,35 @@ class RunRadiationScheme(Callback):
         # Initialize the best as infinity.
         self.best = np.Inf
         
+        self.best_epoch = 0
+        
         print("Using RunRadiationScheme earlystopper, fluxes are validated " \
         "against Line-By-Line benchmark (RFMIP),\nand training stopped when a "\
         "weighted mean of the metrics printed by the radiation program have\n"\
         "not improved for {} epochs".format(self.patience ))
                 
         print("The temporary model is saved to {}".format(self.modelpath))
-
+        
+        # First run the RRTMGP code without NNs to get the reference errors
+        cmd_ref = self.cmd[0:75]
+        out,err = get_stdout(cmd_ref)
+        outstr = out.split('--------')
+        err_metrics_str = outstr[2].strip('\n')
+        err_metrics_str = err_metrics_str.split(',')
+        self.err_metrics_rrtmgp = np.float32(err_metrics_str)
+        # print("Reference errors were: {}".format(err_metrics_str))
+        # err_metrics_norm = err_metrics / err_metrics_rrtmgp_lw
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
+            # Shortwave or Longwave?
+            # Weight heating rates more for SW
+            # if 'sw' in self.cmd:
+            #     sw = True
+            #     weight_hr = 0.75
+            # else:
+            #     sw = False
+            #     weight_hr = 0.5
             # y_pred = self.model.predict_proba(self.X_val, verbose=0)
             # score = roc_auc_score(self.y_val, y_pred)
             
@@ -99,36 +147,65 @@ class RunRadiationScheme(Callback):
             outstr = out.split('--------')
             metric_names = outstr[1].strip('\n')
             metric_names = metric_names.split(',')
+            for i in range(len(metric_names)): metric_names[i] = metric_names[i].lstrip().rstrip()
             err_metrics_str = outstr[2].strip('\n')
             err_metrics_str = err_metrics_str.split(',')
             err_metrics = np.float32(err_metrics_str)
+            # err_metrics_norm = err_metrics / err_metrics_rrtmgp_lw
+            err_metrics = err_metrics / self.err_metrics_rrtmgp
+            # find position where forcing errors start
+            indices = [i for i, elem in enumerate(metric_names) if 'HR' in elem]
+            ind_forc = indices[-1] + 1
+            
             # score = err_metrics.mean()
-            logs["heating_rate_error"] = err_metrics[0]
+            logs["mean_relative_heating_rate_error"] = err_metrics[0]
             # Construct "overall" accuracy score for radiation
-            forcing_err = np.abs(err_metrics[2:]).mean()
-            hr_err = np.abs(err_metrics[0:2]).mean()
-            weight_hr = 0.7
-            weight_forcing = 1 - weight_hr
-            score = weight_hr * hr_err + weight_forcing * forcing_err
-            logs["custom_radiation_score"] = score
-            # score = err_metrics[0]
-            hr_ref = 0.0711
-            forcing_ref = 0.2
-            print("LBL errors - heating rate {:.3f} (RRTMGP {:.3f}), "\
-                  "TOA/sfc forcings {:.2f} ({:.2f}): weighted metric: {:.6f}".format(hr_err, hr_ref, forcing_err, forcing_ref, score))
+            # forcing_err = np.abs(err_metrics[2:]).mean()
+            forcing_err = np.sqrt(np.mean(np.square(err_metrics[ind_forc:])))
+            
+            logs["mean_relative_forcing_error"] = forcing_err
+            # hr_err = np.abs(err_metrics[0:ind_forc]).mean()
+            hr_err = np.sqrt(np.mean(np.square(err_metrics[0:ind_forc])))
 
-            current = logs.get("custom_radiation_score")
+            # weight_forcing = 1 - weight_hr
+            # score = weight_hr * hr_err + weight_forcing * forcing_err
+            score = np.sqrt(np.mean(np.square(err_metrics)))
+            logs["radiation_score"] = score
+            
+            # print("SCORE  {:9} {:9} {:16} {:20} {:20} {:20} {:20}". format(*metric_names))
+            # print("{:.2f}   {:.2f}      {:.2f}     {:.2f}             {:.2f}        "\
+            #       "         {:.2f}                 {:.2f}        "\
+            #       "         {:.2f}". format(score,*err_metrics))
+            print("The RFMIP accuracy relative to RRTGMP was:   {:.2f}   (HR {:.2f}, FLUXES/FORCINGS {:.2f})".format(score, hr_err, forcing_err))
+            for i in range(len(err_metrics)):
+                if (i==len(err_metrics)-1):
+                    print("{}: {:.2f} \n".format(metric_names[i],err_metrics[i]), end =" ")
+                else:
+                    print("{}: {:.2f}, ".format(metric_names[i],err_metrics[i]), end =" ")
+            # hr_ref = 0.0711
+            # forcing_ref = 0.2
+            # print("LBL errors - heating rate {:.3f} (RRTMGP {:.3f}), "\
+            #       "TOA/sfc forcings {:.2f} ({:.2f}): weighted metric: {:.6f}".format(hr_err, hr_ref, forcing_err, forcing_ref, score))
+
+            current = logs.get("radiation_score")
+            # if epoch >  30: 
+            # A local/temporary minimum can be found quickly, don't want to 
+            # get stuck there: only start considering early stopping after a while
             if np.less(current, self.best):
                 self.best = current
                 self.wait = 0
                 # Record the best weights if current results is better (less).
                 self.best_weights = self.model.get_weights()
+                self.best_epoch = epoch
+
             else:
                 self.wait += 1
                 if self.wait >= self.patience:
+                    print("Early stopping, the best radiation score (comprised of LBL heating rate"\
+                          " and forcing errors normalized by RRTGMP values) was {:.2f}".format(self.best))
                     self.stopped_epoch = epoch
                     self.model.stop_training = True
-                    print("Restoring model weights from the end of the best epoch.")
+                    print("Restoring model weights from the end of the best epoch ({})".format(self.best_epoch+1))
                     self.model.set_weights(self.best_weights)
                         
     def on_train_end(self, logs=None):

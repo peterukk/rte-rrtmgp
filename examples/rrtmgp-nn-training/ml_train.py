@@ -1,113 +1,315 @@
 """
-Python code for developing neural networks to replace RRTMGP 
-gas optics look up table
+Python code for developing neural networks to replace RRTMGP look up table code
 
 This program takes existing input-output data generated with RRTMGP and
-user-specified hyperparameters such as the number of neurons, optionally
+user-specified hyperparameters such as the number of neurons, 
 scales the data, and trains a neural network
 
+New: monitors heating rate / flux errors (wrt LBL) by running radiation scheme 
+at the end of every epoch with the model, using RFMIP data for evaluation
+
+Scaling method: currently fixed so that inputs are min-max scaled to (0..1) and 
+outputs are standardized to ~zero mean, ~unit variance
+However, power transformations are first used to reduce dynamical range 
+and make the distributions more Gaussian (can improve model convergence)
+
+Input preprocessing:
+  1. x(i) = log(x(i)) for input feature i = pressure
+  2. x(i) = x(i)**(1/4) for i = H2O and O3
+  3. x(i) = x(i) - max(i) / (max(x(i) - min(x(i)))) for all i
+
+Output preprocessing:_
+  1. Normalize optical depths (g-point vectors) by layer number of molecules
+     y(ig,isample) = y_raw(ig,isample) / N (isample) 
+  2. y = y**(1/8)
+  3. ynorm = (y - ymean) / ystd, where ymeans are means for individual
+  g-points, but ystd is the standard deviation across all g-points 
+  (preserves relationships between outputs)
+
 Contributions welcome!
+
 
 @author: Peter Ukkonen
 """
 import os
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
 
 import tensorflow as tf
 from tensorflow.keras import losses, optimizers
-from tensorflow.keras.callbacks import EarlyStopping
 
 from ml_load_save_preproc import save_model_netcdf, \
-    load_rrtmgp, scale_outputs, \
+    load_rrtmgp, scale_outputs_wrapper, \
     preproc_pow_standardization_reverse,\
     preproc_tau_to_crossection, preproc_minmax_inputs_rrtmgp
-from ml_scaling_coefficients import * #  ymeans_sw_absorption, ysigma_sw_absorption, \
-   # ymeans_sw_ray, ysigma_sw_ray, ymeans_lw_absorption, ysigma_lw_absorption
+from ml_scaling_coefficients import xcoeffs_all, input_names_all #,\
+    #  ymeans_sw_absorption, ysigma_sw_absorption, \
+    # ymeans_sw_ray, ysigma_sw_ray, ymeans_lw_absorption, ysigma_lw_absorption
+# from ml_eval_funcs import plot_hist2d, plot_hist2d_T
+from ml_trainfuncs_keras import create_model_mlp, expdiff, hybrid_loss_wrapper
 
-from ml_eval_funcs import plot_hist2d, plot_hist2d_T
-from ml_trainfuncs_keras import create_model_mlp, savemodel, get_stdout
+
+def add_dataset(fpath, predictand, expfirst, x, y, col_dry, input_names, kdist, data_str):
+    x_new, y_new, col_dry_new, input_names_new, kdist_new     = load_rrtmgp(fpath, predictand, expfirst=expfirst) 
+    if not (kdist==kdist_new):
+        print("Kdist does not match previous dataset!")
+        return None
+    if not (input_names==input_names_new):
+        print("Input_names does not match previous dataset!")
+        return None
+    ns = x.shape[0]
+    x = np.concatenate((x,x_new),axis=0)
+    y = np.concatenate((y,y_new),axis=0)
+    col_dry = np.concatenate((col_dry,col_dry_new),axis=0)
+    print("{:.2e} samples previously, {:.2e} after adding data from: {}".format(ns, x.shape[0],fpath.split('/')[-1]))
+
+    data_str = data_str + " , " + fpath.split('/')[-1]
+    return x, y, col_dry, data_str
+
+def plot_performance(history, hybrid_loss_expdiffs):
+    fs = 12
+    import matplotlib.pyplot as plt
+    y0 = np.array(history['loss'])
+    if hybrid_loss_expdiffs:
+        y0e = np.array(history['expdiff'])
+        # y0m = np.array(history['mean_squared_error'])
+    y1 = np.array(history['radiation_score'])
+    y2 = np.array(history['mean_relative_heating_rate_error'])
+    # y3 = np.array(history['mean_relative_forcing_error'])
+    x1 = np.arange(1,y1.size+1)
+    
+    if hybrid_loss_expdiffs:
+        losslabel = 'Loss (MSE + expdiff)'
+    else:
+        losslabel = 'Loss (MSE)'
+    
+    fig, ax1 = plt.subplots()
+    fig.subplots_adjust(right=0.85)
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    ax3 = ax1.twinx()
+    ax3.spines.right.set_position(("axes", 1.10))
+    label2 = 'Radiation score'
+
+    # label2 = 'Radiation score (heating rate + forcing errors)'
+    label3 = 'Heating rate errors'
+    
+    p1, = ax1.plot(x1, y0, 'k',label=losslabel)
+    if hybrid_loss_expdiffs:
+        p1e, = ax1.plot(x1, y0e, 'k--',label='Loss (expdiff)')
+        # p1m, = ax1.plot(x1, y0m, 'k-.',label=losslabel)
+    p2, = ax2.plot(x1, y1, color='blue', label=label2)#, linestyle='dashed')
+    # p3_2, = ax2.plot(x1, y3, color='blue',label='Forcing errors w.r.t. LBL', linestyle='dashed')
+    p3, = ax3.plot(x1, y2, color='r',   label=label3)#, linestyle='dotted')
+    
+    
+    ax1.set_xlabel('Epochs',fontsize=fs)
+    ax1.set_ylabel('Training loss',fontsize=fs)
+    ax2.set_ylabel('Radiation score',fontsize=fs)
+    ax3.set_ylabel('Relative heating rate errors',fontsize=fs)
+    
+    ax1.set_yscale('log')
+    # ax2.set_yscale('log')
+    
+    _,ymax = ax2.get_ylim(); ax2.set_ylim(0.8,ymax)
+    _,ymax = ax3.get_ylim(); ax3.set_ylim(0.8,ymax)
+    ax2.grid()
+    # ax3.grid()
+    
+    import mpl_axes_aligner
+    mpl_axes_aligner.align.yaxes(ax2, 1.0, ax3, 1.0, 0.1)
+    lim = ax2.get_ylim()
+    ax2.set_yticks(np.concatenate((ax2.get_yticks(),np.array([1]))))
+    ax2.set_ylim(lim)
+        
+    ax1.yaxis.label.set_color(p1.get_color())
+    ax2.yaxis.label.set_color(p2.get_color())
+    ax3.yaxis.label.set_color(p3.get_color())
+    
+    ax2.axhline(y=1.0, color='k', linestyle='--',linewidth=1)
+    xoffset = -0.11
+    yoffset = 0.09
+    ax2.annotate('RRTMGP', ha='left',fontsize=11, xy=(xoffset, yoffset), 
+                 xycoords='axes fraction',color='blue')
+
+    tkw = dict(size=4, width=1.5)
+    ax1.tick_params(axis='y', colors=p1.get_color(), **tkw)
+    ax2.tick_params(axis='y', colors=p2.get_color(), **tkw)
+    ax3.tick_params(axis='y', colors=p3.get_color(), **tkw)
+    ax1.tick_params(axis='x', **tkw)
+    
+    if hybrid_loss_expdiffs:
+        ax1.legend(handles=[p1, p1e, p2, p3])
+    else:
+        ax1.legend(handles=[p1, p2, p3])
+
 
 
 # ----------------------------------------------------------------------------
 # ----------------- Provide data with inputs and outputs ---------------------
 # ----------------------------------------------------------------------------
-
-datadir     = "/media/peter/samsung/data/CAMS/ml_training/"
-# datadir     = "/home/peter/data/"
-
-
-# Just one dataset
 datadir = "/media/peter/samsung/data/ml_training/reduced-k/"
-# fpath   = datadir+"ml_training_lw_g128_CKDMIP_MMM_big.nc"
-fpath   = datadir+"ml_training_lw_g128_RFMIP-halton.nc"
 
-fpath   = datadir+"ml_training_lw_g128_AMON_ssp245_ssp585_2054_2100.nc"
+fpath   = datadir+"ml_training_lw_g128_Garand_BIG.nc"
+fpath2  = datadir+"ml_training_lw_g128_AMON_ssp245_ssp585_2054_2100.nc"
+# fpath2  = datadir+"ml_training_lw_g128_AMON_ssp245_ssp585_2054_2100_reduced.nc"
+# fpath3   = datadir+"ml_training_lw_g128_CAMS2.nc"
+fpath3   = datadir+"ml_training_lw_g128_CAMS_new_CKDMIPstyle.nc"
 
-fpath_val = None
-fpath_test = None
+fpath4  = datadir+"ml_training_lw_g128_CKDMIP-MMM-Big.nc"
 
-# ------------------------------------------------------
-# --- Configure predictand, choice of scaling etc. -----
-# ------------------------------------------------------
+# fpath5   = datadir+"ml_training_lw_g128_CAMS2.nc"
 
+
+fpaths = [fpath,fpath2,fpath3,fpath4]
+# ----------------------------------------------------------------------------
+# --------------- CONFIGURE: predictand, NN complexity etc -------------------
+# ----------------------------------------------------------------------------
 
 # Choose one of the following predictands (target output)
 # 'lw_absorption', 'lw_planck_frac', 'sw_absorption', 'sw_rayleigh'
+
 # predictand = 'sw_absorption'
-# predictand = 'sw_rayleigh'
-
-predictand = 'lw_absorption'
+predictand = 'sw_rayleigh'
+# predictand = 'lw_absorption'
 # predictand = 'lw_planck_frac'
-# predictand = 'lw_both'
+# predictand = 'lw_both' # old
 
-# Scaling method: currently fixed so that inputs are min-max scaled to (0..1) and 
-# outputs are standardized to ~zero mean, ~unit variance
-# However, power transformations are first used to reduce dynamical range 
-# and make the distributions more Gaussian (can improve model convergence)
-#
-# Input preprocessing:
-#   x(i) = log(x(i)) for input feature i = pressure
-#   x(i) = x(i)**(1/4) for i = H2O and O3
-#   x(i) = x(i) - max(i) / (max(x(i) - min(x(i))))
-# 
-# Output preprocessing:_
-#   1. Normalize optical depths (g-point vectors) by layer number of molecules
-#      y(ig,isample) = y_raw(ig,isample) / N (isample) 
-#   2. y = y**(1/8)
-#   3. ynorm = (y - ymean) / ystd, where ymeans are means for individual
-#   g-points, but ystd is the standard deviation across all g-points 
-#   (preserves relationships between outputs)
-scaling_method = 'Ukkonen2020'
+if (predictand=='sw_absorption' or predictand=='sw_rayleigh'):
+    fpaths = [sub.replace('lw_g128', 'sw_g112') for sub in fpaths]
 
-# scale_input = True
-# scale_output = True
+scaling_method = 'Ukkonen2020' # only option currently
 
 use_existing_input_scaling_coefficients = True 
 # ^True is generally a safe choice, min max coefficients have been computed
 # using a large dataset spanning both LGM (Last Glacial Maximum) and high 
 # future emissions scenarios. However, check that your scaled inputs 
-# fall somewhere in the 0-1 range
+# fall somewhere in the 0-1 range. Negative values in particular might
+# cause problems
 
 # Model training: use CPU or GPU?
 use_gpu = False
 num_cpu_threads = 12
 
-retrain_mae = False
 
+# --- Loss function, metrics and early stopping
+
+# --- It would be great if we could directly optimize for fluxes and heating 
+# --- rates. For now, let's just monitor them.
+
+# --- Monitor flux and heating rate errors w.r.t. LBL RFMIP data by running the 
+# --- radiation scheme with the model as it's being trained, and early stop 
+# --- when some custom metrics (printed by the modified RFMIP programs) 
+# --- have not improved for a certain number of epochs ("patience")
 early_stop_on_rfmip_fluxes = True
+patience    = 30
+patience    = 40
+
+epochs = 100
+
+if early_stop_on_rfmip_fluxes:
+    epochs = 800  # set a high number with early stopping
+
+# --- Forcing errors: We can try to reduce radiative forcing errors
+# --- by using a hybrid loss function which measures the difference in y 
+# --- between adjacent experiments (for instance two experiments where the 
+# --- concentration of a single gas is varied from present-day to future)
+# --- requires bespoke data but can help minimize TOA / surface forcing errors
+hybrid_loss_expdiffs = True
+
+
+if hybrid_loss_expdiffs:
+    if (predictand=='sw_absorption' or predictand=='sw_rayleigh'):
+        alpha = 0.2
+    else:
+        # alpha = 0.6
+        alpha = 0.7
+        # alpha = 0.8
+
+    loss_expdiff = hybrid_loss_wrapper(alpha=alpha)
+
+    lossfunc = loss_expdiff
+    mymetrics   = ['mean_squared_error', expdiff]
+    expfirst = True
+else:
+    lossfunc    = losses.mean_squared_error
+    mymetrics   = ['mean_absolute_error']
+    expfirst = False
+
+# --- batch size and learning rate 
+lr          = 0.001 
+batch_size  = 1024
+batch_size  = 2048
+# batch_size  = 4096
+# lr          = 0.01
+# batch_size  = 3*batch_size
+# lr          = 2 * lr
+
+
+# ----NN HYPERPARAMETERS 
+# --- Number of neurons in each hidden layer
+if predictand == 'lw_absorption':
+    # neurons     = [80,80]
+    # neurons     = [96,96]
+
+    neurons     = [72,72]
+    # neurons     = [64,64]
+    # neurons     = [58,58]
+elif predictand == 'lw_both':
+    neurons     = [80,80]
+else:
+    # neurons     = [16,16] 
+    # neurons     = [24,24] 
+    neurons     = [32,32] 
+    # 16 in two hidden layers seems enough for all but the LW absorption model
+
+# ---  Activation functions used after each layer: first the input layer, and 
+# ---  then the hidden layers 
+activ = ['softsign', 'softsign','linear']
+# activ = ['relu', 'relu','linear']
+
+if np.size(activ) != np.size(neurons)+1:
+    print("Number of activations must be number of hidden layers + 1!")
+    # exit
+
+# --- Weight initializer: the default is probably an OK choice  (glorot)
+initializer = 'glorot_uniform'   
+# initializer = 'lecun_uniform'
+
+
+# ----------------------------------------------------------------------------
+
 
 # -----------------------------------------------------
 # --------- Load data ---------------------------------
 # -----------------------------------------------------
-# Load data given three separate datasets for training - validation - testing
-# Training data
-x_tr_raw, y_tr_raw, col_dry_tr, input_names, kdist     = load_rrtmgp(fpath, predictand) 
+# Load training data 
+x_tr_raw, y_tr_raw, col_dry_tr, input_names, kdist   = load_rrtmgp(fpaths[0], predictand, expfirst=expfirst) 
 
-    
+data_str = fpath.split('/')[-1]
+
+# We can have different datasets that we merge
+for fpath in fpaths[1:]:
+    x_tr_raw, y_tr_raw, col_dry_tr, data_str = add_dataset(fpath, predictand, expfirst, x_tr_raw, 
+                                    y_tr_raw, col_dry_tr, input_names, kdist, data_str)
+
 nx = x_tr_raw.shape[1] #  temperature + pressure + gases
 ny = y_tr_raw.shape[1] #  number of g-points
+
+
+# In case of hybrid loss measuring diffs between experiments, 
+# manually shuffle data in pairs (keeping adjacent experiments)
+if hybrid_loss_expdiffs:
+    ns = x_tr_raw.shape[0]
+    inds_all = np.arange(ns)
+    inds_all = inds_all.reshape(int(ns/2),2)
+    np.random.shuffle(inds_all)
+    inds_all = inds_all.reshape(ns)
+    x_tr_raw = x_tr_raw[inds_all,:]
+    y_tr_raw = y_tr_raw[inds_all,:]
+    col_dry_tr = col_dry_tr[inds_all]
+    shuffle = False
+else:
+    shuffle = True
 
 # -----------------------------------------------------
 # -------- Input and output scaling ------------------
@@ -122,8 +324,8 @@ else:
         (xmin_all,xmax_all) = xcoeffs_all
         # input_names loaded from file, describes inputs in order of x_tr_raw
         # input_names_all corresponds to xmin_all and xmax_all
-        # input_names = ['tlay','play','n2o','co2']
-        # Order of inputs may be different than in the existing coefficients:
+        # Order of inputs may be different than in the existing coefficients,
+        # account for that by indexing
         a = np.array(input_names_all)
         b = np.array(input_names)
         indices = np.where(b[:, None] == a[None, :])[1]
@@ -134,44 +336,12 @@ else:
         x_tr,xmin,xmax  = preproc_minmax_inputs_rrtmgp(x_tr_raw)
 
     # Output scaling
-    # first, transform y: y=y**(1/nfac); cheaper and weaker version of 
+    # first, do y = y / N if y is optical depth, to get cross-sections
+    # then, square root scaling y: y=y**(1/nfac); cheaper and weaker version of 
     # log scaling. nfac = 8 for cross-sections, 2 for Planck fraction
-    # After this, use standard-scaling
-    if (predictand == 'lw_planck_frac'):
-        nfac = 2
-        ymean = None; ystd = None
-        y_tr    = scale_outputs(y_tr_raw, None, nfac, ymean, ystd)
-    elif (predictand == 'lw_both'):
-        nfac = 4
-        ymean = None; ystd = None
-        ymean = np.zeros(ny); ystd = np.zeros(ny)
-        nyy = int(ny/2)
-        y_tr = y_tr_raw.copy()
-
-        y_tr[:,0:nyy] = preproc_tau_to_crossection(y_tr[:,0:nyy], col_dry_tr)
-
-        for i in range(ny):
-            ymean[i] = np.mean(y_tr[:,i]**(1/nfac))
-            ystd[i]  = np.std(y_tr[:,i]**(1/nfac))
-        # ystd = np.repeat(np.std(y_tr**(1/nfac)),ny)
-        
-        # Scale data
-        y_tr[:,0:nyy]   = scale_outputs(y_tr_raw[:,0:nyy], col_dry_tr, nfac, ymean[0:nyy], ystd[0:nyy])
-        y_tr[:,nyy:]    = scale_outputs(y_tr_raw[:,nyy:], None, nfac, ymean[nyy:], ystd[nyy:])
-        
-    else:  # For scaling optical depths
-        nfac = 8
-        ymean = np.zeros(ny); ystd = np.zeros(ny)
-        y_tr   = preproc_tau_to_crossection(y_tr_raw, col_dry_tr)
-
-        for i in range(ny):
-            ymean[i] = np.mean(y_tr[:,i]**(1/nfac))
-            # ystd[i]  = np.std(y_tr[:,i]**(1/nfac))
-        ystd = np.repeat(np.std(y_tr**(1/nfac)),ny)
-                
-        # Scale data
-        y_tr    = scale_outputs(y_tr_raw, col_dry_tr, nfac, ymean, ystd)
+    # After this, use standard-scaling (not for Planck fraction)
     
+    y_tr, ymean, ystd = scale_outputs_wrapper(y_tr_raw, col_dry_tr, predictand)
 
 # ---------------------------------------------------------------------------
 
@@ -180,7 +350,7 @@ else:
 x_scaling_str = "To get the required NN inputs, do the following: "\
         "x(i) = log(x(i)) for i=pressure; "\
         "x(i) = x(i)**(1/4) for i=H2O and O3; "\
-        "x(i) = (x(i) - xmin(i)) / (xmax(i) - xmin(i))"
+        "x(i) = (x(i) - xmin(i)) / (xmax(i) - xmin(i)) for all inputs"
 if predictand == 'lw_planck_frac':
     y_scaling_str = "Model predicts the square root of Planck fraction."        
 else:
@@ -189,9 +359,9 @@ else:
             "y(igpt,j) = ystd(igpt)*y(igpt,j) + ymean(igpt); y(igpt,j) "\
             "= y(igpt,j)**8; y(igpt,j) = y(igpt,j) * layer_dry_air_molecules(j)"
         
-data_str = "Extensive training data set comprising of reanalysis, climate model,"\
-    " and idealized profiles, which has then been augmented using statistical"\
-    " methods (Hypercube sampling). See https://doi.org/10.1029/2020MS002226"
+# data_str = "Extensive training data set comprising of reanalysis, climate model,"\
+#     " and idealized profiles, which has then been augmented using statistical"\
+#     " methods (Hypercube sampling). See https://doi.org/10.1029/2020MS002226"
 
 if (predictand == 'sw_absorption'):
     model_str = "Shortwave model predicting ABSORPTION CROSS-SECTION"
@@ -205,53 +375,15 @@ else:
     model_str = ""
 
 
-        
-
 # ---------------------------------------------------------------------------
 # TENSORFLOW-KERAS TRAINING
+#
 # ------------------------------------------------------
-# --- Model architecture -------------------------------
+# --- Setup CPU or GPU training  ----
 # ------------------------------------------------------
-# Number of neurons in each hidden layer
-# Activation functions after input layer and hidden layers respectively
-activ = ['softsign', 'softsign','linear']
-    
-if predictand == 'lw_absorption':
-    neurons     = [48,48}
-else:
-    neurons     = [16,16]
-
-initializer = 'lecun_uniform'
-
-# ------------------------------------------------------
-# --- Loss function, batch size and learning rate ------
-# ------------------------------------------------------
-lossfunc    = losses.mean_squared_error
-lr          = 0.001 
-batch_size  = 1024
-# batch_size  = 4096
-# lr          = 0.01
-
-# ------------------------------------------------------
-# --- Early stopping : patience and what to monitor ----
-# ------------------------------------------------------
-patience    = 15
-valfunc     = 'val_mean_absolute_error'
-epochs      = 800  # set a high number with early stopping
-# ------------------
-
-# ------------------------------------------------------
-# --- Custom metrics: would be great if we could monitor  
-# --- flux errors, but that would require radiation code 
-# ------------------------------------------------------
-mymetrics   = ['mean_absolute_error']
-# batch_size  = 3*batch_size
-# lr          = 2 * lr
-
 if use_gpu:
     devstr = '/gpu:0'
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
 else:
     devstr = '/cpu:0'
     # Maximum number of threads to use for OpenMP parallel regions.
@@ -285,12 +417,17 @@ if early_stop_on_rfmip_fluxes:
     from ml_trainfuncs_keras import RunRadiationScheme
 
     fpath_save_tmp = '../../neural/data/tmp_model.nc'
+    
     if predictand == 'lw_absorption':
-        modelinput = '{} ../../neural/data/lw-g128-pfrac-tmp.nc'.format(fpath_save_tmp)
+        modelinput = '{} ../../neural/data/lw-g128-210809_planck_frac_BEST.nc'.format(fpath_save_tmp)
     elif predictand == 'lw_planck_frac':
-        modelinput = '../../neural/data/lw-g128-abs-tmp.nc {}'.format(fpath_save_tmp)
-    else:
-        1
+        modelinput = '../../neural/data/lw-g128-210809_absorption_BEST.nc {}'.format(fpath_save_tmp)
+    elif predictand == 'lw_both':
+        modelinput = '{}'.format(fpath_save_tmp)
+    elif predictand == 'sw_absorption':
+        modelinput = '{} ../../neural/data/sw-g112-210809_rayleigh_BEST.nc'.format(fpath_save_tmp)
+    elif predictand == 'sw_rayleigh':
+        modelinput = '../../neural/data/sw-g112-210809_absorption_BEST.nc {}'.format(fpath_save_tmp)
 
     def model_saver(fpath_save_tmp, model):
         save_model_netcdf(fpath_save_tmp, model, activ, input_names, kdist,
@@ -298,58 +435,76 @@ if early_stop_on_rfmip_fluxes:
                                x_scaling_comment=x_scaling_str,
                                data_comment=data_str, model_comment=model_str)
 
-    cmd = './rrtmgp_lw_eval_nn_rfmip 8 ../../rrtmgp/data/rrtmgp-data-lw-g128-210809.nc 1 1 ' + modelinput
+    if predictand in ['lw_absorption', 'lw_planck_frac','lw_both']:
+        cmd = './rrtmgp_lw_eval_nn_rfmip 8 ../../rrtmgp/data/{}'.format(kdist) + ' 1 1 ' + modelinput
+    else:
+        cmd = './rrtmgp_sw_eval_nn_rfmip 8 ../../rrtmgp/data/{}'.format(kdist) + ' 1 ' + modelinput
+
     # out,err = get_stdout(cmd)
-    # err_metrics_str = out[-23:-1].split('  ')
-    # err_metrics = np.float32(err_metrics_str)
-    patience = 20
     callbacks = [RunRadiationScheme(cmd, modelpath=fpath_save_tmp, 
                                         modelsaver=model_saver,
                                         patience=patience)]
-    
-    
 else:
     callbacks = []
-    
+
+
 # ------------------------------------------------------
 # --- Start training -----------------------------------
 # ------------------------------------------------------
+# with tf.device(devstr):
+#     history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, 
+#                         shuffle=True,  verbose=1, callbacks=callbacks)     
 with tf.device(devstr):
     history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, 
-                        shuffle=True,  verbose=1, callbacks=callbacks)     
-    
-        
-        
-# # ------------------------------------------------------
-# # --- Evaluate on another dataset  ---------------------
-# # ------------------------------------------------------
-# def eval_valdata():
-#     y_pred       = model.predict(x_val);  
-#     y_pred       = preproc_pow_standardization_reverse(y_pred, nfac, ymean, ystd)
-    
-#     if predictand not in ['planck_frac', 'ssa_sw']:
-#         y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
-        
-#     plot_hist2d(y_val_raw,  y_pred,20,True)   # Optical depth 
-#     plot_hist2d_T(y_val_raw,y_pred,20,True)   # Transmittance  
-    
-# eval_valdata()
+                        shuffle=shuffle,  verbose=1, callbacks=callbacks) 
+
+
+if early_stop_on_rfmip_fluxes:
+    plot_performance(history.history, hybrid_loss_expdiffs)
 
 # ------------------------------------------------------
 # --- Save model?  -------------------------------------
 # ------------------------------------------------------
 model.summary()
 
-fpath_keras = "../../neural/data/tau-lw-g128-tmp.h5"
-model.save(fpath_keras)
+def save_model():
+    # Get a descriptive filename for the model
 
-fpath_netcdf = fpath_keras[:-3]+".nc"
+    neurons_str = np.array2string(np.array(neurons)).strip('[]').replace(' ','_')
+    
+    source = kdist[12:].strip('.nc')
+    if early_stop_on_rfmip_fluxes:
+        ind = np.array(history.history['radiation_score']).argmin()
+        hr_err_final = np.array(history.history['mean_relative_heating_rate_error'])[ind]
+        forcing_err_final = np.array(history.history['mean_relative_forcing_error'])[ind]
+        fpath_keras = "../../neural/data/" + source + "_" + predictand[3:] + "_" + \
+          neurons_str + "_HR_{:.2e}_FRC_{:.2e}.h5".format(hr_err_final, forcing_err_final)
+    else:
+        fpath_keras = "../../neural/data/" + source + "_" + predictand[3:] + "_" + \
+            neurons_str + ".h5"
+    model.save(fpath_keras,save_format='h5')
+    
+    fpath_netcdf = fpath_keras[:-3]+".nc"
+    
+    print("Saving model from best epoch in both netCDF and HDF5 format to {}".format(fpath_netcdf))
+    save_model_netcdf(fpath_netcdf, model, activ, input_names, kdist,
+                           xmin, xmax, ymean, ystd, y_scaling_comment=y_scaling_str, 
+                           x_scaling_comment=x_scaling_str,
+                           data_comment=data_str, model_comment=model_str)
+save_model()
+# np.save('/media/peter/samlinux/gdrive/phd/results/paper3_IFS_RRTMGP/lw_both_80_history.npy',history.history)
 
-print("Saving model from best epoch in both netCDF and HDF5 format to {}".format(fpath_netcdf))
-save_model_netcdf(fpath_save_tmp, model, activ, input_names, kdist,
-                       xmin, xmax, ymean, ystd, y_scaling_comment=y_scaling_str, 
-                       x_scaling_comment=x_scaling_str,
-                       data_comment=data_str, model_comment=model_str)
+# # ------------------------------------------------------
+# # --- Evaluate on another dataset  ---------------------
+# # ------------------------------------------------------
+# def eval_valdata():
+#     y_pred       = model.predict(x_val);  
+#     y_pred       = preproc_pow_standardization_reverse(y_pred, nfac, ymean, ystd)
 
+#     if predictand not in ['planck_frac', 'ssa_sw']:
+#         y_pred = y_pred * (np.repeat(col_dry_val[:,np.newaxis],ny,axis=1))
 
+#     plot_hist2d(y_val_raw,  y_pred,20,True)   # Optical depth 
+#     plot_hist2d_T(y_val_raw,y_pred,20,True)   # Transmittance  
 
+# eval_valdata()

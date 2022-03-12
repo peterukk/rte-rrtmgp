@@ -693,22 +693,24 @@ contains
                     neural_nets,                  &
                     tau, pfrac)
     ! inputs
-    integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
+    integer,                            intent(in)  :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
-                                        intent(in)    :: nn_inputs     
+                                        intent(in)  :: nn_inputs     
     real(sp), dimension(nlay,ncol), target,  &     
-                                        intent(in)    :: col_dry_wk     ! needs to be assumed-shape (and explicit shaped in parent code) for OpenMP                                                             
+                                        intent(in)  :: col_dry_wk     ! needs to be assumed-shape (and explicit shaped in parent code) for OpenMP                                                             
     ! The neural network models
-    type(rrtmgp_network_type), dimension(:),   intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(:), &
+                                        intent(in)  :: neural_nets
 
     ! outputs
     real(sp), dimension(ngpt,nlay,ncol), target, &
-                                        intent(out)   :: pfrac, tau
+                                        intent(out) :: pfrac, tau
     ! local
-    real(sp), dimension(:,:), contiguous, pointer     :: input, output, outp
-    real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
-    real(sp), dimension(2*ngpt,nlay,ncol), target :: outp_both
-    integer                                           :: ilay, icol, nobs
+    real(sp), dimension(:,:), contiguous, pointer   :: input, output
+    real(sp), dimension(:),   contiguous, pointer   :: input_coldry   
+    real(sp), dimension(2*ngpt,nlay,ncol), target   :: outp_both
+    integer                                         :: ilay, icol, nobs
+    real(sp), dimension(ngpt)                       :: ymeans,ystd ! standard-scaling coefficients
 
     !  PREDICT PLANCK FRACTIONS
     nobs = nlay*ncol
@@ -739,19 +741,24 @@ contains
 #endif
   
     else 
-      call C_F_POINTER (C_LOC(outp_both), outp, [2*ngpt,nobs])
+      call C_F_POINTER (C_LOC(outp_both), output, [2*ngpt,nobs])
 
-      call neural_nets(1) % output_sgemm_lw(ninputs, 2*ngpt, nobs, input, outp)
+      call neural_nets(1) % output_sgemm_lw(ninputs, 2*ngpt, nobs, input, output)
 
 #ifdef USE_TIMING
     ret =  gptlstart('write')
 #endif   
+      ystd = neural_nets(1)%coeffs_output_std(1:ngpt)
+      ymeans = neural_nets(1)%coeffs_output_mean(1:ngpt)
+
       do icol = 1, ncol
         do ilay = 1, nlay
+          ! Postprocess absorption output: reverse standard scaling and square root scaling
+          tau(1:ngpt,ilay,icol) = (ystd(1:ngpt) * outp_both(1:ngpt,ilay,icol) + ymeans(1:ngpt))**8
+          ! Optical depth from cross-sections
+          tau(1:ngpt,ilay,icol) = tau(1:ngpt,ilay,icol)*col_dry_wk(ilay,icol)
 
-          tau(1:ngpt,ilay,icol) = outp_both(1:ngpt,ilay,icol)*col_dry_wk(ilay,icol)
-
-          pfrac(1:ngpt,ilay,icol) = outp_both(ngpt+1:2*ngpt,ilay,icol)
+          pfrac(1:ngpt,ilay,icol) = outp_both(ngpt+1:2*ngpt,ilay,icol)*outp_both(ngpt+1:2*ngpt,ilay,icol)
         end do
       end do
 
@@ -778,50 +785,76 @@ contains
                                           intent(in)    :: nn_inputs 
     real(dp), dimension(nlay,ncol),       intent(in)    :: col_dry_wk
     ! The neural network models
-    type(rrtmgp_network_type), dimension(2),     intent(in)    :: neural_nets
+    type(rrtmgp_network_type), dimension(:),     intent(in)    :: neural_nets
 
     real(dp), dimension(ngpt,nlay,ncol),  intent(out)   :: pfrac, tau
     ! local
-    real(sp), dimension(:,:), contiguous, pointer :: input
+    real(sp), dimension(:,:), contiguous, pointer :: input,  output
     real(sp), dimension(:), contiguous,   pointer :: input_coldry          
     real(sp), dimension(nlay,ncol),       target  :: col_dry_wk_sp                                          
     real(sp), dimension(ngpt,nlay*ncol)           :: tmp_output
-    integer                                       :: nobs
+    real(sp), dimension(2*ngpt,nlay,ncol), target :: outp_both
+    real(sp), dimension(ngpt)                     :: ymeans,ystd ! standard-scaling coefficients
+    integer                                       :: ilay, icol, nobs
 
     nobs = nlay*ncol
     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
 
     col_dry_wk_sp = real(col_dry_wk, sp)
     call C_F_POINTER (C_LOC(col_dry_wk_sp), input_coldry, [nobs])
-#ifdef USE_TIMING
-    ret =  gptlstart('tmp_init')
-#endif
-    ! tmp_output = 0.0_sp
-#ifdef USE_TIMING
-    ret =  gptlstop('tmp_init')
-#endif
-#ifdef USE_TIMING
-    ret =  gptlstart('compute_tau')
-#endif
-    call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                        input_coldry, tmp_output)
-    tau = reshape(tmp_output,(/ngpt,nlay,ncol/))
+
+    if (size(neural_nets)==2) then
 
 #ifdef USE_TIMING
-    ret =  gptlstop('compute_tau')
-    ret =  gptlstart('compute_pfrac')
+      ret =  gptlstart('compute_tau')
 #endif
-    call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, tmp_output)                      
+      call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+                          input_coldry, tmp_output)
+      tau = reshape(tmp_output,(/ngpt,nlay,ncol/))
+
 #ifdef USE_TIMING
-    ret =  gptlstart('output_reshape')
+      ret =  gptlstop('compute_tau')
+      ret =  gptlstart('compute_pfrac')
 #endif
-    pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))  
+      call neural_nets(2) % output_sgemm_pfrac(ninputs, ngpt, nobs, input, tmp_output)                      
 #ifdef USE_TIMING
-    ret =  gptlstop('output_reshape')
+      ret =  gptlstart('output_reshape')
+#endif
+      pfrac = reshape(tmp_output,(/ngpt,nlay,ncol/))  
+#ifdef USE_TIMING
+      ret =  gptlstop('output_reshape')
 #endif
 #ifdef USE_TIMING
-    ret =  gptlstop('compute_pfrac')
+      ret =  gptlstop('compute_pfrac')
 #endif
+
+    else 
+      call C_F_POINTER (C_LOC(outp_both), output, [2*ngpt,nobs])
+
+      call neural_nets(1) % output_sgemm_lw(ninputs, 2*ngpt, nobs, input, output)
+
+#ifdef USE_TIMING
+    ret =  gptlstart('write')
+#endif   
+      ystd = neural_nets(1)%coeffs_output_std(1:ngpt)
+      ymeans = neural_nets(1)%coeffs_output_mean(1:ngpt)
+
+      do icol = 1, ncol
+        do ilay = 1, nlay
+          ! Postprocess absorption output: reverse standard scaling and square root scaling
+          tau(1:ngpt,ilay,icol) = (ystd(1:ngpt) * outp_both(1:ngpt,ilay,icol) + ymeans(1:ngpt))**8
+          ! Optical depth from cross-sections
+          tau(1:ngpt,ilay,icol) = tau(1:ngpt,ilay,icol)*col_dry_wk_sp(ilay,icol)
+
+          pfrac(1:ngpt,ilay,icol) = outp_both(ngpt+1:2*ngpt,ilay,icol)*outp_both(ngpt+1:2*ngpt,ilay,icol)
+        end do
+      end do
+
+#ifdef USE_TIMING
+    ret =  gptlstop('write')
+#endif   
+
+    end if
   end subroutine predict_nn_lw_blas_mp
 
   ! --------------------------------------------------------------------------------------
@@ -838,7 +871,7 @@ contains
     integer,                            intent(in)    :: ncol, nlay, ngpt, ninputs
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                         intent(in)    :: nn_inputs 
-    real(wp), dimension(nlay,ncol), target, &     
+    real(sp), dimension(nlay,ncol), target, &     
                                           intent(in)    :: col_dry_wk                                    
     ! The neural network models
     type(rrtmgp_network_type), dimension(2),   intent(in)    :: neural_nets

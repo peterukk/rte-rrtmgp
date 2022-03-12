@@ -145,8 +145,9 @@ def save_model_netcdf(fpath_netcdf, model, activation_names, input_names,
     if not np.any(ymean)==None:  
         nc_output_coeffs_mean   = dat_new.createVariable("nn_output_coeffs_mean","f4",('nn_dim_outp'))
         nc_output_coeffs_std    = dat_new.createVariable("nn_output_coeffs_std","f4",('nn_dim_outp'))
-        nc_output_coeffs_mean[:]    = ymean
-        nc_output_coeffs_std[:]     = ystd
+        nyy = ymean.size
+        nc_output_coeffs_mean[0:nyy]    = ymean
+        nc_output_coeffs_std[0:nyy]     = ystd
         nc_output_coeffs_mean.long_name = 'ymean(igpt) = mean(y_cross(igpt)**(1/8))'
         nc_output_coeffs_std.long_name = 'ystd(igpt) = std(y_cross(igpt)**(1/8))'
 
@@ -169,7 +170,7 @@ def save_model_netcdf(fpath_netcdf, model, activation_names, input_names,
 
 
 
-def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=False):
+def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=False,expfirst=False):
     # Load data for training a GAS OPTICS (RRTMGP) emulator,
     # where inputs are layer-wise atmospheric conditions (T,p, gas concentrations)
     # and outputs are vectors of optical properties across g-points (e.g. optical depth)
@@ -197,7 +198,7 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=Fals
         xname = 'rrtmgp_sw_input'
         
     x = dat.variables[xname][:].data
-        
+    
     try:
         input_names = dat.variables[xname].comment
         print('input_names found in file')
@@ -238,7 +239,7 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=Fals
     
     if col_dry[0,0,0] == 0.0:
         skip_firstlev = True
-    
+        
     if np.size(y.shape) == 4:
         (nexp,ncol,nlay,ngpt) = y.shape
     elif np.size(y.shape) == 3:
@@ -267,6 +268,12 @@ def load_rrtmgp(fname,predictand, dcol=1, skip_lastlev=False, skip_firstlev=Fals
     nobs = nexp*ncol*nlay
     print( "there are {} profiles in this dataset ({} experiments, {} columns)".format(nexp*ncol,nexp,ncol))
 
+    if expfirst:
+        print("Reshaping so that adjacent samples are from different experiments")
+        x = np.rollaxis(x,0,3)     
+        y = np.rollaxis(y,0,3) 
+        col_dry = np.rollaxis(col_dry,0,3)
+        
     y = np.reshape(y, (nobs,ngpt)); x = np.reshape(x, (nobs,nx))
     col_dry = np.reshape(col_dry,(nobs))
     
@@ -461,7 +468,60 @@ def scale_gasopt(x_raw, y_raw, col_dry, scale_inputs=False, scale_outputs=False,
         return x, y, xmin, xmax
     else: return x,y
     
-# A wrapping function for scaling outputs
+def scale_outputs_wrapper(y_raw, col_dry, predictand, ymean=None, ystd=None):
+    ny = y_raw.shape[1]
+    if (predictand == 'lw_planck_frac'):
+        nfac = 2
+        y    = scale_outputs(y_raw, None, nfac, None, None)
+        
+    elif (predictand == 'lw_both'): 
+        # I tested just having a unified LW model, didn't seem very promising
+        # nfac = 4
+        # nyy = int(ny/2)
+        # y = y_raw.copy()
+        # y[:,0:nyy] = preproc_tau_to_crossection(y[:,0:nyy], col_dry)
+
+        # if np.any(ymean)==None:
+        #     ymean = np.zeros(ny); ystd = np.zeros(ny)
+        #     for i in range(ny):
+        #         ymean[i] = np.mean(y[:,i]**(1/nfac))
+        #         ystd[i]  = np.std(y[:,i]**(1/nfac))
+        
+        # # Scale data
+        # y[:,0:nyy]   = scale_outputs(y_raw[:,0:nyy], col_dry, nfac, ymean[0:nyy], ystd[0:nyy])
+        # y[:,nyy:]    = scale_outputs(y_raw[:,nyy:], None, nfac, ymean[nyy:], ystd[nyy:])
+        
+        nfac = 8
+        nfac2 = 2
+        nyy = int(ny/2)
+        y = y_raw.copy()
+        y[:,0:nyy] = preproc_tau_to_crossection(y[:,0:nyy], col_dry)
+
+        if np.any(ymean)==None:
+            ymean = np.zeros(nyy); ystd = np.zeros(nyy)
+            for i in range(nyy):
+                ymean[i] = np.mean(y[:,i]**(1/nfac))
+                ystd[i]  = np.std(y[:,i]**(1/nfac))
+        
+        # Scale data
+        y[:,0:nyy]   = scale_outputs(y_raw[:,0:nyy], col_dry, nfac, ymean[0:nyy], ystd[0:nyy])
+        y[:,nyy:]    = scale_outputs(y_raw[:,nyy:], None, nfac2, None, None)
+    else:  # For scaling optical depths
+        nfac = 8
+
+        y   = preproc_tau_to_crossection(y_raw, col_dry)
+
+        if np.any(ymean)==None:
+            ymean = np.zeros(ny); ystd = np.zeros(ny)
+            for i in range(ny):
+                ymean[i] = np.mean(y[:,i]**(1/nfac))
+                # ystd[i]  = np.std(y[:,i]**(1/nfac))
+            ystd = np.repeat(np.std(y**(1/nfac)),ny)
+                
+        # Scale data
+        y    = scale_outputs(y_raw, col_dry, nfac, ymean, ystd)
+    return y, ymean, ystd
+        
 def scale_outputs(y_raw, col_dry=None, nfac=1, 
                  y_mean=None, y_sigma=None):
     # Y_mean and y_sigma are optional outputs: if missing, skip standard-scaling

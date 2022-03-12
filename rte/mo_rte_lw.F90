@@ -383,7 +383,7 @@ contains
                         fluxes%flux_up, fluxes%flux_dn,         &
                         sources%sfc_source_Jac, flux_upJac,     &
                         logical(.true., wl),  optical_props%ssa, optical_props%g, &
-                        ! do_rescaling is false
+                        ! do_rescaling is true
                         logical(do_gpt_flux, wl), fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_up_Jac)
           !$acc exit data delete(optical_props%tau,  optical_props%ssa, optical_props%g)                       
       endif

@@ -609,7 +609,7 @@ contains
     real(wp), dimension(nlay,ncol),           intent(in   ) ::  play, &   ! layer pressures [Pa, mb]; (nlay,ncol)
                                                                 tlay
     type(ty_gas_concs),                       intent(in   ) ::  gas_desc  ! Gas volume mixing ratios  
-    type(rrtmgp_network_type), dimension(2),  intent(in)    :: neural_nets ! needed to match inputs, load coefficients
+    type(rrtmgp_network_type), dimension(:),  intent(in)    :: neural_nets ! needed to match inputs, load coefficients
     real(sp), dimension(ninputs, nlay, ncol), intent(inout) ::  nn_inputs 
     character(len=128)                                  :: error_msg
     ! ----------------------------------------------------------
