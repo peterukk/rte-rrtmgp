@@ -163,7 +163,7 @@ program rrtmgp_rfmip_lw
   ! Save fluxes
   save_flux    = .false.
   ! compare fluxes to reference code as well as line-by-line (RFMIP only)
-  compare_flux = .true.
+  compare_flux = .false.
   ! Compute fluxes per g-point?
   do_gpt_flux = .false.
 
@@ -201,8 +201,10 @@ program rrtmgp_rfmip_lw
   !
   call read_size(rfmip_file, ncol, nlay, nexp)
 
+  if (nexp==18) compare_flux=.true.
+
   print *, "input file:", rfmip_file
-  print *, "nexp:", nexp, "ncol:", ncol, "nlay:", nlay
+  print *, "nexp:", nexp, "ncol:", ncol, "nlay:", nlay, "block_size:", block_size
 
   if(mod(ncol*nexp, block_size) /= 0 ) call stop_on_err("rrtmgp_rfmip_lw: number of columns doesn't fit evenly into blocks.")
   nblocks = (ncol*nexp)/block_size

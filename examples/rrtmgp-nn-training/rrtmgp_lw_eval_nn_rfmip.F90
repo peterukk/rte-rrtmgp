@@ -452,7 +452,6 @@ program rrtmgp_rfmip_lw
   metric_names(1) = 'HR (all) '
   metric_names(2) = 'HR (PD)'
   metric_names(3) = 'Bias TOA upwelling'
-  ! metric_names(3) = 'RF-SFC (PI->PD)'
   metric_names(4) = 'RF-TOA (PI->PD)'
   metric_names(5) = 'RF-TOA (PD->future)'
   metric_names(6) = 'RF-SFC (PI->future)'
@@ -527,7 +526,7 @@ program rrtmgp_rfmip_lw
   val = -mean(diff(rlu_lbl,1,iref,iexp)) -   -mean(diff(rlu_new,1,iref,iexp))
   print *, "radiative forcing error at TOA, future - present-day:                 ", val
   errors(5) = val
-  
+
   iref = 4
   iexp = 2
   val = mean(diff(rld_lbl,nlay+1,iref,iexp)) -   mean(diff(rld_new,nlay+1,iref,iexp))

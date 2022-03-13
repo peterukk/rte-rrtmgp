@@ -37,13 +37,6 @@ module mo_rte_sw
   use mo_rte_solver_kernels, &
                             only: apply_BC, sw_solver_noscat, sw_solver_2stream
   use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
-#ifdef USE_TIMING
-  !
-  ! Timing library
-  !
-  use gptl,                  only: gptlstart, gptlstop, gptlinitialize, gptlpr, gptlfinalize, gptlsetoption, &
-                                   gptlpercent, gptloverhead
-#endif  
   implicit none
   private
 
@@ -69,10 +62,6 @@ contains
     class(ty_fluxes_flexible),   intent(inout) :: fluxes                 ! Array of ty_fluxes. Default computes broadband fluxes at all levels
     real(wp), dimension(:,:), optional, contiguous, target, &
                                   intent(in   ) :: inc_flux_dif    ! incident diffuse flux at top of domain [W/m2] (ngpt, ncol)
-
-    ! logical,                  optional, &
-    !                               intent(in   ) :: do_gpt_flux    ! Compute fluxes at g-points, not only broadband fluxes
-
     character(len=128)                          :: error_msg       ! If empty, calculation was successful
     ! --------------------------------
     !

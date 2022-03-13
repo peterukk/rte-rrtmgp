@@ -20,8 +20,8 @@ module mo_rte_rrtmgp_config
   implicit none
   private
 
-  logical(wl), protected, public :: check_extents = .true.
-  logical(wl), protected, public :: check_values  = .true.
+  logical(wl), protected, public :: check_extents = .false.
+  logical(wl), protected, public :: check_values  = .false.
 
   ! RTE-Longwave options
   ! Compute surface temperature Jacobian of fluxes?
