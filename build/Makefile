@@ -16,6 +16,16 @@ ifeq ($(USE_OPENACC),1)
   FCFLAGS += -DUSE_OPENACC
 endif
 
+# Allow inner dimension (number of g-points) to be known at compile time
+ifdef NGPT_SW
+FCFLAGS += -DNGPT_SW=$(NGPT_SW)
+endif
+ifdef NGPT_LW
+FCFLAGS += -DNGPT_LW=$(NGPT_LW)
+endif
+ifdef NLAY
+FCFLAGS += -DNLAY=$(NLAY)
+endif
 #
 # netcdf library, module files
 # C and Fortran interfaces respectively

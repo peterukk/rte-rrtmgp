@@ -387,6 +387,8 @@ program rrtmgp_rfmip_sw
     ! !$acc update host(optical_props%tau, optical_props%ssa, optical_props%g)
     ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
     ! print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
+    ! print *," max, min (g)",   maxval(optical_props%g), minval(optical_props%g)
+
     if (nblocks==1) call system_clock(iTime2)
 
 #ifdef USE_TIMING

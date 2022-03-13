@@ -147,7 +147,8 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc enter data create(a1, a2) copyin(ymeans,ystd)
+    !$acc data create(a1, a2) copyin(ymeans,ystd)
+
     associate(layers=>self%layers)
       
       ! Assign pointers to layer weights, biases and input-output arrays
@@ -202,10 +203,8 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('last_sgemm')
 #endif  
-      !$acc parallel loop gang default(present)
+      !$acc parallel loop collapse(2) default(present)
       do j = 1, nbatch
-        !$OMP SIMD
-        !$acc loop vector
         do i = 1, ngpt
           ! Add bias to obtain model output (linear layer, no activation) 
           output(i, j) = output(i, j) + b(i)
@@ -217,12 +216,12 @@ contains
           output(i, j) = output(i, j) * coldry(j)
 
           ! One-line solution
-          ! output(i, j) = ((ysigma* (output(i, j) + b(i)) + ymeans(i))**8) * coldry(j)
+          ! output(i, j) = ((ystd(i)* (output(i, j) + b(i)) + ymeans(i))**8) * coldry(j)
         end do
       end do
 
     end associate
-    !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
+    !$acc end data
                                               
   end subroutine
 
@@ -243,7 +242,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc enter data create(a1, a2)
+    !$acc data create(a1, a2)
     associate(layers=>self%layers)    ! so it's easier to read
 
       ! FIRST HIDDEN LAYER (input layer)
@@ -303,7 +302,7 @@ contains
       !$acc end kernels
       end associate
 
-    !$acc exit data detach(a,a_next) delete(a1, a2)
+    !$acc end data
 
   end subroutine
 
@@ -331,7 +330,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc enter data create(a1, a2) copyin(ymeans,ystd)
+    !$acc data create(a1, a2) copyin(ymeans,ystd)
     associate(layers=>self%layers)
       
       ! Assign pointers to layer weights, biases and input-output arrays
@@ -395,7 +394,7 @@ contains
       end do
 
     end associate
-    !$acc exit data detach(a,a_next) delete(a1, a2, ymeans)
+    !$acc end data
                                               
   end subroutine
 
