@@ -1,6 +1,9 @@
 # RTE+RRTMGP-NN is an accelerated version of RTE+RRTMGP using neural networks for the gas optics, and a refactored radiative transfer solver 
 
 ## Recent changes
+
+March 2022: A new paper has been [published in JAMES](https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2021MS002875) where different ways of emulating a radiation code in the shortwave have been explored (using RTE+RRTMGP to generate data). The main finding is that recurrent neural networks can emulate the full radiation scheme much more closely than feedforward nets. The code used in the paper can be found in [examples/emulator-training in the nn_dev branch](https://github.com/peterukk/rte-rrtmgp-nn/tree/nn_dev/examples/emulator-training). The main branch also has new code (found in examples/rrtmgp-nn-training) for training RRTMGP emulators where flux and heating rate errors are monitored during training and used as early stopping criteria
+
 May 2021: Cloud extension and all-sky example now working! Furthermore, cleanup of RTE - no longer separate functions for "broadline fluxes only", instead a logical is passed to indicate whether only broadband fluxes are needed. Some further GPU optimizations for RTE kernels.
 
 January 2021: Use of two source functions (one for layers and one for levels) instead of three (one for layers and two for levels) like in RRTMGP. This had no significant accuracy loss and is faster. RRTMGP(-NN) also now computes the full spectral source functions instead of band-wise sources and finishing the computations in RTE (this was about as fast as the current source implementation, but clunky)
