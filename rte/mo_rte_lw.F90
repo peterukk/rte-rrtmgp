@@ -405,9 +405,21 @@ contains
     ! end if
   
     if (error_msg /= '') return
+    !$acc exit data detach(inc_flux_toa) delete(inc_flux_zero, inc_flux_toa, inc_flux, flux_upJac, sfc_emis_gpt, band_limits)
 
-    !$acc exit data detach(inc_flux_toa) delete(inc_flux_zero, inc_flux_toa, inc_flux, flux_upJac, sfc_emis_gpt)
-    deallocate(sfc_emis_gpt, inc_flux_zero)
+    !$acc exit data detach(fluxes%gpt_flux_up, fluxes%gpt_flux_dn)
+    !$acc exit data detach(fluxes%gpt_flux_up_Jac) if(compute_Jac)
+
+    !$acc exit data delete(gpt_flux_dn, gpt_flux_up)
+    !$acc exit data delete(gpt_flux_upJac) if(compute_Jac)
+
+    if (do_gpt_flux) then
+      if (.not. fluxes%are_desired_gpt()) then 
+        deallocate(gpt_flux_up, gpt_flux_dn)
+        if (compute_Jac) deallocate(gpt_flux_upJac) 
+      end if 
+    end if
+    deallocate(sfc_emis_gpt)
 
   end function rte_lw
   !--------------------------------------------------------------------------------------------------------------------

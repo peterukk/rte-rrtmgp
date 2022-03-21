@@ -271,7 +271,7 @@ contains
                                target         :: tlev_arr
     real(wp), dimension(:,:),   pointer       :: tlev_wk
 
-    integer :: ncol, nlay, ngpt, nband, ngas, ninputs, nflav, icol, ilay, idx_h2o
+    integer :: ncol, nlay, ngpt, nband, ngas, ninputs, icol, ilay, idx_h2o
     ! ----------------------------------------------------------
     ncol  = size(play,dim=2)
     nlay  = size(play,dim=1)
@@ -335,23 +335,29 @@ contains
       end do
       !$acc enter data copyin(tlev_arr)
     end if
-    !$acc enter data attach(tlev_wk)
 
-    !
-    ! Compute dry air column amounts (number of molecule per cm^2)
-    !
+      !
+      ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
+      !
     if (present(col_dry)) then
       !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
-      allocate(col_dry_arr(nlay,ncol), vmr_h2o(nlay,ncol))
-      !$acc enter data create(col_dry_arr, vmr_h2o)
-      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
-      call get_col_dry(vmr_h2o, plev, col_dry_arr)
+      ! allocate(col_dry_arr(nlay,ncol), vmr_h2o(nlay,ncol))
+      ! !$acc enter data create(col_dry_arr, vmr_h2o)
+      ! error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      ! call get_col_dry(vmr_h2o, plev, col_dry_arr)
+      ! col_dry_wk => col_dry_arr
+      ! !$acc exit data delete(vmr_h2o)
+
+      allocate(col_dry_arr(nlay,ncol))
+      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
+      !$acc enter data create(col_dry_arr)
+      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
-      !$acc exit data delete(vmr_h2o)
     end if
-    !$acc enter data attach(col_dry_wk) 
+    !$acc enter data attach(tlev_wk, col_dry_wk) 
+
     ! !! FOUND STRANGE OPENMP BUG ON GCC 9.3: with many threads, the content of col_dry_wk 
     ! can be different from col_dry_arr!
     ! PRINT *, "proc ", OMP_GET_THREAD_NUM(), " mean col_dry_wk, arr ", mean_2d(col_dry_wk), mean_2d(col_dry_arr)
@@ -393,7 +399,7 @@ contains
         ! In this case the Planck fraction has already been computed, so we call a custom function
         call compute_Planck_source_nn(ncol, nlay, nband, ngpt,      &
           this%get_nPlanckTemp(),                                   &
-          tlay, tlev, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
+          tlay, tlev_wk, tsfc, merge(1,nlay,play(1,1) > play(nlay,1)), &
           this%get_gpoint_bands(), this%get_band_lims_gpoint(),     &
           this%temp_ref_min, this%totplnk_delta, this%totplnk,      &
           sources%sfc_source, sources%sfc_source_Jac,               &
@@ -494,13 +500,22 @@ contains
       !$acc enter data copyin(col_dry)
       col_dry_wk => col_dry
     else
-      allocate(col_dry_arr(nlay,ncol), vmr_h2o(nlay,ncol))
-      !$acc enter data create(col_dry_arr, vmr_h2o)
-      error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
-      call get_col_dry(vmr_h2o, plev, col_dry_arr)
+      ! allocate(col_dry_arr(nlay,ncol), vmr_h2o(nlay,ncol))
+      ! !$acc enter data create(col_dry_arr, vmr_h2o)
+      ! error_msg = gas_desc%get_vmr('h2o', vmr_h2o)
+      ! call get_col_dry(vmr_h2o, plev, col_dry_arr)
       
+      ! col_dry_wk => col_dry_arr
+      ! !$acc exit data delete(vmr_h2o)
+
+      !
+      ! Compute dry air column amounts (number of molecule per cm^2) if user hasn't provided them
+      !
+      allocate(col_dry_arr(nlay,ncol))
+      idx_h2o = string_loc_in_array('h2o', gas_desc%gas_name)
+      !$acc enter data create(col_dry_arr)
+      call get_col_dry(gas_desc%concs(idx_h2o)%conc, plev, col_dry_arr)
       col_dry_wk => col_dry_arr
-      !$acc exit data delete(vmr_h2o)
     end if
     !$acc enter data attach(col_dry_wk)
     ! !! FOUND STRANGE OPENMP BUG ON GCC 9.3: with many threads, the content of col_dry_wk 

@@ -131,7 +131,7 @@ contains
     real(wp), dimension(ngpt_lw,nlay, ncol)  :: source_dn!, source_up
     ! real(wp), dimension(ngpt_lw,      ncol)  :: source_sfc, source_sfcJac, sfc_albedo
     real(wp), parameter :: pi = acos(-1._wp)
-    real(wp)            :: fac
+    real(wp)            :: fac, bb_flux_up, bb_flux_dn
     integer             :: ilay, ilev, icol, igpt, sfc_level, top_level
     ! Used when approximating scattering
     real(wp), dimension(:,:,:), allocatable :: An, Cn
@@ -223,8 +223,10 @@ contains
     !$acc parallel loop collapse(2) default(present)
     do icol = 1, ncol
       do igpt = 1, ngpt_lw
-      ! Surface reflection and emission                                          albedo
-        radn_up    (igpt,sfc_level,icol)  = radn_dn(igpt,sfc_level,icol) * (1-sfc_emis(igpt,icol)) + (sfc_emis(igpt,icol) * sfc_source(igpt,icol))
+      ! Surface reflection and emission                                          
+        radn_up (igpt,sfc_level,icol)  = radn_dn(igpt,sfc_level,icol) *  &
+          ! albedo
+          (1-sfc_emis(igpt,icol)) + (sfc_emis(igpt,icol) * sfc_source(igpt,icol))
         if (compute_Jac) radn_up_Jac(igpt,sfc_level,icol)  =  sfc_emis(igpt,icol) * sfc_source_Jac(igpt,icol)
         end do
     end do
@@ -237,13 +239,12 @@ contains
                                source_dn, source_up,              &
                                radn_up, radn_dn, An, Cn,          &
                                radn_up_Jac) 
-      !$acc exit data delete(source_dn, trans)       
+      !$acc exit data delete(source_dn)       
     else
       call lw_transport_noscat_up(ngpt_lw, nlay, ncol, top_at_1, &
                                   trans, source_up, radn_up, radn_up_Jac) 
-      !$acc exit data delete(trans)
     end if
-    !$acc exit data delete(tau_loc)
+    !$acc exit data delete(tau_loc, trans)
     end associate
 
     !
@@ -262,8 +263,24 @@ contains
     end do
 
     if (nmus==1) then
-      call sum_broadband(ngpt_lw, nlay+1, ncol, radn_up, flux_up)
-      call sum_broadband(ngpt_lw, nlay+1, ncol, radn_dn, flux_dn)
+      !$acc data copyout(flux_up, flux_dn)
+      !$acc parallel loop gang worker collapse(2) default(present) 
+      do icol = 1, ncol
+        do ilev = 1, nlay+1
+          bb_flux_up = 0.0_wp
+          bb_flux_dn = 0.0_wp
+          !$acc loop vector reduction(+:bb_flux_up,bb_flux_dn)
+          do igpt = 1, ngpt_lw
+            bb_flux_up = bb_flux_up + radn_up(igpt, ilev, icol)
+            bb_flux_dn = bb_flux_dn + radn_dn(igpt, ilev, icol)
+          end do
+          flux_up(ilev, icol) = bb_flux_up
+          flux_dn(ilev, icol) = bb_flux_dn
+        end do
+      end do
+      !$acc end data
+      ! call sum_broadband(ngpt_lw, nlay+1, ncol, radn_up, flux_up)
+      ! call sum_broadband(ngpt_lw, nlay+1, ncol, radn_dn, flux_dn)
       if (compute_Jac)  call sum_broadband(ngpt_lw, nlay+1, ncol, radn_up_Jac, flux_up_Jac)
     end if
 
@@ -617,7 +634,7 @@ contains
 
     ! Final loop to compute fluxes
 
-    !$acc enter data create (flux_up, flux_dn, flux_dir)
+    !$acc data copyout (flux_up, flux_dn, flux_dir)
       
     !$acc parallel default(present)
     !$acc loop gang
@@ -627,7 +644,7 @@ contains
         bb_flux_dn = 0.0_wp
         bb_flux_up = 0.0_wp
         bb_flux_dir = 0.0_wp
-        !$acc loop vector 
+        !$acc loop vector  reduction(+:bb_flux_up,bb_flux_dn,bb_flux_dir)
         do igpt = 1, ngpt_sw
           ! adding computes only diffuse flux; flux_dn is total
           ! The addition is more efficient to do for broadband fluxes if only those are needed
@@ -648,7 +665,7 @@ contains
     end do
     !$acc end parallel
 
-    !$acc exit data copyout(flux_up, flux_dn, flux_dir) 
+    !$acc end data
     
   end subroutine sw_solver_2stream
 

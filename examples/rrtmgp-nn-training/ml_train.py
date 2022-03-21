@@ -88,10 +88,10 @@ def plot_performance(history, hybrid_loss_expdiffs):
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
     ax3 = ax1.twinx()
     ax3.spines.right.set_position(("axes", 1.10))
-    label2 = 'Radiation score'
+    label2 = 'Radiation error'
 
     # label2 = 'Radiation score (heating rate + forcing errors)'
-    label3 = 'Heating rate errors'
+    label3 = 'Heating rate error'
     
     p1, = ax1.plot(x1, y0, 'k',label=losslabel)
     if hybrid_loss_expdiffs:
@@ -157,8 +157,6 @@ fpath3   = datadir+"ml_training_lw_g128_CAMS_new_CKDMIPstyle.nc"
 
 fpath4  = datadir+"ml_training_lw_g128_CKDMIP-MMM-Big.nc"
 
-# fpath5   = datadir+"ml_training_lw_g128_CAMS2.nc"
-
 
 fpaths = [fpath,fpath2,fpath3,fpath4]
 # ----------------------------------------------------------------------------
@@ -169,10 +167,10 @@ fpaths = [fpath,fpath2,fpath3,fpath4]
 # 'lw_absorption', 'lw_planck_frac', 'sw_absorption', 'sw_rayleigh'
 
 # predictand = 'sw_absorption'
-predictand = 'sw_rayleigh'
+# predictand = 'sw_rayleigh'
 # predictand = 'lw_absorption'
 # predictand = 'lw_planck_frac'
-# predictand = 'lw_both' # old
+predictand = 'lw_both' # old
 
 if (predictand=='sw_absorption' or predictand=='sw_rayleigh'):
     fpaths = [sub.replace('lw_g128', 'sw_g112') for sub in fpaths]
@@ -203,18 +201,24 @@ num_cpu_threads = 12
 early_stop_on_rfmip_fluxes = True
 patience    = 30
 patience    = 40
+patience = 70
+
 
 epochs = 100
 
 if early_stop_on_rfmip_fluxes:
     epochs = 800  # set a high number with early stopping
+    
 
 # --- Forcing errors: We can try to reduce radiative forcing errors
 # --- by using a hybrid loss function which measures the difference in y 
 # --- between adjacent experiments (for instance two experiments where the 
 # --- concentration of a single gas is varied from present-day to future)
 # --- requires bespoke data but can help minimize TOA / surface forcing errors
-hybrid_loss_expdiffs = True
+hybrid_loss_expdiffs = False
+
+patience = 257
+epochs = 257
 
 
 if hybrid_loss_expdiffs:
@@ -223,7 +227,7 @@ if hybrid_loss_expdiffs:
     else:
         # alpha = 0.6
         alpha = 0.7
-        # alpha = 0.8
+        # alpha = 0.75
 
     loss_expdiff = hybrid_loss_wrapper(alpha=alpha)
 
@@ -239,6 +243,8 @@ else:
 lr          = 0.001 
 batch_size  = 1024
 batch_size  = 2048
+
+# lr = 0.01
 # batch_size  = 4096
 # lr          = 0.01
 # batch_size  = 3*batch_size
@@ -250,12 +256,14 @@ batch_size  = 2048
 if predictand == 'lw_absorption':
     # neurons     = [80,80]
     # neurons     = [96,96]
-
     neurons     = [72,72]
     # neurons     = [64,64]
     # neurons     = [58,58]
 elif predictand == 'lw_both':
-    neurons     = [80,80]
+    # neurons     = [80,80]
+    # neurons     = [72,72]
+    neurons     = [64,64]
+
 else:
     # neurons     = [16,16] 
     # neurons     = [24,24] 
@@ -457,10 +465,10 @@ else:
 with tf.device(devstr):
     history = model.fit(x_tr, y_tr, epochs= epochs, batch_size=batch_size, 
                         shuffle=shuffle,  verbose=1, callbacks=callbacks) 
-
+    history = history.history
 
 if early_stop_on_rfmip_fluxes:
-    plot_performance(history.history, hybrid_loss_expdiffs)
+    plot_performance(history, hybrid_loss_expdiffs)
 
 # ------------------------------------------------------
 # --- Save model?  -------------------------------------
@@ -474,9 +482,9 @@ def save_model():
     
     source = kdist[12:].strip('.nc')
     if early_stop_on_rfmip_fluxes:
-        ind = np.array(history.history['radiation_score']).argmin()
-        hr_err_final = np.array(history.history['mean_relative_heating_rate_error'])[ind]
-        forcing_err_final = np.array(history.history['mean_relative_forcing_error'])[ind]
+        ind = np.array(history['radiation_score']).argmin()
+        hr_err_final = np.array(history['mean_relative_heating_rate_error'])[ind]
+        forcing_err_final = np.array(history['mean_relative_forcing_error'])[ind]
         fpath_keras = "../../neural/data/" + source + "_" + predictand[3:] + "_" + \
           neurons_str + "_HR_{:.2e}_FRC_{:.2e}.h5".format(hr_err_final, forcing_err_final)
     else:
@@ -492,7 +500,15 @@ def save_model():
                            x_scaling_comment=x_scaling_str,
                            data_comment=data_str, model_comment=model_str)
 save_model()
-# np.save('/media/peter/samlinux/gdrive/phd/results/paper3_IFS_RRTMGP/lw_both_80_history.npy',history.history)
+
+neurons_str = np.array2string(np.array(neurons)).strip('[]').replace(' ','_')
+source = kdist[12:].strip('.nc')
+ind = np.array(history['radiation_score']).argmin()
+hr_err_final = np.array(history['mean_relative_heating_rate_error'])[ind]
+forcing_err_final = np.array(history['mean_relative_forcing_error'])[ind]
+fp =  source + "_" + predictand[3:] + "_" + \
+  neurons_str + "_HR_{:.2e}_FRC_{:.2e}_history.npy".format(hr_err_final, forcing_err_final)
+np.save('/media/peter/samlinux/gdrive/phd/results/paper3_IFS_RRTMGP/'+fp,history)
 
 # # ------------------------------------------------------
 # # --- Evaluate on another dataset  ---------------------

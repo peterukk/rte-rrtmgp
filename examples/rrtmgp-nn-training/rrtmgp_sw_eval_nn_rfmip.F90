@@ -117,7 +117,7 @@ program rrtmgp_rfmip_sw
   integer             ::  b, icol, ilay,ibnd, igpt, igas, ncid, ninputs, ret, i, istat, num_metrics, iexp
   character(len=4)    ::  block_size_char, forcing_index_char = '1'
   character(len=32 ), dimension(:),  allocatable   ::  kdist_gas_names, rfmip_gas_names
-  real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
+  real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, plev, t_lay, t_lev ! nlay,blocksize, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn, flux_dn_dir
   real(wp), dimension(:,:,:),         allocatable :: rsu_new, rsd_new, rsu_lbl, rsd_lbl, rsdu_new, rsdu_lbl
   real(wp), dimension(:,:  ),         allocatable :: surface_albedo, total_solar_irradiance, solar_zenith_angle
@@ -456,10 +456,15 @@ program rrtmgp_rfmip_sw
   allocate(rsu_lbl( nlay+1, ncol, nexp))
   allocate(rsdu_lbl( nlay+1, ncol, nexp))
 
+  allocate(plev( nlay+1, ncol, nexp))
+
+
   flx_file_lbl = 'output_fluxes/rsud_Efx_LBLRTM-12-8_rad-irf_r1i1p1f1_gn.nc'
 
   call unblock(flux_up, rsu_new)
   call unblock(flux_dn, rsd_new)
+  call unblock(p_lev, plev)
+
 
   rsdu_new = rsd_new - rsu_new
 
@@ -483,33 +488,41 @@ program rrtmgp_rfmip_sw
   ! metric_names(6) = 'RF-SFC (PI->future)'
   ! metric_names(7) = 'RF-TOA (PI->future)'
   ! metric_names(8) = 'RF-SFC CH4 (PI->PD)'
-  metric_names(1) = 'HR (all) '
-  metric_names(2) = 'HR (PD)'
-  metric_names(3) = 'HR (future-all)'
-  metric_names(4) = 'HR (preindustrial)'
-  metric_names(5) = 'Bias surface downwelling'
-  metric_names(6) = 'RF-TOA (PI->future)'
-  metric_names(7) = 'RF-SFC (PI->future)'
-  metric_names(8) = 'RF-SFC CH4 (PI->PD)'
+  metric_names(1) = 'MAE HR (all) '
+  metric_names(2) = 'MAE HR (PD)'
+  metric_names(3) = 'MAE HR (future-all)'
+  metric_names(4) = 'MAE HR (PI)'
+  metric_names(5) = 'MAE sfc downwelling'
+  metric_names(6) = 'Bias RF-TOA (PI->future)'
+  metric_names(7) = 'Bias RF-SFC (PI->future)'
+  metric_names(8) = 'Bias RF-SFC CH4 (PI->PD)'
   ! Heating rates
   allocate(hr_nn(nlay,ncol,nexp), hr_lbl(nlay,ncol,nexp))
 
   do iexp = 1, nexp
-    hr_nn(:,:,iexp)   = calc_heating_rate(ncol, nlay, rsu_new(:,:,iexp), rsd_new(:,:,iexp), p_lev)
-    hr_lbl(:,:,iexp)  = calc_heating_rate(ncol, nlay, rsu_lbl(:,:,iexp), rsd_lbl(:,:,iexp), p_lev)
+    hr_nn(:,:,iexp)   = calc_heating_rate(ncol, nlay, rsu_new(:,:,iexp), rsd_new(:,:,iexp), plev)
+    hr_lbl(:,:,iexp)  = calc_heating_rate(ncol, nlay, rsu_lbl(:,:,iexp), rsd_lbl(:,:,iexp), plev)
   end do
+  
+  val =  mae_presweight(nlay,ncol*nexp, hr_nn, hr_lbl, plev)
+  print *, 'Pres-weighted heating rate        ', val
 
-  print *, 'Heating rate error, all experiments  ', mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
-  print *, 'Heating rate error, present-day      ', mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
-  print *, 'Heating rate error, future-all       ', mae_flat(ncol*nlay, hr_nn(:,:,17), hr_lbl(:,:,17))
-  print *, 'Heating rate error, preindustrial    ', mae_flat(ncol*nlay, hr_nn(:,:,2), hr_lbl(:,:,2))
+  print *, 'Heating rate MAE, all experiments ', mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
+  print *, 'Heating rate MAE (<100 hPa)       ', mae_flat(ncol*26*nexp, hr_nn(1:26,:,:), hr_lbl(1:26,:,:))
+  print *, 'Heating rate MAE (>100 hPa)       ', mae_flat(ncol*35*nexp, hr_nn(26:,:,:), hr_lbl(26:,:,:))
+  print *, 'Heating rate MAE sfc              ', mae_flat(ncol*nexp, hr_nn(nlay,:,:), hr_lbl(nlay,:,:))
+
+  print *, 'Heating rate MAE, all experiments  ', mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
+  print *, 'Heating rate MAE, present-day      ', mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
+  print *, 'Heating rate MAE, future-all       ', mae_flat(ncol*nlay, hr_nn(:,:,17), hr_lbl(:,:,17))
+  print *, 'Heating rate MAE, preindustrial    ', mae_flat(ncol*nlay, hr_nn(:,:,2), hr_lbl(:,:,2))
 
   ! print *, 'RMSE heating rate error, present-day ', rmse_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1)
 
-  errors(1) = mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
-  errors(2) = mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
-  errors(3) = mae_flat(ncol*nlay, hr_nn(:,:,17), hr_lbl(:,:,17))
-  errors(4) = mae_flat(ncol*nlay, hr_nn(:,:,2), hr_lbl(:,:,2))
+  errors(1) = mae_presweight(nlay,ncol*nexp, hr_nn, hr_lbl, plev)
+  errors(2) = mae_presweight(nlay,ncol, hr_nn(:,:,1), hr_lbl(:,:,1), plev(:,:,1))
+  errors(3) = mae_presweight(nlay,ncol, hr_nn(:,:,17), hr_lbl(:,:,17), plev(:,:,17))
+  errors(4) = mae_presweight(nlay,ncol, hr_nn(:,:,2), hr_lbl(:,:,2), plev(:,:,2))
 
 
   print *, "bias in downwelling flux (sfc):       ", bias_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
@@ -517,7 +530,7 @@ program rrtmgp_rfmip_sw
   print *, "RMSE in downwelling flux, P.D. (sfc): ", rmse_flat(ncol, rsd_new(nlay+1,:,1), rsd_lbl(nlay+1,:,1))
   print *, "mae in downwelling flux (sfc):       ", mae_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
 
-  errors(5) = bias_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
+  errors(5) = mae_flat(ncol*nexp, rsd_new(nlay+1,:,:), rsd_lbl(nlay+1,:,:))
 
   ! print *, "------------- FLUX ERRORS ------------ "
   ! print *, "------------- UPWELLING -------------- "
@@ -723,6 +736,21 @@ program rrtmgp_rfmip_sw
     diff = abs(x1 - x2)
     res = sum(diff, dim=1)/size(diff, dim=1)
   end function mae_flat
+
+  function mae_presweight(nlay,ndim, x1,x2, plev) result(res)
+    implicit none 
+    integer, intent(in) :: nlay,ndim
+    real(wp), dimension(nlay,  ndim), intent(in) :: x1,x2
+    real(wp), dimension(nlay+1,ndim), intent(in) :: plev
+
+    real(wp) :: res
+    real(wp), dimension(nlay,ndim) :: diff 
+    
+    diff = abs(x1 - x2)
+    diff = diff*(sqrt(plev(2:nlay+1,:))-sqrt(plev(1:nlay,:))) ! times delta(sqrt(p))
+    res = sum(diff)/ (ndim*mean(sqrt(plev(nlay+1,:)) - sqrt(plev(1,:))))
+
+  end function mae_presweight
 
   function bias_flat(ndim, x1,x2) result(res)
     implicit none 

@@ -35,7 +35,7 @@ contains
     integer  :: igpt, ilev, icol
     real(wp) :: bb_flux_s
 
-    !$acc enter data create(broadband_flux)
+    !!$acc enter data create(broadband_flux)
     !$acc parallel loop gang worker collapse(2) default(present)
     do icol = 1, ncol
       do ilev = 1, nlev
@@ -48,7 +48,7 @@ contains
        broadband_flux(ilev, icol) = bb_flux_s
       end do
     end do
-    !$acc exit data copyout(broadband_flux)
+    !!$acc exit data copyout(broadband_flux)
 
   end subroutine sum_broadband
 

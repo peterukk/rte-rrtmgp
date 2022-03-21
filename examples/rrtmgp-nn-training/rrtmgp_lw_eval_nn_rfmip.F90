@@ -122,7 +122,7 @@ program rrtmgp_rfmip_lw
   character(len=5)   :: block_size_char, forcing_index_char = '1', physics_index_char = '1'
   character(len=32 ), &
             dimension(:),             allocatable :: kdist_gas_names, rfmip_gas_names
-  real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, t_lay, t_lev ! block_size, nlay, nblocks
+  real(wp), dimension(:,:,:),         allocatable :: p_lay, p_lev, plev, t_lay, t_lev ! block_size, nlay, nblocks
   real(wp), dimension(:,:,:), target, allocatable :: flux_up, flux_dn
   real(wp), dimension(:,:,:),         allocatable :: rlu_new, rld_new, rlu_lbl, rld_lbl, rldu_new, rldu_lbl
   real(wp), dimension(:,:  ),         allocatable :: sfc_emis, sfc_t  ! block_size, nblocks (emissivity is spectrally constant)
@@ -138,7 +138,9 @@ program rrtmgp_rfmip_lw
   type(ty_source_func_lw)     :: source
   type(ty_optical_props_1scl) :: optical_props
   type(ty_fluxes_flexible)   :: fluxes
-  type(rrtmgp_network_type), dimension(:), allocatable    :: neural_nets ! First model is for absorption, second is for Planck fraction
+  ! Neural network models: in the longwave, either a unified model can be used, or two models
+  ! where the first is for absorption, second for Planck fraction 
+  type(rrtmgp_network_type), dimension(:), allocatable    :: neural_nets 
   !
   ! ty_gas_concentration holds multiple columns; we make an array of these objects to
   !   leverage what we know about the input file
@@ -430,10 +432,13 @@ program rrtmgp_rfmip_lw
   allocate(rlu_lbl( nlay+1, ncol, nexp))
   allocate(rldu_lbl( nlay+1, ncol, nexp))
 
+  allocate(plev( nlay+1, ncol, nexp))
+
   flx_file_lbl = 'output_fluxes/rlud_Efx_LBLRTM-12-8_rad-irf_r1i1p1f1_gn.nc'
 
   call unblock(flux_up, rlu_new)
   call unblock(flux_dn, rld_new)
+  call unblock(p_lev, plev)
 
   rldu_new = rld_new - rlu_new
 
@@ -449,16 +454,16 @@ program rrtmgp_rfmip_lw
   num_metrics = 8
   allocate(errors(num_metrics), metric_names(num_metrics))
   
-  metric_names(1) = 'HR (all) '
-  metric_names(2) = 'HR (PD)'
+  metric_names(1) = 'MAE HR (all) '
+  metric_names(2) = 'MAE HR (PD)'
   metric_names(3) = 'Bias TOA upwelling'
-  metric_names(4) = 'RF-TOA (PI->PD)'
-  metric_names(5) = 'RF-TOA (PD->future)'
-  metric_names(6) = 'RF-SFC (PI->future)'
-  ! metric_names(6) = 'RF-SFC (PD->future)'
-  ! metric_names(6) = 'RF-TOA CO2 (PI->8x)'
-  metric_names(7) = 'RF-SFC N2O (PI->PD)'
-  metric_names(8) = 'RF-SFC CH4 (PI->PD)'
+  metric_names(4) = 'Bias RF-TOA (PI->PD)'
+  metric_names(5) = 'Bias RF-TOA (PD->future)'
+  metric_names(6) = 'Bias RF-SFC (PI->future)'
+  ! metric_names(6) = 'Bias RF-SFC (PD->future)'
+  ! metric_names(6) = 'Bias RF-TOA CO2 (PI->8x)'
+  metric_names(7) = 'Bias RF-SFC N2O (PI->PD)'
+  metric_names(8) = 'Bias RF-SFC CH4 (PI->PD)'
 
   ! Heating rates
   allocate(hr_nn(nlay,ncol,nexp), hr_lbl(nlay,ncol,nexp))
@@ -468,12 +473,16 @@ program rrtmgp_rfmip_lw
     hr_lbl(:,:,iexp)  = calc_heating_rate(ncol, nlay, rlu_lbl(:,:,iexp), rld_lbl(:,:,iexp), p_lev)
   end do
 
-  print *, 'Heating rate error, present-day      ', mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
-  print *, 'Heating rate error, all experiments  ', mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
+  print *, 'MAE heating rate, present-day      ', mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
+  print *, 'MAE heating rate, future-all       ', mae_flat(ncol*nlay, hr_nn(:,:,17), hr_lbl(:,:,17))
+  print *, 'MAE heating rate, all experiments  ', mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
   ! print *, 'RMSE heating rate error, present-day ', rmse_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1)
 
-  errors(1) = mae_flat(ncol*nlay*nexp, hr_nn, hr_lbl)
-  errors(2) = mae_flat(ncol*nlay, hr_nn(:,:,1), hr_lbl(:,:,1))
+  errors(1) = mae_presweight(nlay,ncol*nexp, hr_nn, hr_lbl, plev)
+  errors(2) = mae_presweight(nlay,ncol, hr_nn(:,:,1), hr_lbl(:,:,1), plev(:,:,1))
+
+  print *, 'MAE weighted heating rate, present-day      ',  errors(2) 
+  print *, 'MAE weighted heating rate , all experiments ', errors(1) 
 
   print *, "MAE in upwelling flux:                ", mae_flat(ncol*nexp*(nlay+1), rlu_new, rlu_lbl)
   print *, "MAE in downwelling flux:              ", mae_flat(ncol*nexp*(nlay+1), rld_new, rld_lbl)
@@ -685,6 +694,21 @@ program rrtmgp_rfmip_lw
     diff = abs(x1 - x2)
     res = sum(diff, dim=1)/size(diff, dim=1)
   end function mae_flat
+
+  function mae_presweight(nlay,ndim, x1,x2, plev) result(res)
+    implicit none 
+    integer, intent(in) :: nlay,ndim
+    real(wp), dimension(nlay,  ndim), intent(in) :: x1,x2
+    real(wp), dimension(nlay+1,ndim), intent(in) :: plev
+
+    real(wp) :: res
+    real(wp), dimension(nlay,ndim) :: diff 
+    
+    diff = abs(x1 - x2)
+    diff = diff*(sqrt(plev(2:nlay+1,:))-sqrt(plev(1:nlay,:))) ! times delta(sqrt(p))
+    res = sum(diff)/ (ndim*mean(sqrt(plev(nlay+1,:)) - sqrt(plev(1,:))))
+
+  end function mae_presweight
 
   function bias_flat(ndim, x1,x2) result(res)
     implicit none 

@@ -253,6 +253,7 @@ contains
     !
     if (error_msg /= '') return
 
+    !$acc exit data detach(fluxes%gpt_flux_up, fluxes%gpt_flux_dn, fluxes%gpt_flux_dn_dir)
     !$acc exit data delete(gpt_flux_up, gpt_flux_dn, gpt_flux_dir)
 
     if(.not. present(inc_flux_dif)) then

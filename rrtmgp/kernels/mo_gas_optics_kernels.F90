@@ -709,7 +709,7 @@ contains
     real(sp), dimension(:,:), contiguous, pointer   :: input, output
     real(sp), dimension(:),   contiguous, pointer   :: input_coldry   
     real(sp), dimension(2*ngpt,nlay,ncol), target   :: outp_both
-    integer                                         :: ilay, icol, nobs
+    integer                                         :: ilay, icol, igpt, nobs
     real(sp), dimension(ngpt)                       :: ymeans,ystd ! standard-scaling coefficients
 
     !  PREDICT PLANCK FRACTIONS
@@ -753,12 +753,15 @@ contains
 
       do icol = 1, ncol
         do ilay = 1, nlay
+          !$OMP SIMD
+          do igpt= 1, ngpt 
           ! Postprocess absorption output: reverse standard scaling and square root scaling
-          tau(1:ngpt,ilay,icol) = (ystd(1:ngpt) * outp_both(1:ngpt,ilay,icol) + ymeans(1:ngpt))**8
-          ! Optical depth from cross-sections
-          tau(1:ngpt,ilay,icol) = tau(1:ngpt,ilay,icol)*col_dry_wk(ilay,icol)
-
-          pfrac(1:ngpt,ilay,icol) = outp_both(ngpt+1:2*ngpt,ilay,icol)*outp_both(ngpt+1:2*ngpt,ilay,icol)
+            tau(igpt,ilay,icol) = (ystd(igpt) * outp_both(igpt,ilay,icol) + ymeans(igpt))**8
+            ! Optical depth from cross-sections
+            tau(igpt,ilay,icol) = tau(igpt,ilay,icol)*col_dry_wk(ilay,icol)
+            ! Planck fraction: reverse square root scaling
+            pfrac(igpt,ilay,icol) = outp_both(igpt+ngpt,ilay,icol)*outp_both(igpt+ngpt,ilay,icol)
+          end do 
         end do
       end do
 

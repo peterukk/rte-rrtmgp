@@ -1,1 +1,0 @@
-lw-g128-210809_planck_frac_32_32_100epochs.nc

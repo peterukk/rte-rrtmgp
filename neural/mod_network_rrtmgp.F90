@@ -80,9 +80,9 @@ contains
 
     call self % init(dims)
       
-    !$acc enter data copyin(self) 
-    !$acc enter data copyin(self % dims)  
-    !$acc enter data copyin(self % layers)
+    !!$acc enter data copyin(self) 
+    !!$acc enter data copyin(self % dims)  
+    !!$acc enter data copyin(self % layers)
     do n = 1, num_layers
       dim1 = dims(n)
       dim2 = dims(n+1)
@@ -93,9 +93,8 @@ contains
       
       self % layers(n) % w =  transpose(read_field(ncid, varname_weight,  dim2, dim1))
       self % layers(n) % b =  read_field(ncid, varname_bias,  dim2)
-      !$acc enter data copyin(self % layers(n) % w, self % layers(n) % b) async
       self % layers(n) % w_transposed = transpose(self % layers(n) % w )  
-      !$acc enter data copyin(self % layers(n) % w_transposed) async   
+      !$acc enter data copyin(self % layers(n)%b, self % layers(n)%w_transposed) async   
     end do
 
     ! Load and set layer activation functions

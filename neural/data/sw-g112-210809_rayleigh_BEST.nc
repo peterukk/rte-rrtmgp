@@ -1,0 +1,1 @@
+../../neural/data/sw-g112-210809_rayleigh_32_32_HR_1.08e+00_FRC_6.67e-01.nc

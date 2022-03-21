@@ -426,7 +426,7 @@ def preproc_minmax_inputs_rrtmgp(x, xcoeffs=None): #, datamin, datamax):
             scaler = MinMaxScaler()  
             scaler.fit(x_scaled)
             x_scaled = scaler.transform(x_scaled) 
-            return x_scaled, scaler.data_min_, scaler.data_min_
+            return x_scaled, scaler.data_min_, scaler.data_max_
 
         else:
             (xmin,xmax) = xcoeffs
