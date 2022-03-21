@@ -27,7 +27,7 @@
 ! -------------------------------------------------------------------------------------------------
 module mo_rte_solver_kernels
   use,  intrinsic :: iso_c_binding
-  use mo_fluxes_broadband_kernels, only : sum_broadband, sum_broadband_nocol
+  use mo_fluxes_broadband_kernels, only : sum_broadband
   use mo_rte_kind, only: wp, wl
   use mo_rte_rrtmgp_config, only: compute_Jac, use_Pade_source
   implicit none
@@ -251,16 +251,16 @@ contains
     ! Convert intensity to flux assuming azimuthal isotropy and quadrature weight
     !
 
-    !$acc parallel loop collapse(3) default(present)
-    do icol = 1, ncol
-      do ilev = 1, nlay+1
-        do igpt = 1, ngpt_lw
-          radn_dn    (igpt,ilev,icol) = fac * radn_dn    (igpt,ilev,icol)
-          radn_up    (igpt,ilev,icol) = fac * radn_up    (igpt,ilev,icol)
-          if (compute_Jac) radn_up_Jac(igpt,ilev,icol) = fac * radn_up_Jac(igpt,ilev,icol)
-        end do
-      end do
-    end do
+    ! !$acc parallel loop collapse(3) default(present)
+    ! do icol = 1, ncol
+    !   do ilev = 1, nlay+1
+    !     do igpt = 1, ngpt_lw
+    !       radn_dn    (igpt,ilev,icol) = fac * radn_dn    (igpt,ilev,icol)
+    !       radn_up    (igpt,ilev,icol) = fac * radn_up    (igpt,ilev,icol)
+    !       if (compute_Jac) radn_up_Jac(igpt,ilev,icol) = fac * radn_up_Jac(igpt,ilev,icol)
+    !     end do
+    !   end do
+    ! end do
 
     if (nmus==1) then
       !$acc data copyout(flux_up, flux_dn)
@@ -274,14 +274,28 @@ contains
             bb_flux_up = bb_flux_up + radn_up(igpt, ilev, icol)
             bb_flux_dn = bb_flux_dn + radn_dn(igpt, ilev, icol)
           end do
-          flux_up(ilev, icol) = bb_flux_up
-          flux_dn(ilev, icol) = bb_flux_dn
+          flux_up(ilev, icol) = fac*bb_flux_up
+          flux_dn(ilev, icol) = fac*bb_flux_dn
         end do
       end do
       !$acc end data
-      ! call sum_broadband(ngpt_lw, nlay+1, ncol, radn_up, flux_up)
-      ! call sum_broadband(ngpt_lw, nlay+1, ncol, radn_dn, flux_dn)
-      if (compute_Jac)  call sum_broadband(ngpt_lw, nlay+1, ncol, radn_up_Jac, flux_up_Jac)
+      ! call sum_broadband_fac(ngpt_lw, nlay+1, ncol, fac, radn_up, flux_up)
+      ! call sum_broadband_fac(ngpt_lw, nlay+1, ncol, fac, radn_dn, flux_dn)
+      if (compute_Jac)  then
+        call sum_broadband_fac(ngpt_lw, nlay+1, ncol, fac, radn_up_Jac, flux_up_Jac)
+      end if
+    else 
+      !$acc parallel loop collapse(3) default(present)
+      do icol = 1, ncol
+        do ilev = 1, nlay+1
+          do igpt = 1, ngpt_lw
+            radn_dn    (igpt,ilev,icol) = fac * radn_dn    (igpt,ilev,icol)
+            radn_up    (igpt,ilev,icol) = fac * radn_up    (igpt,ilev,icol)
+            if (compute_Jac) radn_up_Jac(igpt,ilev,icol) = fac * radn_up_Jac(igpt,ilev,icol)
+          end do
+        end do
+      end do
+
     end if
 
   end subroutine lw_solver_noscat
@@ -1807,7 +1821,7 @@ contains
     real(wp), dimension(ngpt_sw,nlay+1,ncol), intent(inout) :: flux_dn_dir ! Direct beam flux
 
     ! -----------------------
-    real(wp), dimension(ngpt_sw, nlay,  ncol) :: Rdif, Tdif!, source_dn, source_up
+    real(wp), dimension(ngpt_sw, nlay, ncol) :: Rdif, Tdif!, source_dn, source_up
     ! real(wp) :: source_sfc ! Source function for upward radation at surface
     integer  :: icol, ilay, igpt
 
@@ -1967,6 +1981,7 @@ contains
     !$acc        end data
     !$omp end target data
     end associate
+
   end subroutine sw_dif_and_source_and_adding
 
 
@@ -2318,4 +2333,30 @@ end subroutine apply_BC_old
       enddo
     end if
   end subroutine lw_transport_1rescl
+
+pure subroutine sum_broadband_fac(ngpt, nlev, ncol, fac, spectral_flux, broadband_flux)
+  integer,                               intent(in ) :: ngpt, nlev, ncol
+  real(wp),                               intent(in ) :: fac
+  real(wp), dimension(ngpt, nlev, ncol), intent(in ) :: spectral_flux
+  real(wp), dimension(nlev, ncol),       intent(out) :: broadband_flux
+  integer  :: igpt, ilev, icol
+  real(wp) :: bb_flux_s
+
+  !$acc data copyout(broadband_flux)
+  !$acc parallel loop gang worker collapse(2) default(present)
+  do icol = 1, ncol
+    do ilev = 1, nlev
+
+      bb_flux_s = 0.0_wp
+      !$acc loop vector reduction(+:bb_flux_s)
+      do igpt = 1, ngpt
+        bb_flux_s = bb_flux_s + spectral_flux(igpt, ilev, icol)
+      end do
+     broadband_flux(ilev, icol) = fac*bb_flux_s
+    end do
+  end do
+  !$acc end data
+
+end subroutine sum_broadband_fac
+
 end module mo_rte_solver_kernels

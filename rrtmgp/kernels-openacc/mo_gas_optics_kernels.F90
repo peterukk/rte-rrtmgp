@@ -1125,7 +1125,7 @@ contains
                            optional,    intent(out) :: ssa                                     
     ! ^ wp = sp but using wp here for consistency with combine_2_str_opt                                    
     ! local
-    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output, output_ray
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
     integer                                           :: ilay, icol, nobs
 
@@ -1141,17 +1141,45 @@ contains
     call neural_nets(1) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
                           input_coldry, output)
               
-    if (present(ssa)) then
+    ! if (present(ssa)) then
+
+    !   call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
+
+    !   call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
+    !                         input_coldry, output)
+
+    !   ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
+    !   ! inputs: tau_abs (called tau) and tau_ray (called ssa)
+    !   ! first argument becomes tau_tot and second becomes ssa
+    !   call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+    ! end if
+
+      if (present(ssa)) then
+
+#define INLINE_COMBINE
+#ifdef INLINE_COMBINE
+! ----- merge combine_2str with NN kernel? yes --------
+
+      ! output = tau_abs, tau_tot call
+      ! output_ray = tau_ray, ssa after call
+      call C_F_POINTER (C_LOC(ssa), output_ray, [ngpt,nobs])
+
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, input_coldry, output_ray, output)
+
+#else
+! ----- merge combine_2str with NN kernel? no --------
 
       call C_F_POINTER (C_LOC(ssa), output, [ngpt,nobs])
 
-      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, &
-                            input_coldry, output)
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, input_coldry, output)
 
       ! Now compute tau_tot = tau_ray + tau_abs and ssa = tau_ray / tau_tot
       ! inputs: tau_abs (called tau) and tau_ray (called ssa)
       ! first argument becomes tau_tot and second becomes ssa
       call combine_2str_opt(ncol, nlay, ngpt, tau, ssa) 
+#endif
+! ----- merge combine_2str with NN kernel? --------
+
     end if
 
   end subroutine predict_nn_sw_blas_sp

@@ -121,7 +121,7 @@ contains
   end subroutine load_netcdf
 
 
-  subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, output)
+  subroutine output_sgemm_tau(self, nx, ngpt, nbatch, x, coldry, output, output2)
     ! Like output_sgemm_flat but for computing OPTICAL DEPTH, inlining the post-processing
     ! Additional inputs: number of dry air molecules (coldry) and the mean and standard deviation
     ! used for normalization (ymeans, ysigma)
@@ -130,7 +130,9 @@ contains
     integer, intent(in)                           :: nx, ngpt, nbatch
     real(sp), dimension(nx, nbatch),  intent(in)  :: x      ! (features, nbatch)
     real(sp), dimension(nbatch),      intent(in)  :: coldry ! number of dry air molecules
-    real(sp), dimension(ngpt, nbatch),intent(out) :: output ! absorption cross-section g-point vectors
+    real(sp), dimension(ngpt, nbatch),intent(out) :: output ! optical depth (or ssa if output2 present)
+    real(sp), dimension(ngpt, nbatch), optional, intent(out) :: output2 ! absorption od=> total od
+
     real(sp), dimension(size(self % layers(1) % w_transposed, 1), nbatch), &
                                           target  :: a1, a2  
     real(sp), dimension(:,:), contiguous, pointer :: a, a_next  
@@ -202,6 +204,7 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('last_sgemm')
 #endif  
+      
       !$acc parallel loop collapse(2) default(present)
       do j = 1, nbatch
         do i = 1, ngpt
@@ -216,6 +219,13 @@ contains
 
           ! One-line solution
           ! output(i, j) = ((ystd(i)* (output(i, j) + b(i)) + ymeans(i))**8) * coldry(j)
+
+          if (present(output2)) then 
+            ! output = tau_rayleigh => ssa
+            ! output2 = tau_abs => tau_tot
+            output2(i,j) = output2(i,j) + output(i,j)
+            output(i,j) =  output(i,j) / output2(i,j)
+          end if
         end do
       end do
 
@@ -329,7 +339,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc data create(a1, a2) copyin(ymeans,ystd)
+    !$acc data create(a1, a2) copyin(ymeans,ystd) present(output)
     associate(layers=>self%layers)
       
       ! Assign pointers to layer weights, biases and input-output arrays

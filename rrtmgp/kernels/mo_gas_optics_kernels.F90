@@ -885,7 +885,7 @@ contains
                            optional,    intent(out) :: ssa                                     
     ! ^ wp = sp but using wp here for consistency with combine_2_str_opt                                                                  
     ! local
-    real(sp), dimension(:,:), contiguous, pointer     :: input, output
+    real(sp), dimension(:,:), contiguous, pointer     :: input, output, output_ray
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
     integer                                           :: ilay, icol, nobs
 
@@ -908,6 +908,26 @@ contains
 #endif
 
     if (present(ssa)) then
+
+#define INLINE_COMBINE
+#ifdef INLINE_COMBINE
+! ----- merge combine_2str with NN kernel? yes --------
+#ifdef USE_TIMING
+    ret =  gptlstart('compute_tau_ray_and_combine')
+#endif
+
+      ! output = tau_abs, tau_tot call
+      ! output_ray = tau_ray, ssa after call
+      call C_F_POINTER (C_LOC(ssa), output_ray, [ngpt,nobs])
+
+      call neural_nets(2) % output_sgemm_tau(ninputs, ngpt, nobs, input, input_coldry, output_ray, output)
+#ifdef USE_TIMING
+    ret =  gptlstop('compute_tau_ray_and_combine')
+#endif
+
+#else
+! ----- merge combine_2str with NN kernel? no --------
+
 #ifdef USE_TIMING
     ret =  gptlstart('compute_tau_ray')
 #endif
@@ -925,6 +945,9 @@ contains
 #ifdef USE_TIMING
     ret =  gptlstop('combine_taus_compute_ssa')
 #endif
+#endif
+! ----- merge combine_2str with NN kernel? --------
+
     end if
   end subroutine predict_nn_sw_blas_sp
 

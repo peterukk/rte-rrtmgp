@@ -149,7 +149,11 @@ program rrtmgp_rfmip_lw
 #ifdef USE_OPENACC  
   type(cublasHandle) :: h
   istat = cublasCreate(h) 
-  ! istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
+  istat = cublasSetStream(h, acc_get_cuda_stream(acc_async_sync))
+  ! print *, "1 istat ", istat, "(0=success, 1=not initialized)"
+
+  ! istat = cublasSetMathMode(h, CUBLAS_COMPUTE_32F_FAST_16BF)
+  ! print *, "2 istat ", istat, "(0=success, 1=not initialized)"
 #endif
 
   ! -------------------------------------------------------------------------------------------------
