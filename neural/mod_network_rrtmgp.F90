@@ -47,7 +47,8 @@ module mod_network_rrtmgp
 
 
     procedure, public, pass(self) :: load_netcdf
-    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau, output_sgemm_lw  ! Inference kernels using BLAS and custom post-processing
+    ! Inference kernels using BLAS and custom post-processing
+    procedure, public, pass(self) :: output_sgemm_pfrac, output_sgemm_tau, output_sgemm_lw  
 
   end type rrtmgp_network_type
 
@@ -60,10 +61,10 @@ contains
     character(len=*), intent(in) :: filename
     integer :: ncid, n, num_layers, nx, dim1, dim2, varid
     integer, allocatable :: dims(:)
-    character(len=20) :: activation_type, varname_weight, varname_bias
+    character(len=20) :: varname_weight, varname_bias
     character(len=5) :: charN
-    real(sp), dimension(:,:), allocatable :: tmpvar
-    real(sp), dimension(:), allocatable :: tmpbias
+    ! real(sp), dimension(:,:), allocatable :: tmpvar
+    ! real(sp), dimension(:), allocatable :: tmpbias
     character(len=32), dimension(:), allocatable :: string_array
 
     if(nf90_open(trim(filename), NF90_NOWRITE, ncid) /= NF90_NOERR) &
@@ -339,7 +340,7 @@ contains
     neurons = size(self % layers(1) % w_transposed, 1)
     nlayers = size(self % layers)
 
-    !$acc data create(a1, a2) copyin(ymeans,ystd) present(output)
+    !$acc data create(a1, a2) copyin(ymeans,ystd)
     associate(layers=>self%layers)
       
       ! Assign pointers to layer weights, biases and input-output arrays

@@ -1,13 +1,32 @@
 """
-Python code for developing neural networks to replace RRTMGP look up table code
-
+Python code for developing neural networks to replace RRTMGP look up tables
+    
 This program takes existing input-output data generated with RRTMGP and
 user-specified hyperparameters such as the number of neurons, 
 scales the data, and trains a neural network
 
-New: monitors heating rate / flux errors (wrt LBL) by running radiation scheme 
-at the end of every epoch with the model, using RFMIP data for evaluation
+Currently supported predictands are g-point vectors containing: 
+    - (LW) Planck fraction, absorption cross-section, or both
+    - (SW) absorption cross-section or Rayleigh cross-section
 
+-------------
+Optional: monitor heating rate and flux/forcing errors (with respect to LBL)
+during training, and early stop when those metrics have stopped improving. 
+This works by running RTE+RRTNGP-NN on RFMIP data at the end of every epoch,
+using the NN model that is being trained. The RFMIP Fortran program prints
+some custom metrics to stdout that is then read by Python
+If not predicting combined LW Planck frac + absorption vectors, the variable
+that is not predicted by the currently trained model needs to be predicted using
+an existing model (by default loaded from ../../neural/data/$othervar_BEST). 
+
+To enable this, set early_stop_on_rfmip_fluxes as True and run the script from 
+rte-rrtmgp-nn/examples/rrtmgp-nn-training
+
+Models are saved to ../../neural/data with a file name containing the custom
+radiation scores.
+---------------
+
+---------------
 Scaling method: currently fixed so that inputs are min-max scaled to (0..1) and 
 outputs are standardized to ~zero mean, ~unit variance
 However, power transformations are first used to reduce dynamical range 
@@ -25,9 +44,14 @@ Output preprocessing:_
   3. ynorm = (y - ymean) / ystd, where ymeans are means for individual
   g-points, but ystd is the standard deviation across all g-points 
   (preserves relationships between outputs)
+----------------
+  
+This script has only been tested interactively  (from Spyder) and has 
+several options defined in the beginning of the program which should be changed 
+to fit user needs.
 
-Contributions welcome!
-
+Contributions to e.g. add more options, new datasets, or clean up the code 
+are very welcome!
 
 @author: Peter Ukkonen
 """
@@ -50,6 +74,7 @@ from ml_trainfuncs_keras import create_model_mlp, expdiff, hybrid_loss_wrapper
 
 
 def add_dataset(fpath, predictand, expfirst, x, y, col_dry, input_names, kdist, data_str):
+    # Concatenate existing dataset (containing raw inputs and outputs) with another
     x_new, y_new, col_dry_new, input_names_new, kdist_new     = load_rrtmgp(fpath, predictand, expfirst=expfirst) 
     if not (kdist==kdist_new):
         print("Kdist does not match previous dataset!")
@@ -62,11 +87,11 @@ def add_dataset(fpath, predictand, expfirst, x, y, col_dry, input_names, kdist, 
     y = np.concatenate((y,y_new),axis=0)
     col_dry = np.concatenate((col_dry,col_dry_new),axis=0)
     print("{:.2e} samples previously, {:.2e} after adding data from: {}".format(ns, x.shape[0],fpath.split('/')[-1]))
-
     data_str = data_str + " , " + fpath.split('/')[-1]
     return x, y, col_dry, data_str
 
 def plot_performance(history, hybrid_loss_expdiffs):
+    # Plot the loss and radiation metrics (Figure 2 in paper)
     fs = 12
     import matplotlib.pyplot as plt
     y0 = np.array(history['loss'])
@@ -84,57 +109,55 @@ def plot_performance(history, hybrid_loss_expdiffs):
         losslabel = 'Loss (MSE)'
     
     fig, ax1 = plt.subplots()
-    fig.subplots_adjust(right=0.85)
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-    ax3 = ax1.twinx()
-    ax3.spines.right.set_position(("axes", 1.10))
-    label2 = 'Radiation error'
-
+    label2 = 'Radiation error (heating rate + forcing)'
     # label2 = 'Radiation score (heating rate + forcing errors)'
     label3 = 'Heating rate error'
+    c1 = 'r'
+    c2 = 'b'
+    c2 = 'mediumblue'
+    # c3 = 'b'
+    c3 = 'dodgerblue'
     
-    p1, = ax1.plot(x1, y0, 'k',label=losslabel)
+    p1, = ax1.plot(x1, y0, c1, label=losslabel)
+    lw = 1.7
     if hybrid_loss_expdiffs:
-        p1e, = ax1.plot(x1, y0e, 'k--',label='Loss (expdiff)')
+        p1e, = ax1.plot(x1, y0e, c1, label='Loss (expdiff)', linestyle='dashed')
         # p1m, = ax1.plot(x1, y0m, 'k-.',label=losslabel)
-    p2, = ax2.plot(x1, y1, color='blue', label=label2)#, linestyle='dashed')
+    p2, = ax2.plot(x1, y1, color=c2, label=label2)#, linestyle='dashed')
     # p3_2, = ax2.plot(x1, y3, color='blue',label='Forcing errors w.r.t. LBL', linestyle='dashed')
-    p3, = ax3.plot(x1, y2, color='r',   label=label3)#, linestyle='dotted')
+    p3, = ax2.plot(x1, y2, color=c3,label=label3, linestyle='dashed',linewidth=lw)
     
     
     ax1.set_xlabel('Epochs',fontsize=fs)
     ax1.set_ylabel('Training loss',fontsize=fs)
-    ax2.set_ylabel('Radiation score',fontsize=fs)
-    ax3.set_ylabel('Relative heating rate errors',fontsize=fs)
+    ax2.set_ylabel('Normalized errors (w.r.t. LBL)',fontsize=fs)
     
     ax1.set_yscale('log')
-    # ax2.set_yscale('log')
     
-    _,ymax = ax2.get_ylim(); ax2.set_ylim(0.8,ymax)
-    _,ymax = ax3.get_ylim(); ax3.set_ylim(0.8,ymax)
+    _,ymax = ax2.get_ylim(); print(ymax)
+    ax2.set_ylim(0.8,ymax)
+    # ax2.set_ylim(0.8, 6.172778531908989)
     ax2.grid()
-    # ax3.grid()
     
-    import mpl_axes_aligner
-    mpl_axes_aligner.align.yaxes(ax2, 1.0, ax3, 1.0, 0.1)
-    lim = ax2.get_ylim()
-    ax2.set_yticks(np.concatenate((ax2.get_yticks(),np.array([1]))))
-    ax2.set_ylim(lim)
+    # import mpl_axes_aligner
+    # mpl_axes_aligner.align.yaxes(ax2, 1.0, ax3, 1.0, 0.1)
+    # lim = ax2.get_ylim()
+    # ax2.set_yticks(np.concatenate((ax2.get_yticks(),np.array([1]))))
+    # ax2.set_ylim(lim)
         
     ax1.yaxis.label.set_color(p1.get_color())
     ax2.yaxis.label.set_color(p2.get_color())
-    ax3.yaxis.label.set_color(p3.get_color())
     
     ax2.axhline(y=1.0, color='k', linestyle='--',linewidth=1)
-    xoffset = -0.11
-    yoffset = 0.09
-    ax2.annotate('RRTMGP', ha='left',fontsize=11, xy=(xoffset, yoffset), 
+    xoffset = 1.025
+    yoffset = 0.025
+    ax2.annotate('= RRTMGP', ha='left',fontsize=11, xy=(xoffset, yoffset), 
                  xycoords='axes fraction',color='blue')
 
     tkw = dict(size=4, width=1.5)
     ax1.tick_params(axis='y', colors=p1.get_color(), **tkw)
     ax2.tick_params(axis='y', colors=p2.get_color(), **tkw)
-    ax3.tick_params(axis='y', colors=p3.get_color(), **tkw)
     ax1.tick_params(axis='x', **tkw)
     
     if hybrid_loss_expdiffs:
@@ -143,9 +166,8 @@ def plot_performance(history, hybrid_loss_expdiffs):
         ax1.legend(handles=[p1, p2, p3])
 
 
-
 # ----------------------------------------------------------------------------
-# ----------------- Provide data with inputs and outputs ---------------------
+# ----------------- Provide data containing inputs and outputs ---------------
 # ----------------------------------------------------------------------------
 datadir = "/media/peter/samsung/data/ml_training/reduced-k/"
 
@@ -157,8 +179,11 @@ fpath3   = datadir+"ml_training_lw_g128_CAMS_new_CKDMIPstyle.nc"
 
 fpath4  = datadir+"ml_training_lw_g128_CKDMIP-MMM-Big.nc"
 
-
+# Let's use the (expanded!) Garand profiles, GCM data (AMON_...), CAMS data,
+# and extended CKDMIP-Mean-Maximum-Minimum profiles
+# RFMIP ised used for validation
 fpaths = [fpath,fpath2,fpath3,fpath4]
+
 # ----------------------------------------------------------------------------
 # --------------- CONFIGURE: predictand, NN complexity etc -------------------
 # ----------------------------------------------------------------------------
@@ -199,16 +224,14 @@ num_cpu_threads = 12
 # --- when some custom metrics (printed by the modified RFMIP programs) 
 # --- have not improved for a certain number of epochs ("patience")
 early_stop_on_rfmip_fluxes = True
-patience    = 30
-patience    = 40
-patience = 70
-
-
-epochs = 100
+# patience    = 30
+patience    = 70
 
 if early_stop_on_rfmip_fluxes:
     epochs = 800  # set a high number with early stopping
-    
+    # epochs = 221
+else:
+    epochs = 200
 
 # --- Forcing errors: We can try to reduce radiative forcing errors
 # --- by using a hybrid loss function which measures the difference in y 
@@ -217,16 +240,13 @@ if early_stop_on_rfmip_fluxes:
 # --- requires bespoke data but can help minimize TOA / surface forcing errors
 hybrid_loss_expdiffs = False
 
-patience = 257
-epochs = 257
-
 
 if hybrid_loss_expdiffs:
     if (predictand=='sw_absorption' or predictand=='sw_rayleigh'):
         alpha = 0.2
     else:
-        # alpha = 0.6
-        alpha = 0.7
+        alpha = 0.6
+        # alpha = 0.7
         # alpha = 0.75
 
     loss_expdiff = hybrid_loss_wrapper(alpha=alpha)
@@ -241,12 +261,9 @@ else:
 
 # --- batch size and learning rate 
 lr          = 0.001 
-batch_size  = 1024
+# batch_size  = 1024
 batch_size  = 2048
 
-# lr = 0.01
-# batch_size  = 4096
-# lr          = 0.01
 # batch_size  = 3*batch_size
 # lr          = 2 * lr
 
@@ -255,15 +272,16 @@ batch_size  = 2048
 # --- Number of neurons in each hidden layer
 if predictand == 'lw_absorption':
     # neurons     = [80,80]
-    # neurons     = [96,96]
-    neurons     = [72,72]
-    # neurons     = [64,64]
-    # neurons     = [58,58]
-elif predictand == 'lw_both':
-    # neurons     = [80,80]
     # neurons     = [72,72]
     neurons     = [64,64]
-
+    # neurons     = [58,58]
+elif predictand == 'lw_planck_frac':
+    neurons     = [24,24]
+elif predictand == 'lw_both':
+    # neurons     = [80,80]
+    neurons     = [72,72]
+    # neurons     = [64,64]
+    # neurons     = [56,56]
 else:
     # neurons     = [16,16] 
     # neurons     = [24,24] 
@@ -501,14 +519,20 @@ def save_model():
                            data_comment=data_str, model_comment=model_str)
 save_model()
 
-neurons_str = np.array2string(np.array(neurons)).strip('[]').replace(' ','_')
-source = kdist[12:].strip('.nc')
-ind = np.array(history['radiation_score']).argmin()
-hr_err_final = np.array(history['mean_relative_heating_rate_error'])[ind]
-forcing_err_final = np.array(history['mean_relative_forcing_error'])[ind]
-fp =  source + "_" + predictand[3:] + "_" + \
-  neurons_str + "_HR_{:.2e}_FRC_{:.2e}_history.npy".format(hr_err_final, forcing_err_final)
-np.save('/media/peter/samlinux/gdrive/phd/results/paper3_IFS_RRTMGP/'+fp,history)
+# neurons_str = np.array2string(np.array(neurons)).strip('[]').replace(' ','_')
+# source = kdist[12:].strip('.nc')
+# ind = np.array(history['radiation_score']).argmin()
+# hr_err_final = np.array(history['mean_relative_heating_rate_error'])[ind]
+# forcing_err_final = np.array(history['mean_relative_forcing_error'])[ind]
+# fp =  source + "_" + predictand[3:] + "_" + \
+#   neurons_str + "_HR_{:.2e}_FRC_{:.2e}_history.npy".format(hr_err_final, forcing_err_final)
+# np.save('/media/peter/samlinux/gdrive/phd/results/paper3_IFS_RRTMGP/'+fp,history)
+
+# fp2 = '/media/peter/samlinux/gdrive/phd/results/paper3_IFS_RRTMGP/lw-g128-210809_absorption_72_72_HR_1.14e+00_FRC_5.19e-01_history.npy'
+# history2 = np.load(fp2,allow_pickle=True)
+# history2 = history2.tolist()
+# plot_performance(history2, True)
+
 
 # # ------------------------------------------------------
 # # --- Evaluate on another dataset  ---------------------

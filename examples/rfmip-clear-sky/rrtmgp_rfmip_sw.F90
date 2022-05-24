@@ -313,6 +313,10 @@ program rrtmgp_rfmip_sw
   !$acc enter data create (sfc_alb_spec, mu0) 
   !$acc enter data copyin(total_solar_irradiance, surface_albedo, usecol, solar_zenith_angle)
 
+  !custom TSI
+  call stop_on_err(k_dist%set_tsi(1361.0_wp))
+
+
 #ifdef USE_TIMING
   !
   ! Initialize timers
@@ -389,6 +393,7 @@ program rrtmgp_rfmip_sw
     ! print *," max, min (tau)",   maxval(optical_props%tau), minval(optical_props%tau)
     ! print *," max, min (ssa)",   maxval(optical_props%ssa), minval(optical_props%ssa)
     ! print *," max, min (g)",   maxval(optical_props%g), minval(optical_props%g)
+    print *, "sum toa flux", sum(toa_flux(:,1))
 
     if (nblocks==1) call system_clock(iTime2)
 

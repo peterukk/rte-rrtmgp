@@ -697,7 +697,8 @@ contains
     real(sp), dimension(ninputs,nlay,ncol), target, &     
                                         intent(in)  :: nn_inputs     
     real(sp), dimension(nlay,ncol), target,  &     
-                                        intent(in)  :: col_dry_wk     ! needs to be assumed-shape (and explicit shaped in parent code) for OpenMP                                                             
+                                        intent(in)  :: col_dry_wk     
+    !^needs to be assumed-shape (and explicit shaped in parent code) for OpenMP?                                                           
     ! The neural network models
     type(rrtmgp_network_type), dimension(:), &
                                         intent(in)  :: neural_nets
@@ -887,7 +888,7 @@ contains
     ! local
     real(sp), dimension(:,:), contiguous, pointer     :: input, output, output_ray
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
-    integer                                           :: ilay, icol, nobs
+    integer                                           :: nobs
 
     
     ! PREDICT PLANCK FRACTIONS
@@ -980,7 +981,7 @@ contains
     real(sp), dimension(:,:), contiguous, pointer     :: input
     real(sp), dimension(:),   contiguous, pointer     :: input_coldry   
     real(sp), dimension(ngpt,nlay*ncol)               :: tmp_output
-    integer                                           :: ilay, icol, nobs
+    integer                                           :: nobs
 
     nobs = nlay*ncol
     call C_F_POINTER (C_LOC(nn_inputs), input, [ninputs,nobs])
@@ -1173,7 +1174,6 @@ contains
     real(wp), dimension(ngpt, nlay, ncol),  intent(inout) :: tau, ssa, g ! inout because components are allocated
     ! -----------------------
     integer  :: icol, ilay, igpt
-    real(wp) :: t
     ! -----------------------
 
     g(:,:,:) = 0._wp
@@ -1251,7 +1251,6 @@ contains
                                          intent(inout) :: p
     ! -----------------------
     integer :: icol, ilay, igpt, imom
-    real(wp) :: t
     ! -----------------------
     do icol = 1, ncol
       do ilay = 1, nlay

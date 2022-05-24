@@ -362,7 +362,7 @@ program rrtmgp_rfmip_lw
 #endif
 
 #ifdef USE_OPENMP
-  !$OMP PARALLEL shared(neural_nets, k_dist) firstprivate(sfc_emis_spec,fluxes,optical_props,source)
+  !$OMP PARALLEL  firstprivate(sfc_emis_spec,fluxes,optical_props,source)
   !$OMP DO 
 #endif
   do b = 1, nblocks
