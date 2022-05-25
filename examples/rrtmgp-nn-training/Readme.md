@@ -2,7 +2,7 @@
 
 Code for generating training data and train NN versions of RRTMGP k-distributions
 
-Goal is cleaner and more generic code than last time. Work in progress..
+Goal is cleaner and more generic code than last time, but contributions for further improvements are welcome.
 
 After running make, data can be generated like this
 
@@ -14,7 +14,9 @@ For instance, to generate data from the 1800 RFMIP profiles, using the reduced k
 
 `./rrtmgp_lw_gendata_rfmipstyle 8 ../rfmip-clear-sky/multiple_input4MIPs_radiation_RFMIP_UColorado-RFMIP-1-2_none.nc ../../rrtmgp/data/rrtmgp-data-lw-g128-210809.nc $ML_DATA_FOLDER/ml_training_lw_g128_RMFIP.nc`
 
-The output netCDF files (last argument) can be rather big, as they contain RRTMGP inputs and outputs (which have a spectral dimension) that can be used for NN models:
+In the paper, the RFMIP profiles were not used for training, instead training data was generated from the input files in inputs_to_RRTMGP.zip
+
+The output netCDF files (last argument) are used by the training program `ml_train.py` and can be rather big, as they contain RRTMGP inputs (4D array, with features innermost) and outputs (4D, with g-points innermost), where the 3 outer dimensions contain different perturbation experiments, columns and levels and are collapsed before training:
 
 ```
 dimensions:
@@ -53,4 +55,4 @@ y<sub>abs</sub> = (tau - tau<sub>ray</sub>) / N = (tau - tau * ssa) / N
 
 y<sub>ray</sub> = (tau * ssa) / N 
 
-Similarly, predicting Planck fraction as the emission variable is recommended, from which upward and downward Planck functions can then be computed. These physical scalings have shown to be effective; in addition, it may be worthwhile to use general ML preprocessing methods ("standardization", "normalization"), to obtain inputs and outputs 1) in a similar in a similar range to other inputs/outputs, 2) not too big or large (e.g. 0-1 instead of 0-1 * 10e-5) and 3) have a more normal distribution than the raw variable (e.g. log(p), instead of p) - see *ml_train.py*
+Similarly, predicting Planck fraction as the emission variable is recommended, from which upward and downward Planck functions can then be computed. These physical scalings have shown to be effective; in addition, it may be worthwhile to use general ML preprocessing methods ("standardization", "normalization"), to obtain inputs and outputs 1) in a similar in a similar range to other inputs/outputs, 2) not too big or large (e.g. 0-1 instead of 0-1 * 10e-5) and 3) have a more normal distribution than the raw variable (e.g. log(p), instead of p) - see `ml_train.py`

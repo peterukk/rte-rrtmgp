@@ -173,10 +173,7 @@ datadir = "/media/peter/samsung/data/ml_training/reduced-k/"
 
 fpath   = datadir+"ml_training_lw_g128_Garand_BIG.nc"
 fpath2  = datadir+"ml_training_lw_g128_AMON_ssp245_ssp585_2054_2100.nc"
-# fpath2  = datadir+"ml_training_lw_g128_AMON_ssp245_ssp585_2054_2100_reduced.nc"
-# fpath3   = datadir+"ml_training_lw_g128_CAMS2.nc"
 fpath3   = datadir+"ml_training_lw_g128_CAMS_new_CKDMIPstyle.nc"
-
 fpath4  = datadir+"ml_training_lw_g128_CKDMIP-MMM-Big.nc"
 
 # Let's use the (expanded!) Garand profiles, GCM data (AMON_...), CAMS data,
