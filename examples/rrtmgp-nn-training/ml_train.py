@@ -210,6 +210,10 @@ use_existing_input_scaling_coefficients = True
 use_gpu = False
 num_cpu_threads = 12
 
+# Save model to NN model directory (../../neural/data) after training?
+# File name includes loss values, so shouldn't override anything
+save_new_model = False
+
 
 # --- Loss function, metrics and early stopping
 
@@ -514,7 +518,9 @@ def save_model():
                            xmin, xmax, ymean, ystd, y_scaling_comment=y_scaling_str, 
                            x_scaling_comment=x_scaling_str,
                            data_comment=data_str, model_comment=model_str)
-save_model()
+
+if save_new_model:
+    save_model()
 
 # neurons_str = np.array2string(np.array(neurons)).strip('[]').replace(' ','_')
 # source = kdist[12:].strip('.nc')
