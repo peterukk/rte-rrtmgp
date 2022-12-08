@@ -2,6 +2,10 @@
 
 ## Recent changes
 
+Dec 2022: "Official 2.0 release" corresponding to submitted GMD (previously a JAMES preprint earlier in the year) article describing RRTMGP-NN implementation in ecRad and prognostic testing in the IFS. I make no claims on code maturity/usability but some useful new methods for training more accurate gas optics neural networks are demonstrated in /examples/rrtmgp-nn-training:
+- Monitor flux errors with respect to LBL solution (RFMIP data) while training, by calling radiation scheme with models as they are being trained, and early stop on those
+- hybrid loss function to minimize the error in the difference in outputs y associated with different perturbation experiments (proxy for radiative forcing errors)
+
 March 2022: A new paper has been [published in JAMES](https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2021MS002875) where different ways of emulating a radiation code in the shortwave have been explored (using RTE+RRTMGP to generate data). The main finding is that recurrent neural networks can emulate the full radiation scheme much more closely than feedforward nets. The code used in the paper can be found in [examples/emulator-training in the nn_dev branch](https://github.com/peterukk/rte-rrtmgp-nn/tree/nn_dev/examples/emulator-training). The main branch also has new code (found in examples/rrtmgp-nn-training) for training RRTMGP emulators where flux and heating rate errors are monitored during training and used as early stopping criteria
 
 May 2021: Cloud extension and all-sky example now working! Furthermore, cleanup of RTE - no longer separate functions for "broadline fluxes only", instead a logical is passed to indicate whether only broadband fluxes are needed. Some further GPU optimizations for RTE kernels.
